@@ -3,23 +3,15 @@ package bench
 import (
 	"math/rand"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/allegro/bigcache"
 )
 
-const (
-	// benchmark parameters
-	size  = 2 << 3
-	mask  = size - 1
-	items = size / 3
+func initBigCache(maxEntries, numElems int) *bigcache.BigCache {
+	numShards := 256
 
-	// bigcache parameters
-	numShards    = 256
-	maxEntrySize = 10 // in bytes for memory initialization
-)
-
-func initBigCache(maxEntries int) *bigcache.BigCache {
 	cache, err := bigcache.NewBigCache(bigcache.Config{
 		Shards:             numShards,
 		LifeWindow:         0,
@@ -32,69 +24,87 @@ func initBigCache(maxEntries int) *bigcache.BigCache {
 	}
 
 	// Enforce full initialization of internal structures
-	for i := 0; i < 2*size; i++ {
+	for i := 0; i < 2*numElems; i++ {
 		cache.Set(strconv.Itoa(i), []byte("data"))
 	}
+	cache.Reset()
 
 	return cache
 }
 
-func BenchmarkBigCacheRead(b *testing.B) {
-	cache := initBigCache(b.N)
-	ints := initAccessPatternString(size)
+func runBigCacheBenchmark(b *testing.B,
+	cache *bigcache.BigCache, data []string, pctWrites uint64) {
+
+	size := len(data)
+	mask := size - 1
+
+	var writeRoutineCounter uint64
+	if pctWrites == 0 {
+		writeRoutineCounter = 1<<64 - 1
+	} else {
+		// TODO: only works when no remainder
+		writeRoutineCounter = 100 / pctWrites
+	}
+	routineCoutner := uint64(0)
+
+	// initialize cache
 	for i := 0; i < size; i++ {
-		cache.Set(ints[i], []byte("data"))
+		cache.Set(data[i], []byte("data"))
 	}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
-		counter := rand.Int() & mask
-		for pb.Next() {
-			cache.Get(ints[counter&mask])
-			counter = counter + 1
+		index := rand.Int() & mask
+		myCounter := atomic.AddUint64(&routineCoutner, 1)
+
+		if myCounter%writeRoutineCounter == 0 {
+			for pb.Next() {
+				cache.Set(data[index&mask], []byte("data"))
+				index = index + 1
+			}
+		} else {
+			for pb.Next() {
+				cache.Get(data[index&mask])
+				index = index + 1
+			}
 		}
 	})
 }
 
-func BenchmarkBigCacheWrite(b *testing.B) {
-	cache := initBigCache(b.N)
-	ints := initAccessPatternString(size)
-	for i := 0; i < size; i++ {
-		cache.Set(ints[i], []byte("data"))
-	}
+func BenchmarkBigCacheRead(b *testing.B) {
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 0)
+}
 
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		counter := rand.Int() & mask
-		for pb.Next() {
-			cache.Set(ints[counter&mask], []byte("data"))
-			counter = counter + 1
-		}
-	})
+func BenchmarkBigCacheWrite(b *testing.B) {
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 100)
 }
 
 // 25% write and 75% read benchmark
 func BenchmarkBigCacheReadWrite(b *testing.B) {
-	cache := initBigCache(b.N)
-	ints := initAccessPatternString(size)
-	for i := 0; i < size; i++ {
-		cache.Set(ints[i], []byte("data"))
-	}
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 25)
+}
 
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		counter := rand.Int() & mask
+func BenchmarkBigCacheHotKeyRead(b *testing.B) {
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initHotKeyAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 0)
+}
 
-		if rand.Uint64()%4 == 0 {
-			for pb.Next() {
-				cache.Set(ints[counter&mask], []byte("data"))
-				counter = counter + 1
-			}
-		} else {
-			for pb.Next() {
-				cache.Get(ints[counter&mask])
-				counter = counter + 1
-			}
-		}
-	})
+func BenchmarkBigCacheHotKeyWrite(b *testing.B) {
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initHotKeyAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 100)
+}
+
+// 25% write and 75% read benchmark
+func BenchmarkBigCacheHotKeyReadWrite(b *testing.B) {
+	cache := initBigCache(b.N, workloadDataSize)
+	data := initHotKeyAccessPatternString(workloadDataSize)
+	runBigCacheBenchmark(b, cache, data, 25)
 }
