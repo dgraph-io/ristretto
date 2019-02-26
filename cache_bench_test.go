@@ -26,7 +26,9 @@ import (
 	"time"
 
 	"github.com/allegro/bigcache"
+	"github.com/cespare/xxhash"
 	"github.com/coocood/freecache"
+	"github.com/golang/groupcache/lru"
 	"github.com/pingcap/go-ycsb/pkg/generator"
 )
 
@@ -153,6 +155,61 @@ func newFreeCache(keysInWindow int) *FreeCache {
 }
 
 //========================================================================
+//                            GroupCache
+//========================================================================
+
+const (
+	segmentAndOpVal = 255
+)
+
+type GroupCache struct {
+	shards [256]*lru.Cache
+	locks  [256]sync.Mutex
+}
+
+func (g *GroupCache) Get(key []byte) ([]byte, error) {
+	hashVal := xxhash.Sum64(key)
+	shardNum := hashVal & segmentAndOpVal
+
+	g.locks[shardNum].Lock()
+	v, ok := g.shards[shardNum].Get(string(key))
+	g.locks[shardNum].Unlock()
+
+	if ok {
+		return v.([]byte), nil
+	}
+	return nil, errKeyNotFound
+}
+
+func (g *GroupCache) Set(key, value []byte) error {
+	hashVal := xxhash.Sum64(key)
+	shardNum := hashVal & segmentAndOpVal
+
+	g.locks[shardNum].Lock()
+	g.shards[shardNum].Add(string(key), value)
+	g.locks[shardNum].Unlock()
+
+	return nil
+}
+
+func newGroupCache(keysInWindow int) *GroupCache {
+	gc := &GroupCache{}
+	for i := 0; i < 256; i++ {
+		gc.shards[i] = lru.New(keysInWindow / 256)
+	}
+
+	// Enforce full initialization of internal structures
+	for j := 0; j < 2*workloadSize; j++ {
+		gc.Set([]byte(strconv.Itoa(j)), []byte("data"))
+	}
+	for i := 0; i < 256; i++ {
+		gc.shards[i].Clear()
+	}
+
+	return gc
+}
+
+//========================================================================
 //                              sync.Map
 //========================================================================
 
@@ -235,26 +292,32 @@ func BenchmarkCaches(b *testing.B) {
 	}{
 		{"BigCacheZipfRead", newBigCache(b.N), zipfList, 0},
 		{"FreeCacheZipfRead", newFreeCache(b.N), zipfList, 0},
+		{"GroupCacheZipfRead", newGroupCache(b.N), zipfList, 0},
 		{"SyncMapZipfRead", newSyncMap(), zipfList, 0},
 
 		{"BigCacheOneKeyRead", newBigCache(b.N), oneList, 0},
 		{"FreeCacheOneKeyRead", newFreeCache(b.N), oneList, 0},
+		{"GroupCacheOneKeyRead", newGroupCache(b.N), oneList, 0},
 		{"SyncMapOneKeyRead", newSyncMap(), oneList, 0},
 
 		{"BigCacheZipfWrite", newBigCache(b.N), zipfList, 100},
 		{"FreeCacheZipfWrite", newFreeCache(b.N), zipfList, 100},
+		{"GroupCacheZipfWrite", newGroupCache(b.N), zipfList, 100},
 		{"SyncMapZipfWrite", newSyncMap(), zipfList, 100},
 
 		{"BigCacheOneKeyWrite", newBigCache(b.N), oneList, 100},
 		{"FreeCacheOneKeyWrite", newFreeCache(b.N), oneList, 100},
+		{"GroupCacheOneKeyWrite", newGroupCache(b.N), oneList, 100},
 		{"SyncMapOneKeyWrite", newSyncMap(), oneList, 100},
 
 		{"BigCacheZipfMixed", newBigCache(b.N), zipfList, 25},
 		{"FreeCacheZipfMixed", newFreeCache(b.N), zipfList, 25},
+		{"GroupCacheZipfMixed", newGroupCache(b.N), zipfList, 25},
 		{"SyncMapZipfMixed", newSyncMap(), zipfList, 25},
 
 		{"BigCacheOneKeyMixed", newBigCache(b.N), oneList, 25},
 		{"FreeCacheOneKeyMixed", newFreeCache(b.N), oneList, 25},
+		{"GroupCacheOneKeyMixed", newGroupCache(b.N), oneList, 25},
 		{"SyncMapOneKeyMixed", newSyncMap(), oneList, 25},
 	}
 
