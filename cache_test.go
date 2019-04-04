@@ -26,7 +26,10 @@ func TestGet(t *testing.T){
 	k := []byte("1")
 	v := []byte("one")
 	cache := New(0)
-	cache.Set(k,v)
+	err := cache.Set(k,v)
+	if err != nil{
+		t.Fatalf(err.Error())
+	}
 	val, err := cache.Get(k)
 	if err != nil {
 		t.Fatalf(err.Error())
