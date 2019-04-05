@@ -19,8 +19,7 @@ package ristretto
 import (
 	"errors"
 	"sync"
-
-	"github.com/dgraph-io/ristretto/lru"
+	"github.com/golang/groupcache/lru"
 )
 
 //Cache interface
