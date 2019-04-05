@@ -19,6 +19,7 @@ package ristretto
 import (
 	"errors"
 	"sync"
+
 	"github.com/golang/groupcache/lru"
 )
 
@@ -30,15 +31,15 @@ type Cache interface {
 
 //BasicCache implementation
 type BasicCache struct {
-	c   *lru.Cache
-	mux sync.Mutex
+	c    *lru.Cache
+	lock sync.Mutex
 }
 
 //Get a value from cache
 func (r *BasicCache) Get(key []byte) ([]byte, error) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-	v, ok := r.c.Get(string(key)) //
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	v, ok := r.c.Get(string(key))
 	if ok {
 		return v.([]byte), nil
 	}
@@ -47,8 +48,8 @@ func (r *BasicCache) Get(key []byte) ([]byte, error) {
 
 //Set a value in cache for a key
 func (r *BasicCache) Set(key, value []byte) error {
-	r.mux.Lock()
-	defer r.mux.Unlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	r.c.Add(string(key), value)
 	return nil
 }
