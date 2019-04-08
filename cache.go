@@ -55,6 +55,17 @@ func (r *BasicCache) Set(key, value []byte) error {
 }
 
 //New a BasicCache
-func New(size int) *BasicCache {
-	return &BasicCache{c: lru.New(size)}
+func New(opts ...func(*BasicCache)) *BasicCache {
+	r := &BasicCache{}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+//Size sets size of BasicCache
+func Size(size int) func(*BasicCache) {
+	return func(r *BasicCache) {
+		r.c = lru.New(size)
+	}
 }
