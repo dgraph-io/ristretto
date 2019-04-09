@@ -23,6 +23,10 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
+const (
+	defaultSize = 1024
+)
+
 //Cache interface
 type Cache interface {
 	Get(key []byte) ([]byte, error)
@@ -59,6 +63,9 @@ func New(opts ...func(*BasicCache)) *BasicCache {
 	r := &BasicCache{}
 	for _, opt := range opts {
 		opt(r)
+	}
+	if r.c == nil {
+		r.c = lru.New(defaultSize)
 	}
 	return r
 }
