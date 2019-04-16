@@ -58,7 +58,7 @@ func (c *Cache) Get(key []byte) (value []byte, ok bool) {
 		return
 	}
 
-	// Just promote the entry there's room in the next segment.
+	// Just promote the entry if there's room in the next segment.
 	if c.protected.Len() < c.maxProtected {
 		c.probation.Remove(e)
 		ent.segment = protected
