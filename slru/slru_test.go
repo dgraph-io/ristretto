@@ -11,8 +11,8 @@ func TestGet(t *testing.T) {
 	key2, val2 := []byte{2}, []byte("two")
 
 	c := New(1, 1)
-	c.Set(key1, val1)
-	c.Set(key2, val2)
+	c.Add(key1, val1)
+	c.Add(key2, val2)
 
 	v, ok := c.Get([]byte("missing"))
 	assert.Nil(t, v, "Get nonexistent")
@@ -40,8 +40,8 @@ func TestRemove(t *testing.T) {
 	key2, val2 := []byte{2}, []byte("two")
 
 	c := New(1, 1)
-	c.Set(key1, val1)
-	c.Set(key2, val2)
+	c.Add(key1, val1)
+	c.Add(key2, val2)
 	c.Get(key1) // Promote the first key.
 
 	c.Remove([]byte("missing")) // Test negatives.
@@ -75,14 +75,14 @@ func TestEviction(t *testing.T) {
 			var keys [][]byte
 			for i := byte(0); i < 4; i++ {
 				keys = append(keys, []byte{'k', 'e', 'y', i})
-				c.Set(keys[i], []byte{i})
+				c.Add(keys[i], []byte{i})
 			}
 
 			for _, keyIndex := range tt.Gets {
 				c.Get(keys[keyIndex])
 			}
 
-			c.Set([]byte("new"), []byte("value"))
+			c.Add([]byte("new"), []byte("value"))
 
 			for i, key := range keys {
 				val, ok := c.Get(key)

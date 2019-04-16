@@ -81,8 +81,8 @@ func (c *Cache) Get(key []byte) (value []byte, ok bool) {
 	return
 }
 
-// Set adds a value to the cache.
-func (c *Cache) Set(key []byte, value []byte) {
+// Add adds a value to the cache.
+func (c *Cache) Add(key []byte, value []byte) {
 	keyStr := string(key)
 	if _, ok := c.items[keyStr]; ok {
 		panic("slru: replacement of existing keys is not supported")
