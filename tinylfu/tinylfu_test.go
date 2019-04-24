@@ -67,7 +67,7 @@ func TestTinyLFU(t *testing.T) {
 func newTestPolicy(t *testing.T) *Policy {
 	// Create a policy with 2 window, 2 probation, 4 protected slots. This is
 	// enough to fully exercise most cases without being onerous to validate
-	// comprehensivley.
+	// comprehensively.
 	return New(8, WithSegmentation(.75, .67))
 }
 
