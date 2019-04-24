@@ -56,7 +56,12 @@ func TestTinyLFU(t *testing.T) {
 	checkSegment(t, p.protected, []uint64{5, 2, 3, 1})
 
 	// Finally, promote a window value.
-	//f
+	p.Record(11)
+
+	checkData(t, p, []uint64{1, 2, 3, 5, 7, 10, 11, 12})
+	checkSegment(t, p.window, []uint64{11, 12})
+	checkSegment(t, p.probation, []uint64{10, 7})
+	checkSegment(t, p.protected, []uint64{5, 2, 3, 1})
 }
 
 func newTestPolicy(t *testing.T) *Policy {
