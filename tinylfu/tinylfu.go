@@ -21,7 +21,7 @@ type Policy struct {
 func New(capacity int, opts ...Option) *Policy {
 	// Consistent behavior relies on capacity for one element in each segment.
 	if capacity < 3 {
-		panic("tinylfu: capacity must be positive")
+		panic("tinylfu: capacity must be at least 3 (1 for each segment)")
 	}
 
 	p := &Policy{
