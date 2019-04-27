@@ -38,7 +38,7 @@ func TestPushFront(t *testing.T) {
 }
 
 func TestPushBack(t *testing.T) {
-	t.Run("PushFront", func(t *testing.T) {
+	t.Run("PushBack", func(t *testing.T) {
 		l := newList()
 		assert.Nil(t, l.Back())
 
@@ -94,7 +94,7 @@ func TestRemove(t *testing.T) {
 			}
 		}
 
-		t.Run(fmt.Sprintf("Remove%dOf3", i), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Remove_%d_of_3", i), func(t *testing.T) {
 			remove.Remove()
 			assert.Nil(t, remove.prev)
 			assert.Nil(t, remove.next)
