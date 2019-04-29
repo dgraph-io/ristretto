@@ -7,7 +7,8 @@ package tinylfu
 type list struct {
 	// To simplify the implementation, internally a list l is implemented as a
 	// ring, such that root is both the next element of the l.Back() and the
-	// previous element of l.Front()
+	// previous element of l.Front(). This sentinel is neither included in the
+	// list count nor enumerable via e.Next() and e.Back().
 	root element
 
 	// Current list length excluding the root.
