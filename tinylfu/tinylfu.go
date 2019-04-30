@@ -17,6 +17,17 @@ type Policy struct {
 	maxProtected int
 }
 
+type alwaysAdmit struct{}
+
+func (a alwaysAdmit) Record(key uint64)                          {}
+func (a alwaysAdmit) Admit(candidate uint64, victim uint64) bool { return true }
+
+type nopRecorder struct{}
+
+func (r nopRecorder) RecordMiss()     {}
+func (r nopRecorder) RecordHit()      {}
+func (r nopRecorder) RecordEviction() {}
+
 // New creates a new TinyLFU cache.
 func New(capacity int, opts ...Option) *Policy {
 	// Consistent behavior relies on capacity for one element in each segment.
@@ -26,6 +37,8 @@ func New(capacity int, opts ...Option) *Policy {
 
 	p := &Policy{
 		data:      make(map[uint64]*element),
+		admittor:  alwaysAdmit{},
+		stats:     nopRecorder{},
 		window:    newList(),
 		probation: newList(),
 		protected: newList(),
@@ -46,30 +59,22 @@ func (p *Policy) Len() int {
 
 // Record updates the policy when an entry is accessed.
 func (p *Policy) Record(key uint64) {
-	if p.admittor != nil {
-		p.admittor.Record(key)
-	}
+	p.admittor.Record(key)
 
 	node, ok := p.data[key]
 	if !ok {
-		if p.stats != nil {
-			p.stats.RecordMiss()
-		}
+		p.stats.RecordMiss()
 		p.onMiss(key)
 		return
 	}
 
 	switch node.List() {
 	case p.window, p.protected:
-		if p.stats != nil {
-			p.stats.RecordHit()
-		}
+		p.stats.RecordHit()
 		node.MoveToFront()
 
 	case p.probation:
-		if p.stats != nil {
-			p.stats.RecordHit()
-		}
+		p.stats.RecordHit()
 
 		// Promote the accessed item to the protected segment.
 		p.protected.PushFront(node)
@@ -99,7 +104,7 @@ func (p *Policy) onMiss(key uint64) {
 	}
 
 	victim, evict := p.probation.Back(), candidate
-	if p.admittor == nil || p.admittor.Admit(candidate.Value, victim.Value) {
+	if p.admittor.Admit(candidate.Value, victim.Value) {
 		evict = victim
 	}
 
@@ -107,10 +112,7 @@ func (p *Policy) onMiss(key uint64) {
 	evict.Value = key
 	p.data[key] = evict
 	p.window.PushFront(evict)
-
-	if p.stats != nil {
-		p.stats.RecordEviction()
-	}
+	p.stats.RecordEviction()
 }
 
 // insertNew allocates a new element and adds it to the admission window segment.

@@ -15,6 +15,10 @@ type AdmissionPolicy interface {
 //
 // By default, TinyLFU assumes admission.
 func WithAdmission(admittor AdmissionPolicy) Option {
+	if admittor == nil {
+		panic("tinylfu: admission policy must be non-nil")
+	}
+
 	return func(p *Policy) {
 		p.admittor = admittor
 	}
@@ -29,6 +33,10 @@ type StatsRecorder interface {
 
 // WithRecorder configures TinyLFU to use the given instrumentation.
 func WithRecorder(recorder StatsRecorder) Option {
+	if recorder == nil {
+		panic("tinylfu: stats recorder must be non-nil")
+	}
+
 	return func(p *Policy) {
 		p.stats = recorder
 	}
