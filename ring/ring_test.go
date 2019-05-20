@@ -20,33 +20,33 @@ type TestConsumer struct {
 func (c *TestConsumer) Push(elements []uint64) { c.push(elements) }
 
 func TestBuffers(t *testing.T) {
-	buffer := NewBuffer(STRIPE_SIZE, &TestConsumer{
+	buffer := newBuffer(STRIPE_SIZE, &TestConsumer{
 		push: func(elements []uint64) {
 			// spew.Dump(elements)
 		},
 	})
 
 	for i := uint64(0); i < STRIPE_SIZE; i++ {
-		buffer.Push(i)
+		buffer.push(i)
 	}
 }
 
 func BenchmarkBuffer(b *testing.B) {
-	buffer := NewBuffer(STRIPE_SIZE, new(BaseConsumer))
+	buffer := newBuffer(STRIPE_SIZE, new(BaseConsumer))
 
 	b.SetBytes(1)
 	for n := 0; n < b.N; n++ {
-		buffer.Push(1)
+		buffer.push(1)
 	}
 }
 
 func BenchmarkBufferParallel(b *testing.B) {
-	buffer := NewBuffer(STRIPE_SIZE, new(BaseConsumer))
+	buffer := newBuffer(STRIPE_SIZE, new(BaseConsumer))
 
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			buffer.Push(1)
+			buffer.push(1)
 		}
 	})
 }
