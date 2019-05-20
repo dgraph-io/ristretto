@@ -1,99 +1,72 @@
 package ring
 
 import (
-	"math/rand"
 	"testing"
-	"time"
 )
 
-type TestConsumer struct {
-	wrap func(func())
-	push func(uint64)
-}
-
-func (c *TestConsumer) Wrap(consume func()) { c.wrap(consume) }
-func (c *TestConsumer) Push(element uint64) { c.push(element) }
-
-func TestBuffer(t *testing.T) {
-	runs := uint64(5)
-
-	// TODO:
-	buffer := NewBuffer(int(runs), &TestConsumer{
-		wrap: func(consume func()) { consume() },
-		push: func(element uint64) {},
-	})
-
-	for i := uint64(1); i <= runs+1; i++ {
-		buffer.Add(i)
-	}
-}
+const (
+	STRIPE_SIZE  = 128
+	STRIPE_COUNT = 16
+)
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Wrap(consume func()) {}
-func (c *BaseConsumer) Push(element uint64) {}
+func (c *BaseConsumer) Push(elements []uint64) {}
 
-func Zipfian(size int) []uint64 {
-	zipf := rand.NewZipf(
-		rand.New(rand.NewSource(time.Now().UnixNano())),
-		1.1, 2, 100000)
-
-	values := make([]uint64, size)
-	for i := range values {
-		values[i] = zipf.Uint64()
-	}
-
-	return values
+type TestConsumer struct {
+	push func([]uint64)
 }
 
-const (
-	BYTES = 1
-)
+func (c *TestConsumer) Push(elements []uint64) { c.push(elements) }
+
+func TestBuffers(t *testing.T) {
+	buffer := NewBuffer(STRIPE_SIZE, &TestConsumer{
+		push: func(elements []uint64) {
+			// spew.Dump(elements)
+		},
+	})
+
+	for i := uint64(0); i < STRIPE_SIZE; i++ {
+		buffer.Push(i)
+	}
+}
+
+func BenchmarkBuffer(b *testing.B) {
+	buffer := NewBuffer(STRIPE_SIZE, new(BaseConsumer))
+
+	b.SetBytes(1)
+	for n := 0; n < b.N; n++ {
+		buffer.Push(1)
+	}
+}
+
+func BenchmarkBufferParallel(b *testing.B) {
+	buffer := NewBuffer(STRIPE_SIZE, new(BaseConsumer))
+
+	b.SetBytes(1)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			buffer.Push(1)
+		}
+	})
+}
 
 func BenchmarkBuffers(b *testing.B) {
-	b.Run("sp-uniform", func(b *testing.B) {
-		buffer := NewBuffers(16, 128, new(BaseConsumer))
+	buffer := NewBuffers(STRIPE_COUNT, STRIPE_SIZE, new(BaseConsumer))
 
-		b.SetBytes(BYTES)
-		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
-			buffer.Add(1)
+	b.SetBytes(1)
+	for n := 0; n < b.N; n++ {
+		buffer.Push(1)
+	}
+}
+
+func BenchmarkBuffersParallel(b *testing.B) {
+	buffer := NewBuffers(STRIPE_COUNT, STRIPE_SIZE, new(BaseConsumer))
+
+	b.SetBytes(1)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			buffer.Push(1)
 		}
-	})
-
-	b.Run("sp-zipfian", func(b *testing.B) {
-		buffer := NewBuffers(16, 128, new(BaseConsumer))
-		values := Zipfian(b.N)
-
-		b.SetBytes(BYTES)
-		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
-			buffer.Add(values[n])
-		}
-	})
-
-	b.Run("mp-uniform", func(b *testing.B) {
-		buffer := NewBuffers(16, 128, new(BaseConsumer))
-
-		b.SetBytes(BYTES)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				buffer.Add(1)
-			}
-		})
-	})
-
-	b.Run("mp-zipfian", func(b *testing.B) {
-		buffer := NewBuffers(16, 128, new(BaseConsumer))
-
-		b.SetBytes(BYTES)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			values := Zipfian(b.N)
-			for i := 0; pb.Next(); i++ {
-				buffer.Add(values[i])
-			}
-		})
 	})
 }
