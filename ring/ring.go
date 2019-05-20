@@ -1,57 +1,60 @@
 package ring
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
 
 type Consumer interface {
-	Wrap(func())
-	Push(uint64)
+	Push([]uint64)
 }
 
 type Buffer struct {
 	cons Consumer
+
 	data []uint64
-	busy int32
-	size int32
-	head int32
+	size uint64
+	head uint64
+	busy uint64
 }
 
-func NewBuffer(size int, consumer Consumer) *Buffer {
+func NewBuffer(size uint64, consumer Consumer) *Buffer {
 	return &Buffer{
 		cons: consumer,
 		data: make([]uint64, size),
-		size: int32(size),
-		head: -1,
+		size: size,
 	}
 }
 
-func (b *Buffer) Add(element uint64) bool {
-	if atomic.CompareAndSwapInt32(&b.busy, 0, 1) {
-		b.head++
-		if b.head == b.size {
-			b.cons.Wrap(func() {
-				for i := range b.data {
-					b.cons.Push(b.data[i])
-				}
-			})
-			b.head = 0
+func (b *Buffer) Push(element uint64) bool {
+	if head := atomic.AddUint64(&b.head, 1); head >= b.size {
+		if atomic.CompareAndSwapUint64(&b.busy, 0, 1) {
+			b.cons.Push(append(b.data[:0:0], b.data...))
+			b.data[0] = element
+			atomic.StoreUint64(&b.head, 0)
+			atomic.StoreUint64(&b.busy, 0)
+			return true
 		}
-
-		b.data[b.head] = element
-		atomic.StoreInt32(&b.busy, 0)
+		return false
+	} else {
+		b.data[head] = element
 		return true
 	}
-	return false
 }
 
 type Buffers struct {
 	rows []*Buffer
+
 	mask uint64
+	busy uint64
+	rand uint64
 }
 
-func NewBuffers(rows, size int, consumer Consumer) *Buffers {
+func NewBuffers(rows, size uint64, consumer Consumer) *Buffers {
 	buffers := &Buffers{
 		rows: make([]*Buffer, rows),
-		mask: uint64(rows) - 1,
+		mask: rows - 1,
+		rand: uint64(time.Now().UnixNano()),
 	}
 
 	for i := range buffers.rows {
@@ -61,10 +64,17 @@ func NewBuffers(rows, size int, consumer Consumer) *Buffers {
 	return buffers
 }
 
-func (b *Buffers) Add(element uint64) bool {
-	for row := element & b.mask; ; row = (row + 1) & b.mask {
-		if b.rows[row].Add(element) {
-			return true
+func (b *Buffers) id() uint64 {
+	b.rand ^= b.rand << 13
+	b.rand ^= b.rand >> 7
+	b.rand ^= b.rand << 17
+	return b.rand & b.mask
+}
+
+func (b *Buffers) Push(element uint64) {
+	for {
+		if b.rows[b.id()].Push(element) {
+			return
 		}
 	}
 }
