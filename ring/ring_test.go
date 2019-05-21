@@ -20,14 +20,23 @@ type TestConsumer struct {
 func (c *TestConsumer) Push(elements []uint64) { c.push(elements) }
 
 func TestBuffers(t *testing.T) {
+	var (
+		drainExpect uint64 = 3
+		drainCount  uint64 = 0
+	)
+
 	buffer := newBuffer(STRIPE_SIZE, &TestConsumer{
 		push: func(elements []uint64) {
-			// spew.Dump(elements)
+			drainCount++
 		},
 	})
 
-	for i := uint64(0); i < STRIPE_SIZE; i++ {
+	for i := uint64(0); i < STRIPE_SIZE*drainExpect; i++ {
 		buffer.push(i)
+	}
+
+	if drainCount != drainExpect {
+		t.Fatalf("expected %d drains, got %d\n", drainExpect, drainCount)
 	}
 }
 
