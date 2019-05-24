@@ -134,14 +134,10 @@ func pushLossy(b *Buffer, element Element) {
 }
 
 func pushLossless(b *Buffer, element Element) {
-	// xorshift random (racy but it's random enough)
-	b.rand ^= b.rand << 13
-	b.rand ^= b.rand >> 7
-	b.rand ^= b.rand << 17
 	// try to find an available stripe
-	for i := b.rand & b.mask; ; i = (i + 1) & b.mask {
-		// try to get exclusive lock on the stripe
+	for i := 0; ; i = (i + 1) & b.mask {
 		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {
+			// try to get exclusive lock on the stripe
 			b.stripes[i].Push(element)
 			// unlock
 			atomic.StoreInt32(&b.stripes[i].busy, 0)
