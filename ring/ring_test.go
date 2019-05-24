@@ -38,10 +38,11 @@ type TestConsumer struct {
 func (c *TestConsumer) Push(elements []Element) { c.push(elements) }
 
 func TestLossy(t *testing.T) {
+	drainCount := 0
 	buffer := NewBuffer(LOSSY, &Config{
 		Consumer: &TestConsumer{
 			push: func(elements []Element) {
-				// TODO
+				drainCount++
 			},
 		},
 		Capacity: 4,
@@ -51,6 +52,10 @@ func TestLossy(t *testing.T) {
 	buffer.Push("2")
 	buffer.Push("3")
 	buffer.Push("4")
+
+	if drainCount != 1 {
+		t.Fatal("drain error")
+	}
 }
 
 func BenchmarkLossy(b *testing.B) {
