@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019 Dgraph Labs, Inc. and Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package ring
 
 import (
@@ -5,77 +21,77 @@ import (
 )
 
 const (
-	STRIPE_SIZE  = 128
-	STRIPE_COUNT = 16
+	// LOSSLESS number of stripes to test with
+	STRIPES = 16
+	// LOSSY/LOSSLESS size of individual stripes
+	CAPACITY = 128
 )
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Push(elements []uint64) {}
+func (c *BaseConsumer) Push(elements []Element) {}
 
 type TestConsumer struct {
-	push func([]uint64)
+	push func([]Element)
 }
 
-func (c *TestConsumer) Push(elements []uint64) { c.push(elements) }
+func (c *TestConsumer) Push(elements []Element) { c.push(elements) }
 
-func TestBuffers(t *testing.T) {
-	var (
-		drainExpect uint64 = 3
-		drainCount  uint64 = 0
-	)
-
-	buffer := newBuffer(STRIPE_SIZE, &TestConsumer{
-		push: func(elements []uint64) {
-			drainCount++
+func TestLossy(t *testing.T) {
+	buffer := NewBuffer(LOSSY, &Config{
+		Consumer: &TestConsumer{
+			push: func(elements []Element) {
+				// TODO
+			},
 		},
+		Capacity: 4,
 	})
 
-	for i := uint64(0); i < STRIPE_SIZE*drainExpect; i++ {
-		buffer.push(i)
-	}
-
-	if drainCount != drainExpect {
-		t.Fatalf("expected %d drains, got %d\n", drainExpect, drainCount)
-	}
+	buffer.Push("1")
+	buffer.Push("2")
+	buffer.Push("3")
+	buffer.Push("4")
 }
 
-func BenchmarkBuffer(b *testing.B) {
-	buffer := newBuffer(STRIPE_SIZE, new(BaseConsumer))
-
-	b.SetBytes(1)
-	for n := 0; n < b.N; n++ {
-		buffer.push(1)
-	}
-}
-
-func BenchmarkBufferParallel(b *testing.B) {
-	buffer := newBuffer(STRIPE_SIZE, new(BaseConsumer))
-
-	b.SetBytes(1)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			buffer.push(1)
+func BenchmarkLossy(b *testing.B) {
+	buffer := NewBuffer(LOSSY, &Config{
+		Consumer: &BaseConsumer{},
+		Capacity: CAPACITY,
+	})
+	b.Run("Singular", func(b *testing.B) {
+		b.SetBytes(1)
+		for n := 0; n < b.N; n++ {
+			buffer.Push("1")
 		}
+	})
+	b.Run("Parallel", func(b *testing.B) {
+		b.SetBytes(1)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				buffer.Push("1")
+			}
+		})
 	})
 }
 
-func BenchmarkBuffers(b *testing.B) {
-	buffer := NewBuffers(STRIPE_COUNT, STRIPE_SIZE, new(BaseConsumer))
-
-	b.SetBytes(1)
-	for n := 0; n < b.N; n++ {
-		buffer.Push(1)
-	}
-}
-
-func BenchmarkBuffersParallel(b *testing.B) {
-	buffer := NewBuffers(STRIPE_COUNT, STRIPE_SIZE, new(BaseConsumer))
-
-	b.SetBytes(1)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			buffer.Push(1)
+func BenchmarkLossless(b *testing.B) {
+	buffer := NewBuffer(LOSSLESS, &Config{
+		Consumer: &BaseConsumer{},
+		Stripes:  STRIPES,
+		Capacity: CAPACITY,
+	})
+	b.Run("Singular", func(b *testing.B) {
+		b.SetBytes(1)
+		for n := 0; n < b.N; n++ {
+			buffer.Push("1")
 		}
+	})
+	b.Run("Parallel", func(b *testing.B) {
+		b.SetBytes(1)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				buffer.Push("1")
+			}
+		})
 	})
 }

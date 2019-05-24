@@ -1,99 +1,150 @@
+/*
+ * Copyright 2019 Dgraph Labs, Inc. and Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package ring
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
+type BufferType byte
+
+const (
+	LOSSY BufferType = iota
+	LOSSLESS
+)
+
+type Element string
+
 // Consumer is the user-defined object responsible for receiving and processing
 // elements in batches when buffers are drained.
 type Consumer interface {
-	Push([]uint64)
+	Push([]Element)
 }
 
-// Buffer is a singular ("stripe") lossy ring buffer.
-type Buffer struct {
-	cons Consumer
-	data []uint64
-	size uint64
-	head uint64
-	busy uint64
+// Stripe is a singular ring buffer that is not concurrent safe by itself.
+type Stripe struct {
+	Consumer Consumer
+	data     []Element
+	head     int
+	capacity int
+	busy     int32
 }
 
-func newBuffer(size uint64, consumer Consumer) *Buffer {
-	return &Buffer{
-		cons: consumer,
-		data: make([]uint64, size),
-		size: size,
+func NewStripe(config *Config) *Stripe {
+	return &Stripe{
+		Consumer: config.Consumer,
+		data:     make([]Element, config.Capacity),
+		capacity: config.Capacity,
 	}
 }
 
-func (b *Buffer) push(element uint64) bool {
-	// increment head to get the next available position in the buffer, and
-	// check if we need to drain
-	if head := atomic.AddUint64(&b.head, 1); head >= b.size {
-		// the buffer is full, so attempt to get exclusive access to the data
-		// so we can push the data to the Consumer
-		if atomic.CompareAndSwapUint64(&b.busy, 0, 1) {
-			// push buffer contents to the consumer
-			b.cons.Push(append(b.data[:0:0], b.data...))
-			// since the old elements are cleared out, place the new element
-			// at the front of the buffer
-			b.data[0] = element
-			// reset buffer head and unlock the busy mutex
-			atomic.StoreUint64(&b.head, 0)
-			atomic.StoreUint64(&b.busy, 0)
-			return true
-		}
-		return false
-	} else {
-		// buffer has space, so just add the element and move along
-		b.data[head] = element
-		return true
+// Push appends an element in the ring buffer and drains (copies elements and
+// sends to Consumer) if full.
+func (s *Stripe) Push(element Element) {
+	s.data[s.head] = element
+	s.head++
+
+	// check if we should drain
+	if s.head >= s.capacity {
+		// copy elements and send to consumer
+		s.Consumer.Push(append(s.data[:0:0], s.data...))
+		s.head = 0
 	}
 }
 
-// Buffers stores a slice of buffers (stripes) and evenly distributes element
-// pushing between them.
+type Config struct {
+	Consumer Consumer
+	Stripes  int
+	Capacity int
+}
+
+// Buffer stores multiple buffers (stripes) and distributes Pushed elements
+// between them to lower contention.
 //
 // This implements the "batching" process described in the BP-Wrapper paper
 // (section III part A).
-type Buffers struct {
-	rows []*Buffer
-	mask uint64
-	busy uint64
-	rand uint64
+type Buffer struct {
+	stripes []*Stripe
+	pool    *sync.Pool
+	push    func(*Buffer, Element)
+	rand    int
+	mask    int
 }
 
-// NewBuffers returns a striped, lossy ring buffer. Rows determines the
-// number of stripes. Size determines the size of each stripe. Consumer is
-// called by each stripe when they are full and trying to drain.
-func NewBuffers(rows, size uint64, consumer Consumer) *Buffers {
-	buffers := &Buffers{
-		rows: make([]*Buffer, rows),
-		mask: rows - 1,
-		rand: uint64(time.Now().UnixNano()),
+// NewBuffer returns a striped ring buffer. The Type can be either LOSSY or
+// LOSSLESS. LOSSY should provide better performance. The Consumer in Config
+// will be called when individual stripes are full and need to drain their
+// elements.
+func NewBuffer(Type BufferType, config *Config) *Buffer {
+	if Type == LOSSY {
+		// LOSSY buffers use a very simple sync.Pool for concurrently reusing
+		// stripes. We do lose some stripes due to GC (unheld items in sync.Pool
+		// are cleared), but the performance gains generally outweigh the small
+		// percentage of elements lost. The performance primarily comes from
+		// low-level runtime functions used in the standard library that aren't
+		// available to us (such as runtime_procPin()).
+		return &Buffer{
+			pool: &sync.Pool{
+				New: func() interface{} { return NewStripe(config) },
+			},
+			push: pushLossy,
+		}
 	}
 
-	for i := range buffers.rows {
-		buffers.rows[i] = newBuffer(size, consumer)
+	// begin LOSSLESS buffer handling
+	//
+	// unlike lossy, lossless manually handles all stripes
+	stripes := make([]*Stripe, config.Stripes)
+	for i := range stripes {
+		stripes[i] = NewStripe(config)
 	}
-
-	return buffers
+	return &Buffer{
+		stripes: stripes,
+		mask:    config.Stripes - 1,
+		rand:    int(time.Now().UnixNano()), // random seed for picking stripes
+		push:    pushLossless,
+	}
 }
 
-func (b *Buffers) id() uint64 {
+// Push adds an element to one of the internal stripes and possibly drains if
+// the stripe becomes full.
+func (b *Buffer) Push(element Element) { b.push(b, element) }
+
+func pushLossy(b *Buffer, element Element) {
+	// reuse or create a new stripe
+	stripe := b.pool.Get().(*Stripe)
+	stripe.Push(element)
+	b.pool.Put(stripe)
+}
+
+func pushLossless(b *Buffer, element Element) {
+	// xorshift random (racy but it's random enough)
 	b.rand ^= b.rand << 13
 	b.rand ^= b.rand >> 7
 	b.rand ^= b.rand << 17
-	return b.rand & b.mask
-}
-
-// Push adds the element to the buffer and will probably, eventually be sent
-// to the Consumer.
-func (b *Buffers) Push(element uint64) {
-	for {
-		if b.rows[b.id()].push(element) {
+	// try to find an available stripe
+	for i := b.rand & b.mask; ; i = (i + 1) & b.mask {
+		// try to get exclusive lock on the stripe
+		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {
+			b.stripes[i].Push(element)
+			// unlock
+			atomic.StoreInt32(&b.stripes[i].busy, 0)
 			return
 		}
 	}
