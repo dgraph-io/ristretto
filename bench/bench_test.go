@@ -20,6 +20,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,17 @@ func (l *Log) Record() []string {
 	}
 }
 
+func Labels() []string {
+	return []string{
+		"name",
+		"label",
+		"para",
+		"ops",
+		"allocs",
+		"bytes",
+	}
+}
+
 // Benchmark is used to generate benchmarks.
 type Benchmark struct {
 	// Name is the cache implementation identifier.
@@ -80,30 +92,40 @@ type Result struct {
 }
 
 func NewResult(result testing.BenchmarkResult) *Result {
+	memops := strings.Trim(strings.Split(result.String(), "\t")[2], " MB/s")
+	opsraw, err := strconv.ParseFloat(memops, 64)
+	if err != nil {
+		panic(err)
+	}
 	return &Result{
-		Ops:    uint64(result.AllocedBytesPerOp()),
-		Allocs: uint64(result.T) / uint64(result.NsPerOp()),
-		Bytes:  result.MemBytes / uint64(result.N),
+		Ops:    uint64(opsraw*100) * 10000,
+		Allocs: uint64(result.AllocsPerOp()),
+		Bytes:  uint64(result.AllocedBytesPerOp()),
 	}
 }
 
-func save(records [][]string) error {
+func Save(logs []*Log) error {
+	records := make([][]string, len(logs))
+	for i := range records {
+		records[i] = logs[i].Record()
+	}
+	records = append([][]string{Labels()}, records...)
 	return csv.NewWriter(os.Stdout).WriteAll(records)
 }
 
-func init() {
+func TestMain(m *testing.M) {
 	benchmarks := []*Benchmark{
 		{"fastcache", "", 1, func() Cache { return NewBenchFastCache(16) }},
+		{"another", "", 1, func() Cache { return NewBenchFastCache(16) }},
 	}
-
 	logs := make([]*Log, 0)
-
 	for _, benchmark := range benchmarks {
-		result := testing.Benchmark(GetSame(benchmark))
-		fmt.Println(strings.Split(result.String(), "\t")[2][2:])
 		logs = append(logs, &Log{
 			Benchmark: benchmark,
-			Result:    NewResult(result),
+			Result: NewResult(
+				testing.Benchmark(GetSame(benchmark)),
+			),
 		})
 	}
+	Save(logs)
 }
