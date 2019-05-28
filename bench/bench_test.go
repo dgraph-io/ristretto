@@ -18,101 +18,52 @@ package bench
 
 import (
 	"encoding/csv"
+	"flag"
 	"fmt"
+	"log"
 	"os"
-	"strconv"
-	"strings"
 	"testing"
 )
 
-type (
-	Cache interface {
-		Get(string) interface{}
-		Set(string, interface{})
-		Del(string)
-		Bench() *Stats
-	}
-	Stats struct {
-		Reqs uint64
-		Hits uint64
-	}
-)
+// Rather than just writing to stdout, we can use a user-defined file location
+// for saving benchmark data so we can use stdout for logs.
+var PATH = flag.String("path", "stats.csv", "Filepath for benchmark CSV data.")
 
-// Log is the primary unit of the CSV output files.
-type Log struct {
-	Benchmark *Benchmark
-	Result    *Result
+func init() {
+	flag.Parse()
+
+	h := newBigCacheHasher()
+	fmt.Printf("%2x\n", h.Sum64("testing"))
 }
 
-// Record generates a CSV record.
-func (l *Log) Record() []string {
-	return []string{
-		l.Benchmark.Name,
-		l.Benchmark.Label,
-		fmt.Sprintf("%d", l.Benchmark.Para),
-		fmt.Sprintf("%d", l.Result.Ops),
-		fmt.Sprintf("%d", l.Result.Allocs),
-		fmt.Sprintf("%d", l.Result.Bytes),
+// save writes all logs to the PATH file in CSV format.
+func save(logs []*Log) error {
+	// will hold all log records with the first row being column labels
+	records := make([][]string, 0)
+	for _, log := range logs {
+		records = append(records, log.Record())
 	}
-}
-
-func Labels() []string {
-	return []string{"name", "label", "para", "ops", "allocs", "bytes"}
-}
-
-// Benchmark is used to generate benchmarks.
-type Benchmark struct {
-	// Name is the cache implementation identifier.
-	Name string
-	// Label is for denoting variations within implementations.
-	Label string
-	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
-	Para int
-	// Create is a lazily evaluated function for creating new instances of the
-	// underlying cache.
-	Create func() Cache
-}
-
-// Result is a wrapper for testing.BenchmarkResult that adds fields needed for
-// our CSV data.
-type Result struct {
-	// Ops is the operations processed per second.
-	Ops uint64
-	// Allocs is the number of allocations per iteration.
-	Allocs uint64
-	// Bytes is the number of bytes allocated per iteration.
-	Bytes uint64
-}
-
-func NewResult(result testing.BenchmarkResult) *Result {
-	memops := strings.Trim(strings.Split(result.String(), "\t")[2], " MB/s")
-	opsraw, err := strconv.ParseFloat(memops, 64)
-	if err != nil {
-		panic(err)
-	}
-	return &Result{
-		Ops:    uint64(opsraw*100) * 10000,
-		Allocs: uint64(result.AllocsPerOp()),
-		Bytes:  uint64(result.AllocedBytesPerOp()),
-	}
-}
-
-func Save(logs []*Log) error {
-	records := make([][]string, len(logs))
-	for i := range records {
-		records[i] = logs[i].Record()
-	}
+	// write csv data
 	records = append([][]string{Labels()}, records...)
-	return csv.NewWriter(os.Stdout).WriteAll(records)
+	// create file for writing
+	file, err := os.OpenFile(*PATH, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer file.Close()
+	return csv.NewWriter(file).WriteAll(records)
 }
 
+// TestMain is the entry point for running this benchmark suite.
 func TestMain(m *testing.M) {
+	logs := make([]*Log, 0)
 	benchmarks := []*Benchmark{
 		{"fastcache", "", 1, func() Cache { return NewBenchFastCache(16) }},
-		{"another", "", 1, func() Cache { return NewBenchFastCache(16) }},
+		{"bigcache", "", 1, func() Cache { return NewBenchBigCache(16) }},
 	}
-	logs := make([]*Log, 0)
+
 	for _, benchmark := range benchmarks {
+		fmt.Println("bench: ", benchmark)
 		logs = append(logs, &Log{
 			Benchmark: benchmark,
 			Result: NewResult(
@@ -120,5 +71,6 @@ func TestMain(m *testing.M) {
 			),
 		})
 	}
-	Save(logs)
+
+	save(logs)
 }

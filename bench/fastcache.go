@@ -31,14 +31,12 @@ func NewBenchFastCache(capacity int) *BenchFastCache {
 
 func (c *BenchFastCache) Get(key string) interface{} {
 	c.stats.Reqs++
-
 	var data []byte
 	c.cache.Get(data, []byte(key))
-
+	// entry found
 	if data != nil {
 		c.stats.Hits++
 	}
-
 	return data
 }
 
