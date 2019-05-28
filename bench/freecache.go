@@ -16,23 +16,29 @@
 
 package bench
 
-import "github.com/VictoriaMetrics/fastcache"
+import (
+	"log"
 
-type BenchFastCache struct {
-	cache *fastcache.Cache
+	"github.com/coocood/freecache"
+)
+
+type BenchFreeCache struct {
+	cache *freecache.Cache
 	stats Stats
 }
 
-func NewBenchFastCache(capacity int) *BenchFastCache {
-	return &BenchFastCache{
-		cache: fastcache.New(capacity),
+func NewBenchFreeCache(capacity int) *BenchFreeCache {
+	return &BenchFreeCache{
+		cache: freecache.NewCache(capacity),
 	}
 }
 
-func (c *BenchFastCache) Get(key string) interface{} {
+func (c *BenchFreeCache) Get(key string) interface{} {
 	c.stats.Reqs++
-	var value []byte
-	c.cache.Get(value, []byte(key))
+	value, err := c.cache.Get([]byte(key))
+	if err != nil {
+		log.Panic(err)
+	}
 	// value found
 	if value != nil {
 		c.stats.Hits++
@@ -40,14 +46,16 @@ func (c *BenchFastCache) Get(key string) interface{} {
 	return value
 }
 
-func (c *BenchFastCache) Set(key string, value interface{}) {
-	c.cache.Set([]byte(key), []byte("*"))
+func (c *BenchFreeCache) Set(key string, value interface{}) {
+	if err := c.cache.Set([]byte(key), value.([]byte), 0); err != nil {
+		log.Panic(err)
+	}
 }
 
-func (c *BenchFastCache) Del(key string) {
+func (c *BenchFreeCache) Del(key string) {
 	c.cache.Del([]byte(key))
 }
 
-func (c *BenchFastCache) Bench() *Stats {
+func (c *BenchFreeCache) Bench() *Stats {
 	return &c.stats
 }

@@ -52,15 +52,15 @@ func NewBenchBigCache(capacity int) *BenchBigCache {
 
 func (c *BenchBigCache) Get(key string) interface{} {
 	c.stats.Reqs++
-	data, err := c.cache.Get(key)
+	value, err := c.cache.Get(key)
 	if err != nil {
 		log.Panic(err)
 	}
-	// entry found
-	if data != nil {
+	// value found
+	if value != nil {
 		c.stats.Hits++
 	}
-	return data
+	return value
 }
 
 func (c *BenchBigCache) Set(key string, value interface{}) {

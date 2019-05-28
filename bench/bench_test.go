@@ -31,9 +31,6 @@ var PATH = flag.String("path", "stats.csv", "Filepath for benchmark CSV data.")
 
 func init() {
 	flag.Parse()
-
-	h := newBigCacheHasher()
-	fmt.Printf("%2x\n", h.Sum64("testing"))
 }
 
 // save writes all logs to the PATH file in CSV format.
@@ -60,10 +57,11 @@ func TestMain(m *testing.M) {
 	benchmarks := []*Benchmark{
 		{"fastcache", "", 1, func() Cache { return NewBenchFastCache(16) }},
 		{"bigcache", "", 1, func() Cache { return NewBenchBigCache(16) }},
+		{"freecache", "", 1, func() Cache { return NewBenchFreeCache(16) }},
 	}
 
 	for _, benchmark := range benchmarks {
-		fmt.Println("bench: ", benchmark)
+		fmt.Println("bench: ", benchmark.Name)
 		logs = append(logs, &Log{
 			Benchmark: benchmark,
 			Result: NewResult(
