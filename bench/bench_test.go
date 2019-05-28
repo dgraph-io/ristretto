@@ -57,14 +57,7 @@ func (l *Log) Record() []string {
 }
 
 func Labels() []string {
-	return []string{
-		"name",
-		"label",
-		"para",
-		"ops",
-		"allocs",
-		"bytes",
-	}
+	return []string{"name", "label", "para", "ops", "allocs", "bytes"}
 }
 
 // Benchmark is used to generate benchmarks.
