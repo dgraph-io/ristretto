@@ -19,10 +19,10 @@ package bench
 import (
 	"encoding/csv"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"testing"
+	"time"
 )
 
 // Rather than just writing to stdout, we can use a user-defined file location
@@ -43,10 +43,12 @@ func save(logs []*Log) error {
 	// write csv data
 	records = append([][]string{Labels()}, records...)
 	// create file for writing
-	file, err := os.OpenFile(*PATH, os.O_RDWR|os.O_CREATE, 0666)
+	file, err := os.OpenFile(*PATH, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		log.Panic(err)
 	}
+	// clear contents
+	file.Truncate(0)
 	defer file.Close()
 	return csv.NewWriter(file).WriteAll(records)
 }
@@ -54,20 +56,34 @@ func save(logs []*Log) error {
 // TestMain is the entry point for running this benchmark suite.
 func TestMain(m *testing.M) {
 	logs := make([]*Log, 0)
-	benchmarks := []*Benchmark{
-		{"fastcache", "", 1, func() Cache { return NewBenchFastCache(16) }},
-		{"bigcache", "", 1, func() Cache { return NewBenchBigCache(16) }},
-		{"freecache", "", 1, func() Cache { return NewBenchFreeCache(16) }},
-	}
+	benchmarks := []*Benchmark{{
+		"fastCache      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchFastCache(16) },
+	}, {
+		"bigCache       ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchBigCache(16) },
+	}, {
+		"freeCache      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchFreeCache(16) },
+	}, {
+		"baseMutex      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchBaseMutex(16) },
+	}, {
+		"baseMutexWrap  ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchBaseMutexWrap(16) },
+	}}
 
 	for _, benchmark := range benchmarks {
-		fmt.Println("bench: ", benchmark.Name)
-		logs = append(logs, &Log{
-			Benchmark: benchmark,
-			Result: NewResult(
-				testing.Benchmark(GetSame(benchmark)),
-			),
-		})
+		log.Printf("running: %s (%s) * %d",
+			benchmark.Name,
+			benchmark.Label,
+			benchmark.Para)
+		n := time.Now()
+		// get testing.BenchMarkResult
+		result := testing.Benchmark(benchmark.Bencher(benchmark))
+		// append to logs
+		logs = append(logs, &Log{benchmark, NewResult(result)})
+		log.Printf("\t ... %v\n", time.Since(n))
 	}
 
 	save(logs)
