@@ -24,7 +24,7 @@ func GetSame(benchmark *Benchmark) func(b *testing.B) {
 	return func(b *testing.B) {
 		b.Run("single", func(b *testing.B) {
 			cache := benchmark.Create()
-			cache.Set("*", "*")
+			cache.Set("*", []byte("*"))
 			b.SetBytes(1)
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
@@ -33,7 +33,7 @@ func GetSame(benchmark *Benchmark) func(b *testing.B) {
 		})
 		b.Run("multiple", func(b *testing.B) {
 			cache := benchmark.Create()
-			cache.Set("*", "*")
+			cache.Set("*", []byte("*"))
 			b.SetParallelism(benchmark.Para)
 			b.SetBytes(1)
 			b.ResetTimer()
