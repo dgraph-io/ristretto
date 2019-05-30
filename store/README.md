@@ -11,18 +11,11 @@ type Map interface {
 }
 ```
 
-`store` will eventually contain multiple hash map implementations fulfilling
-this interface. The benefit of this will be increased performance, as certain
-types of hash maps work better with certain types of data distributions.
+This package will eventually contain multiple hash map implementations fulfilling
+the `store.Map` interface. The benefit of this will be increased performance and 
+flexibility, as certain hash map implementations are better suited for certain 
+data distributions.
 
-**NOTE**: The `store.Map` type does not handle admission and eviction. That is
-left up to the user. The interface is designed to be as small as possible and
-still usable for a concurrent cache backend.
-
-## eviction
-
-Eviction is done with the `Run(...)` and `Del(key)` methods.
-
-The `Run(...)` method randomly applies the parameter function to elements in
-the hash map. The user can count iterations and randomly sample entries for
-LRU/LFU eviction.  
+The `store.Map` interface doesn't handle admission or eviction. It's just a
+simple abstraction meant to decouple the storage part of Ristretto from the rest
+of the components.

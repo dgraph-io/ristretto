@@ -16,11 +16,28 @@
 
 package store
 
+// Map is the interface fulfilled by all hash map implementations in the store
+// package. Some hash map implementations are better suited for certain data
+// distributions than others, so this allows us to abstract that out for use
+// in Ristretto.
+//
+// Every Map is safe for concurrent usage.
 type Map interface {
+	// Get returns the value associated with the key parameter.
 	Get(string) interface{}
+	// Set adds the key-value pair to the Map or updates the value if it's
+	// already present.
 	Set(string, interface{})
+	// Del deletes the key-value pair from the Map.
 	Del(string)
+	// Run applies the function parameter to random key-value pairs. No key
+	// will be visited more than once. If the function returns false, the
+	// iteration stops. If the function returns true, the iteration will
+	// continue until every key has been visited once.
 	Run(func(interface{}, interface{}) bool)
 }
 
-func NewMap() Map { return NewDefault() }
+// NewMap returns the Default Map implementation.
+func NewMap() Map {
+	return NewDefault()
+}
