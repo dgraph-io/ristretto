@@ -57,19 +57,19 @@ func save(logs []*Log) error {
 func TestMain(m *testing.M) {
 	logs := make([]*Log, 0)
 	benchmarks := []*Benchmark{{
-		"fastCache      ", "get-same", GetSame, 10,
+		"fastCache      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchFastCache(16) },
 	}, {
-		"bigCache       ", "get-same", GetSame, 10,
+		"bigCache       ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchBigCache(16) },
 	}, {
-		"freeCache      ", "get-same", GetSame, 10,
+		"freeCache      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchFreeCache(16) },
 	}, {
-		"baseMutex      ", "get-same", GetSame, 10,
+		"baseMutex      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchBaseMutex(16) },
 	}, {
-		"ristretto      ", "get-same", GetSame, 10,
+		"ristretto      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchRistretto(16) },
 	}}
 
