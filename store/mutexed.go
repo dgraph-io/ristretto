@@ -16,11 +16,41 @@
 
 package store
 
-type Map interface {
-	Get(string) interface{}
-	Set(string, interface{})
-	Del(string)
-	Run(func(interface{}, interface{}) bool)
+import "sync"
+
+type Mutexed struct {
+	sync.RWMutex
+	data map[string]interface{}
 }
 
-func NewMap() Map { return NewDefault() }
+func NewMutexed() *Mutexed {
+	return &Mutexed{data: make(map[string]interface{})}
+}
+
+func (m *Mutexed) Get(key string) interface{} {
+	m.RLock()
+	defer m.RUnlock()
+	return m.data[key]
+}
+
+func (m *Mutexed) Set(key string, value interface{}) {
+	m.Lock()
+	defer m.Unlock()
+	m.data[key] = value
+}
+
+func (m *Mutexed) Del(key string) {
+	m.Lock()
+	defer m.Unlock()
+	delete(m.data, key)
+}
+
+func (m *Mutexed) Run(f func(interface{}, interface{}) bool) {
+	m.RLock()
+	defer m.RUnlock()
+	for k, v := range m.data {
+		if !f(k, v) {
+			return
+		}
+	}
+}
