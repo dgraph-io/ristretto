@@ -19,25 +19,26 @@ package bench
 import "github.com/dgraph-io/ristretto"
 
 type BenchRistretto struct {
-	cache *ristretto.Cache
+	cache ristretto.Cache
 }
 
 func NewBenchRistretto(capacity int) *BenchRistretto {
 	return &BenchRistretto{
-		cache: ristretto.NewCache(uint64(capacity)),
+		cache: ristretto.New(capacity),
 	}
 }
 
 func (c *BenchRistretto) Get(key string) interface{} {
-	return c.cache.Get(key)
+	value, _ := c.cache.Get([]byte(key))
+	return value
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
-	c.cache.Set(key, value)
+	c.cache.Set([]byte(key), value.([]byte))
 }
 
 func (c *BenchRistretto) Del(key string) {
-	c.cache.Del(key)
+	//c.cache.Del(key)
 }
 
 func (c *BenchRistretto) Bench() *Stats {
