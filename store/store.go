@@ -6,7 +6,7 @@ type Map interface {
 	Get(string) interface{}
 	Set(string, interface{})
 	Del(string)
-	Filter(func(interface{}, interface{}) bool)
+	Run(func(interface{}, interface{}) bool)
 }
 
 type Default struct {
@@ -30,6 +30,6 @@ func (m *Default) Del(key string) {
 	m.Delete(key)
 }
 
-func (m *Default) Filter(f func(key, value interface{}) bool) {
+func (m *Default) Run(f func(key, value interface{}) bool) {
 	m.Range(f)
 }
