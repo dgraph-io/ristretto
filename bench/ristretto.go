@@ -16,40 +16,30 @@
 
 package bench
 
-import (
-	"log"
+import "github.com/dgraph-io/ristretto"
 
-	"github.com/coocood/freecache"
-)
-
-type BenchFreeCache struct {
-	cache *freecache.Cache
+type BenchRistretto struct {
+	cache *ristretto.Cache
 }
 
-func NewBenchFreeCache(capacity int) *BenchFreeCache {
-	return &BenchFreeCache{
-		cache: freecache.NewCache(capacity),
+func NewBenchRistretto(capacity int) *BenchRistretto {
+	return &BenchRistretto{
+		cache: ristretto.NewCache(uint64(capacity)),
 	}
 }
 
-func (c *BenchFreeCache) Get(key string) interface{} {
-	value, err := c.cache.Get([]byte(key))
-	if err != nil {
-		log.Panic(err)
-	}
-	return value
+func (c *BenchRistretto) Get(key string) interface{} {
+	return c.cache.Get(key)
 }
 
-func (c *BenchFreeCache) Set(key string, value interface{}) {
-	if err := c.cache.Set([]byte(key), value.([]byte), 0); err != nil {
-		log.Panic(err)
-	}
+func (c *BenchRistretto) Set(key string, value interface{}) {
+	c.cache.Set(key, value)
 }
 
-func (c *BenchFreeCache) Del(key string) {
-	c.cache.Del([]byte(key))
+func (c *BenchRistretto) Del(key string) {
+	c.cache.Del(key)
 }
 
-func (c *BenchFreeCache) Bench() *Stats {
+func (c *BenchRistretto) Bench() *Stats {
 	return nil
 }

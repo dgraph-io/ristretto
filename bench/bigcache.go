@@ -25,7 +25,6 @@ import (
 
 type BenchBigCache struct {
 	cache *bigcache.BigCache
-	stats Stats
 }
 
 func NewBenchBigCache(capacity int) *BenchBigCache {
@@ -51,14 +50,9 @@ func NewBenchBigCache(capacity int) *BenchBigCache {
 }
 
 func (c *BenchBigCache) Get(key string) interface{} {
-	c.stats.Reqs++
 	value, err := c.cache.Get(key)
 	if err != nil {
 		log.Panic(err)
-	}
-	// value found
-	if value != nil {
-		c.stats.Hits++
 	}
 	return value
 }
@@ -74,7 +68,7 @@ func (c *BenchBigCache) Del(key string) {
 }
 
 func (c *BenchBigCache) Bench() *Stats {
-	return &c.stats
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

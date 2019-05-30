@@ -20,7 +20,6 @@ import "github.com/VictoriaMetrics/fastcache"
 
 type BenchFastCache struct {
 	cache *fastcache.Cache
-	stats Stats
 }
 
 func NewBenchFastCache(capacity int) *BenchFastCache {
@@ -30,13 +29,8 @@ func NewBenchFastCache(capacity int) *BenchFastCache {
 }
 
 func (c *BenchFastCache) Get(key string) interface{} {
-	c.stats.Reqs++
 	var value []byte
 	c.cache.Get(value, []byte(key))
-	// value found
-	if value != nil {
-		c.stats.Hits++
-	}
 	return value
 }
 
@@ -49,5 +43,5 @@ func (c *BenchFastCache) Del(key string) {
 }
 
 func (c *BenchFastCache) Bench() *Stats {
-	return &c.stats
+	return nil
 }

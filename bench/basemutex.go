@@ -38,12 +38,8 @@ func NewBenchBaseMutex(capacity int) *BenchBaseMutex {
 func (c *BenchBaseMutex) Get(key string) interface{} {
 	c.Lock()
 	defer c.Unlock()
-	c.stats.Reqs++
 	value, _ := c.cache.Get(key)
 	// value found
-	if value != nil {
-		c.stats.Hits++
-	}
 	return value
 }
 
@@ -58,7 +54,7 @@ func (c *BenchBaseMutex) Del(key string) {
 }
 
 func (c *BenchBaseMutex) Bench() *Stats {
-	return &c.stats
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
