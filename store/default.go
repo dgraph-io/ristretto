@@ -16,13 +16,29 @@
 
 package store
 
-type Map interface {
-	Get(string) interface{}
-	Set(string, interface{})
-	Del(string)
-	Run(func(interface{}, interface{}) bool)
+import "sync"
+
+type Default struct {
+	*sync.Map
 }
 
-func NewMap() Map {
-	return NewDefault()
+func NewDefault() Map {
+	return &Default{&sync.Map{}}
+}
+
+func (m *Default) Get(key string) interface{} {
+	value, _ := m.Load(key)
+	return value
+}
+
+func (m *Default) Set(key string, value interface{}) {
+	m.Store(key, value)
+}
+
+func (m *Default) Del(key string) {
+	m.Delete(key)
+}
+
+func (m *Default) Run(f func(key, value interface{}) bool) {
+	m.Range(f)
 }
