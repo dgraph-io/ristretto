@@ -21,12 +21,16 @@ import (
 	"testing"
 )
 
-func TestDefault(t *testing.T) {
+func TestMap(t *testing.T) {
 	GenerateTest(func() Map { return NewMap() })(t)
 }
 
-func TestMutexed(t *testing.T) {
-	GenerateTest(func() Map { return NewMutexed() })(t)
+func TestSyncMap(t *testing.T) {
+	GenerateTest(func() Map { return NewSyncMap() })(t)
+}
+
+func TestLockedMap(t *testing.T) {
+	GenerateTest(func() Map { return NewLockedMap() })(t)
 }
 
 func GenerateTest(create func() Map) func(*testing.T) {
