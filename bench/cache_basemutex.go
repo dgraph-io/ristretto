@@ -25,7 +25,6 @@ import (
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
-	stats Stats
 }
 
 func NewBenchBaseMutex(capacity int) *BenchBaseMutex {

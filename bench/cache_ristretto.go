@@ -16,7 +16,11 @@
 
 package bench
 
-import "github.com/dgraph-io/ristretto"
+import (
+	"log"
+
+	"github.com/dgraph-io/ristretto"
+)
 
 type BenchRistretto struct {
 	cache ristretto.Cache
@@ -34,7 +38,9 @@ func (c *BenchRistretto) Get(key string) interface{} {
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
-	c.cache.Set([]byte(key), value.([]byte))
+	if err := c.cache.Set([]byte(key), value.([]byte)); err != nil {
+		log.Panic(err)
+	}
 }
 
 func (c *BenchRistretto) Del(key string) {
