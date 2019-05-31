@@ -16,18 +16,21 @@
 
 package bench
 
-// Cache needs to be fulfilled by the cache implementations in order for the
-// benchmarks to run properly.
-type Cache interface {
-	Get(string) interface{}
-	Set(string, interface{})
-	Del(string)
-	Bench() *Stats
-}
+import (
+	"testing"
+)
 
-// Stats holds hit/miss information after a round of benchmark iterations has
-// been ran.
-type Stats struct {
-	Reqs uint64
-	Hits uint64
+func GetSame(benchmark *Benchmark) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := benchmark.Create()
+		cache.Set("*", []byte("*"))
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				cache.Get("*")
+			}
+		})
+	}
 }
