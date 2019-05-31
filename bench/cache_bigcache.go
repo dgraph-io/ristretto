@@ -64,7 +64,9 @@ func (c *BenchBigCache) Set(key string, value interface{}) {
 }
 
 func (c *BenchBigCache) Del(key string) {
-	c.cache.Delete(key)
+	if err := c.cache.Delete(key); err != nil {
+		log.Panic(err)
+	}
 }
 
 func (c *BenchBigCache) Bench() *Stats {

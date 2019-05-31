@@ -45,10 +45,12 @@ func save(logs []*Log) error {
 	// create file for writing
 	file, err := os.OpenFile(*PATH, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	// clear contents
-	file.Truncate(0)
+	if err = file.Truncate(0); err != nil {
+		return err
+	}
 	defer file.Close()
 	return csv.NewWriter(file).WriteAll(records)
 }
@@ -85,5 +87,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// save CSV to disk
-	save(logs)
+	if err := save(logs); err != nil {
+		log.Panic(err)
+	}
 }
