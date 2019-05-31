@@ -19,7 +19,6 @@ package bench
 import (
 	"sync"
 
-	"github.com/dgraph-io/ristretto/ring"
 	"github.com/golang/groupcache/lru"
 )
 
@@ -55,52 +54,4 @@ func (c *BenchBaseMutex) Del(key string) {
 
 func (c *BenchBaseMutex) Bench() *Stats {
 	return nil
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type BenchBaseMutexWrap struct {
-	sync.RWMutex
-	cache  *lru.Cache
-	buffer *ring.Buffer
-	stats  Stats
-}
-
-func NewBenchBaseMutexWrap(capacity int) *BenchBaseMutexWrap {
-	cache := &BenchBaseMutexWrap{
-		cache: lru.New(capacity),
-	}
-	cache.buffer = ring.NewBuffer(ring.LOSSY, &ring.Config{
-		Consumer: cache,
-		Capacity: capacity * 16,
-	})
-	return cache
-}
-
-// TODO: can't use groupcache lru for this because we need access to the linked
-//       list for bp-wrapper
-func (c *BenchBaseMutexWrap) Push(keys []ring.Element) {
-	c.Lock()
-	defer c.Unlock()
-	/*
-		for _, key := range keys {
-			// move elements to the front of the list
-		}
-	*/
-}
-
-func (c *BenchBaseMutexWrap) Get(key string) interface{} {
-	return nil
-}
-
-func (c *BenchBaseMutexWrap) Set(key string, value interface{}) {
-
-}
-
-func (c *BenchBaseMutexWrap) Del(key string) {
-
-}
-
-func (c *BenchBaseMutexWrap) Bench() *Stats {
-	return &c.stats
 }

@@ -75,9 +75,7 @@ func TestMain(m *testing.M) {
 
 	for _, benchmark := range benchmarks {
 		log.Printf("running: %s (%s) * %d",
-			benchmark.Name,
-			benchmark.Label,
-			benchmark.Para)
+			benchmark.Name, benchmark.Label, benchmark.Para)
 		n := time.Now()
 		// get testing.BenchMarkResult
 		result := testing.Benchmark(benchmark.Bencher(benchmark))
@@ -86,5 +84,6 @@ func TestMain(m *testing.M) {
 		log.Printf("\t ... %v\n", time.Since(n))
 	}
 
+	// save CSV to disk
 	save(logs)
 }
