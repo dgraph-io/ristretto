@@ -53,6 +53,9 @@ func TestMain(m *testing.M) {
 		"baseMutex      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchBaseMutex(16) },
 	}, {
+		"goburrow       ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchGoburrow(16) },
+	}, {
 		"ristretto      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchRistretto(16) },
 	}}

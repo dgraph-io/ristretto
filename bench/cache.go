@@ -25,6 +25,7 @@ import (
 	"github.com/allegro/bigcache"
 	"github.com/coocood/freecache"
 	"github.com/dgraph-io/ristretto"
+	goburrow "github.com/goburrow/cache"
 	"github.com/golang/groupcache/lru"
 )
 
@@ -242,5 +243,36 @@ func (c *BenchFreeCache) Del(key string) {
 }
 
 func (c *BenchFreeCache) Bench() *Stats {
+	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type BenchGoburrow struct {
+	cache goburrow.Cache
+}
+
+func NewBenchGoburrow(capacity int) *BenchGoburrow {
+	return &BenchGoburrow{
+		cache: goburrow.New(
+			goburrow.WithMaximumSize(capacity),
+		),
+	}
+}
+
+func (c *BenchGoburrow) Get(key string) interface{} {
+	value, _ := c.cache.GetIfPresent(key)
+	return value
+}
+
+func (c *BenchGoburrow) Set(key string, value interface{}) {
+	c.cache.Put(key, value)
+}
+
+func (c *BenchGoburrow) Del(key string) {
+	c.cache.Invalidate(key)
+}
+
+func (c *BenchGoburrow) Bench() *Stats {
 	return nil
 }
