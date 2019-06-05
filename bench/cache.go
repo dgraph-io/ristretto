@@ -48,28 +48,25 @@ type Stats struct {
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchRistretto struct {
-	cache ristretto.Cache
+	cache *ristretto.Cache
 }
 
 func NewBenchRistretto(capacity int) *BenchRistretto {
 	return &BenchRistretto{
-		cache: ristretto.New(capacity),
+		cache: ristretto.NewCache(uint64(capacity)),
 	}
 }
 
 func (c *BenchRistretto) Get(key string) interface{} {
-	value, _ := c.cache.Get([]byte(key))
-	return value
+	return c.cache.Get(key)
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
-	if err := c.cache.Set([]byte(key), value.([]byte)); err != nil {
-		log.Panic(err)
-	}
+	c.cache.Set(key, value)
 }
 
 func (c *BenchRistretto) Del(key string) {
-	//c.cache.Del(key)
+	c.cache.Del(key)
 }
 
 func (c *BenchRistretto) Bench() *Stats {
@@ -140,10 +137,7 @@ func NewBenchBigCache(capacity int) *BenchBigCache {
 }
 
 func (c *BenchBigCache) Get(key string) interface{} {
-	value, err := c.cache.Get(key)
-	if err != nil {
-		log.Panic(err)
-	}
+	value, _ := c.cache.Get(key)
 	return value
 }
 

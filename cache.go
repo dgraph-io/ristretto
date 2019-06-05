@@ -17,48 +17,119 @@
 package ristretto
 
 import (
-	"errors"
 	"sync"
+	"sync/atomic"
 
-	"github.com/golang/groupcache/lru"
+	"github.com/dgraph-io/ristretto/ring"
+	"github.com/dgraph-io/ristretto/store"
 )
 
-//Cache interface
-type Cache interface {
-	Get(key []byte) ([]byte, error)
-	Set(key []byte, value []byte) error
+type Cache struct {
+	meta     *Meta
+	data     store.Map
+	size     uint64
+	capacity uint64
+	buffer   *ring.Buffer
 }
 
-//BasicCache implementation
-type BasicCache struct {
-	c    *lru.Cache
-	lock sync.Mutex
-}
-
-//Get a value from cache
-func (r *BasicCache) Get(key []byte) ([]byte, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	v, ok := r.c.Get(string(key))
-	if ok {
-		return v.([]byte), nil
+func NewCache(capacity uint64) *Cache {
+	meta := &Meta{
+		data: make(map[string]*uint64, capacity),
 	}
-	return nil, errors.New("key not found")
-}
-
-//Set a value in cache for a key
-func (r *BasicCache) Set(key, value []byte) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	r.c.Add(string(key), value)
-	return nil
-}
-
-//New a BasicCache
-func New(size int, opts ...func(*BasicCache)) *BasicCache {
-	r := &BasicCache{c: lru.New(size)}
-	for _, opt := range opts {
-		opt(r)
+	return &Cache{
+		meta:     meta,
+		data:     store.NewMap(),
+		size:     0,
+		capacity: capacity,
+		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
+			Consumer: meta,
+			Capacity: 1024 * 2,
+		}),
 	}
-	return r
+}
+
+func (c *Cache) Get(key string) interface{} {
+	// record access for admission/eviction tracking
+	c.buffer.Push(ring.Element(key))
+	// return value from data store
+	return c.data.Get(key)
+}
+
+func (c *Cache) Set(key string, value interface{}) {
+	// if already exists, just update the value
+	if c.data.Get(key) != nil {
+		// TODO: test whether we should update the metadata on a set operation,
+		//       my gut feeling is that this is better for hit ratio
+		c.buffer.Push(ring.Element(key))
+		c.data.Set(key, value)
+		return
+	}
+	// check if the cache is full and we need to evict
+	if atomic.AddUint64(&c.size, 1) >= c.capacity {
+		// delete the victim from data store
+		c.data.Del(c.meta.Victim())
+	}
+	// record the access *after* possible eviction, so as we don't immediately
+	// evict the item just added (in this function call, anyway - eviction
+	// policies such as hyperbolic caching adjust for this)
+	c.buffer.Push(ring.Element(key))
+	// save new item to data store
+	c.data.Set(key, value)
+}
+
+func (c *Cache) Del(key string) {
+	// TODO
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type Meta struct {
+	sync.Mutex
+	data map[string]*uint64
+}
+
+func (m *Meta) Record(key string) {
+	if counter, exists := m.data[key]; exists {
+		*counter++
+		return
+	}
+	// make a new counter for this key
+	counter := uint64(1)
+	m.data[key] = &counter
+}
+
+func (m *Meta) Push(keys []ring.Element) {
+	m.Lock()
+	defer m.Unlock()
+	for _, key := range keys {
+		m.Record(string(key))
+	}
+}
+
+// SAMPLE_SIZE is the number of items to sample when running the eviction
+// process (either LRU or LFU).
+const SAMPLE_SIZE = 5
+
+// Victim evicts a key and returns it.
+func (m *Meta) Victim() string {
+	m.Lock()
+	defer m.Unlock()
+	victim := struct {
+		key   string
+		count uint64
+	}{}
+	i := 0
+	for key, counter := range m.data {
+		count := atomic.LoadUint64(counter)
+		if i == 0 || count < victim.count {
+			victim.key, victim.count = key, count
+		}
+		if i == SAMPLE_SIZE {
+			break
+		}
+		i++
+	}
+	// delete the victim and finish
+	delete(m.data, victim.key)
+	return victim.key
 }
