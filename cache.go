@@ -17,15 +17,20 @@
 package ristretto
 
 import (
-	"sync"
 	"sync/atomic"
 
+	"github.com/dgraph-io/ristretto/bloom"
 	"github.com/dgraph-io/ristretto/ring"
 	"github.com/dgraph-io/ristretto/store"
 )
 
+type Meta interface {
+	ring.Consumer
+	Evict() string
+}
+
 type Cache struct {
-	meta     *Meta
+	meta     Meta
 	data     store.Map
 	size     uint64
 	capacity uint64
@@ -33,9 +38,7 @@ type Cache struct {
 }
 
 func NewCache(capacity uint64) *Cache {
-	meta := &Meta{
-		data: make(map[string]*uint64, capacity),
-	}
+	meta := bloom.NewCounter(5)
 	return &Cache{
 		meta:     meta,
 		data:     store.NewMap(),
@@ -67,7 +70,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	// check if the cache is full and we need to evict
 	if atomic.AddUint64(&c.size, 1) >= c.capacity {
 		// delete the victim from data store
-		c.data.Del(c.meta.Victim())
+		c.data.Del(c.meta.Evict())
 	}
 	// record the access *after* possible eviction, so as we don't immediately
 	// evict the item just added (in this function call, anyway - eviction
@@ -79,57 +82,4 @@ func (c *Cache) Set(key string, value interface{}) {
 
 func (c *Cache) Del(key string) {
 	// TODO
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type Meta struct {
-	sync.Mutex
-	data map[string]*uint64
-}
-
-func (m *Meta) Record(key string) {
-	if counter, exists := m.data[key]; exists {
-		*counter++
-		return
-	}
-	// make a new counter for this key
-	counter := uint64(1)
-	m.data[key] = &counter
-}
-
-func (m *Meta) Push(keys []ring.Element) {
-	m.Lock()
-	defer m.Unlock()
-	for _, key := range keys {
-		m.Record(string(key))
-	}
-}
-
-// SAMPLE_SIZE is the number of items to sample when running the eviction
-// process (either LRU or LFU).
-const SAMPLE_SIZE = 5
-
-// Victim evicts a key and returns it.
-func (m *Meta) Victim() string {
-	m.Lock()
-	defer m.Unlock()
-	victim := struct {
-		key   string
-		count uint64
-	}{}
-	i := 0
-	for key, counter := range m.data {
-		count := atomic.LoadUint64(counter)
-		if i == 0 || count < victim.count {
-			victim.key, victim.count = key, count
-		}
-		if i == SAMPLE_SIZE {
-			break
-		}
-		i++
-	}
-	// delete the victim and finish
-	delete(m.data, victim.key)
-	return victim.key
 }
