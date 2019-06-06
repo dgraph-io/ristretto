@@ -18,13 +18,8 @@ package bloom
 
 import (
 	"testing"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
-func TestCounter(t *testing.T) {
-	c := NewCounter(256)
-	spew.Dump(c)
-	spew.Dump(c.hash("*", 0))
-	spew.Dump(c.hash("*", 1))
+func TestCBF(t *testing.T) {
+	// TODO
 }

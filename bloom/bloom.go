@@ -18,6 +18,7 @@ package bloom
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"hash"
 	"hash/fnv"
 	"sync"
@@ -25,113 +26,152 @@ import (
 	"github.com/dgraph-io/ristretto/ring"
 )
 
+// This package includes multiple probabalistic data structures needed for
+// admission/eviction metadata. Most are Counting Bloom Filter variations, but
+// a caching-specific feature that is also required is a "freshness" mechanism,
+// which basically serves as a "lifetime" process. This freshness mechanism
+// was described in the original TinyLFU paper [1], but other mechanisms may
+// be better suited for certain data distributions.
+//
+// [1]: https://arxiv.org/abs/1512.00727
+
+// CBF is a basic Counting Bloom Filter implementation that fulfills the
+// ring.Consumer interface for maintaining admission/eviction statistics.
+type CBF struct {
+	sync.Mutex
+	sample   uint64
+	capacity uint64
+	blocks   uint64
+	data     []uint64
+	seed     []uint64
+	alg      hash.Hash64
+}
+
 const (
-	COUNTER_BITS = 4
-	COUNTER_MAX  = 16
-	COUNTER_SEGS = 64 / COUNTER_BITS
-	COUNTER_ROWS = 3
+	CBF_BITS     = 4
+	CBF_MAX      = 16
+	CBF_ROWS     = 3
+	CBF_COUNTERS = 64 / CBF_BITS
 )
 
-type Counter struct {
-	sync.Mutex
-	capa uint64
-	mask uint64
-	data []uint64
-	algs []hash.Hash64
-}
-
-func NewCounter(samples uint64) *Counter {
-	capa := samples / COUNTER_MAX
-	data := make([]uint64, (capa/COUNTER_SEGS)*COUNTER_ROWS)
-	algs := make([]hash.Hash64, COUNTER_ROWS)
-	for i := range algs {
-		algs[i] = fnv.New64a()
-		seed := make([]byte, 32, 32)
-		rand.Read(seed)
-		algs[i].Write(seed)
+func NewCBF(capacity, sample uint64) *CBF {
+	// initialize hash seeds for each row
+	seed := make([]uint64, CBF_ROWS)
+	for i := range seed {
+		tmp := make([]byte, 8)
+		rand.Read(tmp)
+		seed[i] = binary.LittleEndian.Uint64(tmp)
 	}
-	return &Counter{
-		capa: capa,
-		mask: capa - 1,
-		data: data,
-		algs: algs,
+	return &CBF{
+		sample:   sample,
+		capacity: capacity,
+		blocks:   capacity / CBF_MAX,
+		data:     make([]uint64, (capacity/CBF_MAX)*CBF_ROWS),
+		seed:     seed,
+		alg:      fnv.New64a(),
 	}
 }
 
-func (c *Counter) hash(key string, row uint64) uint64 {
-	c.algs[row].Write([]byte(key))
-	return c.algs[row].Sum64() & c.mask
+func (c *CBF) Push(keys []ring.Element) {
+	c.Lock()
+	defer c.Unlock()
+	for _, key := range keys {
+		c.alg.Write([]byte(key))
+		c.increment(c.alg.Sum64())
+		c.alg.Reset()
+	}
 }
 
-func (c *Counter) estimate(key string) uint64 {
+func (c *CBF) Evict() string { return "" }
+
+func (c *CBF) estimate(hashed uint64) uint64 {
 	min := uint64(0)
+	for row := uint64(0); row < CBF_ROWS; row++ {
+		var (
+			rowHashed uint64 = hashed ^ c.seed[row]
+			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
+			counterId uint64 = (rowHashed & (CBF_COUNTERS - 1)) + 1
+			left      uint64 = (CBF_BITS * counterId) - CBF_BITS
+			right     uint64 = 64 - CBF_BITS
+		)
 
-	for row := uint64(0); row < COUNTER_ROWS; row++ {
-		i := c.hash(key, row)
+		// current count
+		count := c.data[blockId] << left >> right
 
-		// get value of the counter on this row
-		count := (c.data[index(i)+(row*(c.capa/COUNTER_SEGS))] << shift(i)) >>
-			(shift(i) + (offset(i) * COUNTER_BITS))
-
-		// adjust the minimum value
 		if row == 0 || count < min {
 			min = count
 		}
 	}
-
 	return min
 }
 
-// Push fulfills the ring.Consumer interface for BP-Wrapper batched updates.
-func (c *Counter) Push(keys []ring.Element) {
-	c.Lock()
-	defer c.Unlock()
-	for _, key := range keys {
-		k := string(key)
-		count := c.estimate(k)
+func (c *CBF) increment(hashed uint64) {
+	full := uint64(0xffffffffffffffff)
+	for row := uint64(0); row < CBF_ROWS; row++ {
+		var (
+			rowHashed uint64 = hashed ^ c.seed[row]
+			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
+			counterId uint64 = (rowHashed & (CBF_COUNTERS - 1)) + 1
+			left      uint64 = (CBF_BITS * counterId) - CBF_BITS
+			right     uint64 = 64 - CBF_BITS
+		)
 
-		// if the counter is already at the maximum value, do nothing
-		if count == COUNTER_MAX-1 {
+		// current count
+		count := c.data[blockId] << left >> right
+
+		// skip if max value already
+		if count == CBF_MAX-1 {
 			continue
 		}
 
-		full := uint64(0xffffffffffffffff)
+		// mask for isolating counter for mutation
+		mask := full << right >> left
 
-		for row := uint64(0); row < COUNTER_ROWS; row++ {
-			// get counter index (0 through s.capa)
-			i := c.hash(k, row)
+		// clear out the counter for mutation
+		isol := (c.data[blockId] | mask) ^ mask
 
-			// calculate mask for isolation
-			mask := (full << (64 - COUNTER_BITS)) >> shift(i)
-
-			// isolate the counter segment
-			isol := (c.data[index(i)+(row*(c.capa/COUNTER_SEGS))] | mask) ^ mask
-
-			// mutate counter
-			c.data[index(i)+(row*(c.capa/COUNTER_SEGS))] = isol |
-				((count + 1) << (offset(i) * COUNTER_BITS))
-		}
+		// increment
+		c.data[blockId] = isol | ((count + 1) << (64 - (counterId * CBF_BITS)))
 	}
-}
-
-func (c *Counter) Evict() string {
-	c.Lock()
-	defer c.Unlock()
-	return ""
-}
-
-func shift(i uint64) uint64 {
-	return (64 - COUNTER_BITS) - (offset(i) * COUNTER_BITS)
-}
-
-func index(i uint64) uint64 {
-	return i / COUNTER_SEGS
-}
-
-func offset(i uint64) uint64 {
-	return i & (COUNTER_SEGS - 1)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clock struct{}
+// TODO
+//
+// Fingerprint Counting Bloom Filter (FP-CBF): lower false positive rates than
+// basic CBF with little added complexity.
+//
+// https://doi.org/10.1016/j.ipl.2015.11.002
+type FPCBF struct {
+}
+
+func (c *FPCBF) Push(keys []ring.Element) {}
+func (c *FPCBF) Evict() string            { return "" }
+
+////////////////////////////////////////////////////////////////////////////////
+
+// TODO
+//
+// d-left Counting Bloom Filter: based on d-left hashing which allows for much
+// better space efficiency (usually saving a factor of 2 or more).
+//
+// https://link.springer.com/chapter/10.1007/11841036_61
+type DLCBF struct {
+}
+
+func (c *DLCBF) Push(keys []ring.Element) {}
+func (c *DLCBF) Evict() string            { return "" }
+
+////////////////////////////////////////////////////////////////////////////////
+
+// TODO
+//
+// Bloom Clock: this might be a good route for keeping track of LRU information
+// in a space efficient, probabilistic manner.
+//
+// https://arxiv.org/abs/1905.13064
+type BC struct{}
+
+func (c *BC) Push(keys []ring.Element) {}
+func (c *BC) Evict() string            { return "" }
