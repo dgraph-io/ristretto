@@ -14,18 +14,6 @@
  * limitations under the License.
  */
 
-package bloom
-
-import (
-	"crypto/rand"
-	"encoding/binary"
-	"hash"
-	"hash/fnv"
-	"sync"
-
-	"github.com/dgraph-io/ristretto/ring"
-)
-
 // This package includes multiple probabalistic data structures needed for
 // admission/eviction metadata. Most are Counting Bloom Filter variations, but
 // a caching-specific feature that is also required is a "freshness" mechanism,
@@ -34,6 +22,18 @@ import (
 // be better suited for certain data distributions.
 //
 // [1]: https://arxiv.org/abs/1512.00727
+package bloom
+
+import (
+	"crypto/rand"
+	"encoding/binary"
+	"fmt"
+	"hash"
+	"hash/fnv"
+	"sync"
+
+	"github.com/dgraph-io/ristretto/ring"
+)
 
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
 // ring.Consumer interface for maintaining admission/eviction statistics.
@@ -41,6 +41,7 @@ type CBF struct {
 	sync.Mutex
 	sample   uint64
 	capacity uint64
+	count    uint64
 	blocks   uint64
 	data     []uint64
 	seed     []uint64
@@ -50,7 +51,7 @@ type CBF struct {
 const (
 	CBF_BITS     = 4
 	CBF_MAX      = 16
-	CBF_ROWS     = 3
+	CBF_ROWS     = 4
 	CBF_COUNTERS = 64 / CBF_BITS
 )
 
@@ -90,14 +91,12 @@ func (c *CBF) estimate(hashed uint64) uint64 {
 		var (
 			rowHashed uint64 = hashed ^ c.seed[row]
 			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
-			counterId uint64 = (rowHashed & (CBF_COUNTERS - 1)) + 1
-			left      uint64 = (CBF_BITS * counterId) - CBF_BITS
+			counterId uint64 = ((rowHashed >> CBF_BITS) & (CBF_COUNTERS - 1))
+			left      uint64 = (CBF_BITS * counterId)
 			right     uint64 = 64 - CBF_BITS
 		)
-
 		// current count
 		count := c.data[blockId] << left >> right
-
 		if row == 0 || count < min {
 			min = count
 		}
@@ -111,28 +110,69 @@ func (c *CBF) increment(hashed uint64) {
 		var (
 			rowHashed uint64 = hashed ^ c.seed[row]
 			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
-			counterId uint64 = (rowHashed & (CBF_COUNTERS - 1)) + 1
-			left      uint64 = (CBF_BITS * counterId) - CBF_BITS
+			// counterId uses rowHashed >> CBF_BITS because otherwise it would
+			// equal blockId and counters wouldn't be evenly distributed across
+			// all available counters in the block
+			//
+			// TODO: clean this up
+			counterId uint64 = ((rowHashed >> CBF_BITS) & (CBF_COUNTERS - 1))
+			left      uint64 = (CBF_BITS * counterId)
 			right     uint64 = 64 - CBF_BITS
 		)
-
 		// current count
 		count := c.data[blockId] << left >> right
-
+		// if the current count is max
+		if count == (CBF_MAX-1) && row == 0 {
+			c.reset()
+		}
 		// skip if max value already
 		if count == CBF_MAX-1 {
 			continue
 		}
-
 		// mask for isolating counter for mutation
 		mask := full << right >> left
-
 		// clear out the counter for mutation
 		isol := (c.data[blockId] | mask) ^ mask
-
 		// increment
-		c.data[blockId] = isol | ((count + 1) << (64 - (counterId * CBF_BITS)))
+		c.data[blockId] = isol | ((count + 1) <<
+			(((CBF_COUNTERS - 1) - counterId) * CBF_BITS))
 	}
+}
+
+// CBF.reset() serves as the freshness mechanism described in section 3.3 of the
+// TinyLFU paper [1]. It is called by CBF.increment() when the number of items
+// reaches the sample size (W).
+//
+// [1]: https://arxiv.org/abs/1512.00727
+func (c *CBF) reset() {
+	mask := uint64(0xf0f0f0f0f0f0f0f0)
+	// divide the counters in each block by 2
+	for blockId := 0; blockId < len(c.data); blockId++ {
+		c.data[blockId] = (((c.data[blockId] & mask) >> 1) & mask) |
+			(((c.data[blockId] & (mask >> 4)) >> 1) & (mask >> 4))
+	}
+}
+
+func (c *CBF) string() string {
+	var state string
+
+	for i := 0; i < len(c.data); i++ {
+		state += "  ["
+		block := c.data[i]
+		for j := uint64(0); j < CBF_COUNTERS; j++ {
+			count := block << (j * CBF_BITS) >> 60
+			if count > 0 {
+				state += fmt.Sprintf("%2d ", count)
+			} else {
+				state += "   "
+			}
+		}
+		state = state[:len(state)-1] + "]\n"
+	}
+
+	state += "\n"
+
+	return state
 }
 
 ////////////////////////////////////////////////////////////////////////////////

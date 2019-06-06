@@ -17,9 +17,17 @@
 package bloom
 
 import (
+	"fmt"
 	"testing"
 )
 
 func TestCBF(t *testing.T) {
-	// TODO
+	c := NewCBF(16, 5)
+
+	c.increment(5)
+	c.increment(5)
+	c.increment(5)
+	c.increment(5)
+
+	fmt.Println(c.estimate(5))
 }
