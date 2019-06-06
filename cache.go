@@ -38,7 +38,7 @@ type Cache struct {
 }
 
 func NewCache(capacity uint64) *Cache {
-	meta := bloom.NewCounter(5)
+	meta := bloom.NewCBF(capacity, 5)
 	return &Cache{
 		meta:     meta,
 		data:     store.NewMap(),
