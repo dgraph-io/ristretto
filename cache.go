@@ -65,7 +65,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	// check if the cache is full and we need to evict
 	if atomic.AddUint64(&c.size, 1) >= c.capacity {
 		// delete the victim from data store
-		// c.data.Del(c.meta.Evict())
+		c.data.Del(c.meta.Victim())
 	}
 	// record the access *after* possible eviction, so as we don't immediately
 	// evict the item just added (in this function call, anyway - eviction
