@@ -17,17 +17,32 @@
 package bloom
 
 import (
-	"fmt"
 	"testing"
 )
 
+type TestSketch interface {
+	Sketch
+	increment(uint64)
+	reset()
+}
+
+func GenerateTest(create func() TestSketch) func(t *testing.T) {
+	return func(t *testing.T) {
+		s := create()
+		s.increment(1)
+		s.increment(1)
+		s.increment(1)
+		s.increment(1)
+		if s.Estimate(1) != 4 {
+			t.Fatal("increment/estimate error")
+		}
+		s.reset()
+		if s.Estimate(1) != 2 {
+			t.Fatal("reset error")
+		}
+	}
+}
+
 func TestCBF(t *testing.T) {
-	c := NewCBF(16, 5)
-
-	c.increment(5)
-	c.increment(5)
-	c.increment(5)
-	c.increment(5)
-
-	fmt.Println(c.estimate(5))
+	GenerateTest(func() TestSketch { return NewCBF(16, 0) })(t)
 }
