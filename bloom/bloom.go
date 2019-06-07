@@ -35,6 +35,13 @@ import (
 	"github.com/dgraph-io/ristretto/ring"
 )
 
+type Sketch interface {
+	ring.Consumer
+	Estimate(uint64) uint64
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
 // ring.Consumer interface for maintaining admission/eviction statistics.
 type CBF struct {
@@ -51,7 +58,7 @@ type CBF struct {
 const (
 	CBF_BITS     = 4
 	CBF_MAX      = 16
-	CBF_ROWS     = 4
+	CBF_ROWS     = 2
 	CBF_COUNTERS = 64 / CBF_BITS
 )
 
@@ -83,9 +90,9 @@ func (c *CBF) Push(keys []ring.Element) {
 	}
 }
 
-func (c *CBF) Evict() string { return "" }
-
-func (c *CBF) estimate(hashed uint64) uint64 {
+func (c *CBF) Estimate(hashed uint64) uint64 {
+	c.Lock()
+	defer c.Unlock()
 	min := uint64(0)
 	for row := uint64(0); row < CBF_ROWS; row++ {
 		var (
@@ -155,7 +162,6 @@ func (c *CBF) reset() {
 
 func (c *CBF) string() string {
 	var state string
-
 	for i := 0; i < len(c.data); i++ {
 		state += "  ["
 		block := c.data[i]
@@ -169,9 +175,7 @@ func (c *CBF) string() string {
 		}
 		state = state[:len(state)-1] + "]\n"
 	}
-
 	state += "\n"
-
 	return state
 }
 
@@ -186,8 +190,8 @@ func (c *CBF) string() string {
 type FPCBF struct {
 }
 
-func (c *FPCBF) Push(keys []ring.Element) {}
-func (c *FPCBF) Evict() string            { return "" }
+func (c *FPCBF) Push(keys []ring.Element)      {}
+func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -200,8 +204,8 @@ func (c *FPCBF) Evict() string            { return "" }
 type DLCBF struct {
 }
 
-func (c *DLCBF) Push(keys []ring.Element) {}
-func (c *DLCBF) Evict() string            { return "" }
+func (c *DLCBF) Push(keys []ring.Element)      {}
+func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -213,5 +217,5 @@ func (c *DLCBF) Evict() string            { return "" }
 // https://arxiv.org/abs/1905.13064
 type BC struct{}
 
-func (c *BC) Push(keys []ring.Element) {}
-func (c *BC) Evict() string            { return "" }
+func (c *BC) Push(keys []ring.Element)      {}
+func (c *BC) Estimtae(hashed uint64) uint64 { return 0 }

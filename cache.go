@@ -24,13 +24,8 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
-type Meta interface {
-	ring.Consumer
-	Evict() string
-}
-
 type Cache struct {
-	meta     Meta
+	meta     bloom.Sketch
 	data     store.Map
 	size     uint64
 	capacity uint64
@@ -38,7 +33,7 @@ type Cache struct {
 }
 
 func NewCache(capacity uint64) *Cache {
-	meta := bloom.NewCBF(capacity, 5)
+	meta := bloom.NewCBF(1024, 5)
 	return &Cache{
 		meta:     meta,
 		data:     store.NewMap(),
@@ -70,7 +65,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	// check if the cache is full and we need to evict
 	if atomic.AddUint64(&c.size, 1) >= c.capacity {
 		// delete the victim from data store
-		c.data.Del(c.meta.Evict())
+		// c.data.Del(c.meta.Evict())
 	}
 	// record the access *after* possible eviction, so as we don't immediately
 	// evict the item just added (in this function call, anyway - eviction
