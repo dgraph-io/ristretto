@@ -17,15 +17,15 @@
 package ristretto
 
 import (
+	"sync"
 	"sync/atomic"
 
-	"github.com/dgraph-io/ristretto/bloom"
 	"github.com/dgraph-io/ristretto/ring"
 	"github.com/dgraph-io/ristretto/store"
 )
 
 type Cache struct {
-	meta     bloom.Sketch
+	meta     *Meta
 	data     store.Map
 	size     uint64
 	capacity uint64
@@ -33,7 +33,7 @@ type Cache struct {
 }
 
 func NewCache(capacity uint64) *Cache {
-	meta := bloom.NewCBF(1024, 5)
+	meta := &Meta{data: make(map[string]*uint64, capacity)}
 	return &Cache{
 		meta:     meta,
 		data:     store.NewMap(),
@@ -77,4 +77,56 @@ func (c *Cache) Set(key string, value interface{}) {
 
 func (c *Cache) Del(key string) {
 	// TODO
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Meta is a naive metadata manager for admission/eviction statistics. Currently
+// it's just a hash map with counters as values.
+type Meta struct {
+	sync.Mutex
+	data map[string]*uint64
+}
+
+func (m *Meta) Push(keys []ring.Element) {
+	m.Lock()
+	defer m.Unlock()
+	for _, key := range keys {
+		m.record(string(key))
+	}
+}
+
+func (m *Meta) record(key string) {
+	if counter, exists := m.data[key]; exists {
+		*counter++
+		return
+	}
+	// make a new counter for this key
+	counter := uint64(1)
+	m.data[key] = &counter
+}
+
+// number of elements to check when looking for victims
+const SAMPLE_SIZE = 5
+
+func (m *Meta) Victim() string {
+	m.Lock()
+	defer m.Unlock()
+	victim := struct {
+		key   string
+		count uint64
+	}{}
+	i := 0
+	for key, counter := range m.data {
+		count := atomic.LoadUint64(counter)
+		if i == 0 || count < victim.count {
+			victim.key, victim.count = key, count
+		}
+		if i == SAMPLE_SIZE {
+			break
+		}
+		i++
+	}
+	delete(m.data, victim.key)
+	return victim.key
 }
