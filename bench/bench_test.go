@@ -41,23 +41,27 @@ func init() {
 func TestMain(m *testing.M) {
 	logs := make([]*Log, 0)
 	benchmarks := []*Benchmark{{
-		"fastCache      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchFastCache(16) },
-	}, {
-		"bigCache       ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchBigCache(16) },
-	}, {
-		"freeCache      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchFreeCache(16) },
-	}, {
-		"baseMutex      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchBaseMutex(16) },
-	}, {
-		"goburrow       ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchGoburrow(16) },
-	}, {
+		/*
+				"fastCache      ", "get-same", GetSame, 1,
+				func() Cache { return NewBenchFastCache(16) },
+			}, {
+				"bigCache       ", "get-same", GetSame, 1,
+				func() Cache { return NewBenchBigCache(16) },
+			}, {
+				"freeCache      ", "get-same", GetSame, 1,
+				func() Cache { return NewBenchFreeCache(16) },
+			}, {
+				"baseMutex      ", "get-same", GetSame, 1,
+				func() Cache { return NewBenchBaseMutex(16) },
+			}, {
+				"goburrow       ", "get-same", GetSame, 1,
+				func() Cache { return NewBenchGoburrow(16) },
+			}, {*/
 		"ristretto      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchRistretto(16) },
+		func() Cache { return NewBenchRistretto(GET_SAME_CAPA) },
+	}, {
+		"ristretto      ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchRistretto(GET_ZIPF_CAPA) },
 	}}
 
 	for _, benchmark := range benchmarks {
@@ -74,21 +78,6 @@ func TestMain(m *testing.M) {
 	// save CSV to disk
 	if err := save(logs); err != nil {
 		log.Panic(err)
-	}
-}
-
-func GetSame(benchmark *Benchmark) func(b *testing.B) {
-	return func(b *testing.B) {
-		cache := benchmark.Create()
-		cache.Set("*", []byte("*"))
-		b.SetParallelism(benchmark.Para)
-		b.SetBytes(1)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				cache.Get("*")
-			}
-		})
 	}
 }
 
