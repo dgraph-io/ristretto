@@ -40,28 +40,102 @@ func init() {
 // TestMain is the entry point for running this benchmark suite.
 func TestMain(m *testing.M) {
 	logs := make([]*Log, 0)
+	// TODO: clean this up
 	benchmarks := []*Benchmark{{
-		/*
-				"fastCache      ", "get-same", GetSame, 1,
-				func() Cache { return NewBenchFastCache(16) },
-			}, {
-				"bigCache       ", "get-same", GetSame, 1,
-				func() Cache { return NewBenchBigCache(16) },
-			}, {
-				"freeCache      ", "get-same", GetSame, 1,
-				func() Cache { return NewBenchFreeCache(16) },
-			}, {
-				"baseMutex      ", "get-same", GetSame, 1,
-				func() Cache { return NewBenchBaseMutex(16) },
-			}, {
-				"goburrow       ", "get-same", GetSame, 1,
-				func() Cache { return NewBenchGoburrow(16) },
-			}, {*/
+		"fastCache      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchFastCache(GET_SAME_CAPA) },
+	}, {
+		"fastCache      ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchFastCache(GET_ZIPF_CAPA) },
+	}, {
+		"fastCache      ", "set-get", SetGet, 1,
+		func() Cache { return NewBenchFastCache(SET_GET_CAPA) },
+	}, {
+		"fastCache      ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchFastCache(SET_SAME_CAPA) },
+	}, {
+		"fastCache      ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchFastCache(SET_ZIPF_CAPA) },
+	}, {
+		////////////////////////////////////////////////////////////////////////
+		"bigCache       ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchBigCache(GET_SAME_CAPA) },
+	}, {
+		"bigCache       ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchBigCache(GET_ZIPF_CAPA) },
+	}, {
+		"bigCache       ", "set-get", SetGet, 1,
+		func() Cache { return NewBenchBigCache(SET_GET_CAPA) },
+	}, {
+		"bigCache       ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchBigCache(SET_SAME_CAPA) },
+	}, {
+		"bigCache       ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchBigCache(SET_ZIPF_CAPA) },
+	}, {
+		////////////////////////////////////////////////////////////////////////
+		"freeCache      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchFreeCache(GET_SAME_CAPA) },
+	}, {
+		"freeCache      ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchFreeCache(GET_ZIPF_CAPA) },
+	}, {
+		"freeCache      ", "set-get", SetGet, 1,
+		func() Cache { return NewBenchFreeCache(SET_GET_CAPA) },
+	}, {
+		"freeCache      ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchFreeCache(SET_SAME_CAPA) },
+	}, {
+		"freeCache      ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchFreeCache(SET_ZIPF_CAPA) },
+	}, {
+		////////////////////////////////////////////////////////////////////////
+		"baseMutex      ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchBaseMutex(GET_SAME_CAPA) },
+	}, {
+		"baseMutex      ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchBaseMutex(GET_ZIPF_CAPA) },
+	}, {
+		"baseMutex      ", "set-get", SetGet, 1,
+		func() Cache { return NewBenchBaseMutex(SET_GET_CAPA) },
+	}, {
+		"baseMutex      ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchBaseMutex(SET_SAME_CAPA) },
+	}, {
+		"baseMutex      ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchBaseMutex(SET_ZIPF_CAPA) },
+	}, {
+		////////////////////////////////////////////////////////////////////////
+		"goburrow       ", "get-same", GetSame, 1,
+		func() Cache { return NewBenchGoburrow(GET_SAME_CAPA) },
+	}, {
+		"goburrow       ", "get-zipf", GetZipf, 1,
+		func() Cache { return NewBenchGoburrow(GET_ZIPF_CAPA) },
+	}, {
+		"goburrow       ", "set-get", SetGet, 1,
+		func() Cache { return NewBenchGoburrow(SET_GET_CAPA) },
+	}, {
+		"goburrow       ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchGoburrow(SET_SAME_CAPA) },
+	}, {
+		"goburrow       ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchGoburrow(SET_ZIPF_CAPA) },
+	}, {
+		////////////////////////////////////////////////////////////////////////
 		"ristretto      ", "get-same", GetSame, 1,
 		func() Cache { return NewBenchRistretto(GET_SAME_CAPA) },
 	}, {
 		"ristretto      ", "get-zipf", GetZipf, 1,
 		func() Cache { return NewBenchRistretto(GET_ZIPF_CAPA) },
+	}, {
+		"ristretto      ", "set-get", GetZipf, 1,
+		func() Cache { return NewBenchRistretto(SET_GET_CAPA) },
+	}, {
+		"ristretto      ", "set-same", SetSame, 1,
+		func() Cache { return NewBenchRistretto(SET_SAME_CAPA) },
+	}, {
+		"ristretto      ", "set-zipf", SetZipf, 1,
+		func() Cache { return NewBenchRistretto(SET_ZIPF_CAPA) },
 	}}
 
 	for _, benchmark := range benchmarks {
