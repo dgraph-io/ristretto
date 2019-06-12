@@ -30,6 +30,8 @@ const (
 	SET_SAME_CAPA = 1
 	SET_ZIPF_CAPA = 128
 
+	SET_GET_CAPA = 1
+
 	// zipf generation variables (see https://golang.org/pkg/math/rand/#Zipf)
 	ZIPF_S = 1.1
 	ZIPF_V = 1
@@ -72,7 +74,11 @@ func zipfKeys(size int) []string {
 func GetZipf(benchmark *Benchmark) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
+		data := []byte("*")
 		keys := zipfKeys(GET_ZIPF_CAPA)
+		for i := range keys {
+			cache.Set(keys[i], data)
+		}
 		b.SetParallelism(benchmark.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
@@ -112,6 +118,28 @@ func SetZipf(benchmark *Benchmark) func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for i := 0; pb.Next(); i++ {
 				cache.Set(keys[i&(SET_ZIPF_CAPA-1)], data)
+			}
+		})
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func SetGet(benchmark *Benchmark) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := benchmark.Create()
+		data := []byte("*")
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for i := 0; pb.Next(); i++ {
+				// alternate between setting and getting
+				if i&1 == 0 {
+					cache.Set("*", data)
+				} else {
+					cache.Get("*")
+				}
 			}
 		})
 	}
