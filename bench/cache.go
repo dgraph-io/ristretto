@@ -19,6 +19,7 @@ package bench
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -49,16 +50,23 @@ type Stats struct {
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
+	stats *Stats
 }
 
-func NewBenchRistretto(capacity int) *BenchRistretto {
+func NewBenchRistretto(capacity int) Cache {
 	return &BenchRistretto{
 		cache: ristretto.NewCache(uint64(capacity)),
+		stats: &Stats{},
 	}
 }
 
 func (c *BenchRistretto) Get(key string) interface{} {
-	return c.cache.Get(key)
+	atomic.AddUint64(&c.stats.Reqs, 1)
+	value := c.cache.Get(key)
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
+	}
+	return value
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
@@ -70,7 +78,7 @@ func (c *BenchRistretto) Del(key string) {
 }
 
 func (c *BenchRistretto) Bench() *Stats {
-	return nil
+	return c.stats
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,19 +86,24 @@ func (c *BenchRistretto) Bench() *Stats {
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
+	stats *Stats
 }
 
-func NewBenchBaseMutex(capacity int) *BenchBaseMutex {
+func NewBenchBaseMutex(capacity int) Cache {
 	return &BenchBaseMutex{
 		cache: lru.New(capacity),
+		stats: &Stats{},
 	}
 }
 
 func (c *BenchBaseMutex) Get(key string) interface{} {
 	c.Lock()
 	defer c.Unlock()
+	atomic.AddUint64(&c.stats.Reqs, 1)
 	value, _ := c.cache.Get(key)
-	// value found
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
+	}
 	return value
 }
 
@@ -105,16 +118,17 @@ func (c *BenchBaseMutex) Del(key string) {
 }
 
 func (c *BenchBaseMutex) Bench() *Stats {
-	return nil
+	return c.stats
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchBigCache struct {
 	cache *bigcache.BigCache
+	stats *Stats
 }
 
-func NewBenchBigCache(capacity int) *BenchBigCache {
+func NewBenchBigCache(capacity int) Cache {
 	// create a bigcache instance with default config values except for the
 	// logger - we don't want them messing with our stdout
 	//
@@ -133,11 +147,18 @@ func NewBenchBigCache(capacity int) *BenchBigCache {
 	if err != nil {
 		log.Panic(err)
 	}
-	return &BenchBigCache{cache: cache}
+	return &BenchBigCache{
+		cache: cache,
+		stats: &Stats{},
+	}
 }
 
 func (c *BenchBigCache) Get(key string) interface{} {
+	atomic.AddUint64(&c.stats.Reqs, 1)
 	value, _ := c.cache.Get(key)
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
+	}
 	return value
 }
 
@@ -154,7 +175,7 @@ func (c *BenchBigCache) Del(key string) {
 }
 
 func (c *BenchBigCache) Bench() *Stats {
-	return nil
+	return c.stats
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -180,17 +201,23 @@ func (h bigCacheHasher) Sum64(key string) uint64 {
 
 type BenchFastCache struct {
 	cache *fastcache.Cache
+	stats *Stats
 }
 
-func NewBenchFastCache(capacity int) *BenchFastCache {
+func NewBenchFastCache(capacity int) Cache {
 	return &BenchFastCache{
 		cache: fastcache.New(capacity),
+		stats: &Stats{},
 	}
 }
 
 func (c *BenchFastCache) Get(key string) interface{} {
+	atomic.AddUint64(&c.stats.Reqs, 1)
 	var value []byte
 	c.cache.Get(value, []byte(key))
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
+	}
 	return value
 }
 
@@ -203,25 +230,31 @@ func (c *BenchFastCache) Del(key string) {
 }
 
 func (c *BenchFastCache) Bench() *Stats {
-	return nil
+	return c.stats
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchFreeCache struct {
 	cache *freecache.Cache
+	stats *Stats
 }
 
-func NewBenchFreeCache(capacity int) *BenchFreeCache {
+func NewBenchFreeCache(capacity int) Cache {
 	return &BenchFreeCache{
 		cache: freecache.NewCache(capacity),
+		stats: &Stats{},
 	}
 }
 
 func (c *BenchFreeCache) Get(key string) interface{} {
+	atomic.AddUint64(&c.stats.Reqs, 1)
 	value, err := c.cache.Get([]byte(key))
 	if err != nil {
 		log.Panic(err)
+	}
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
 	}
 	return value
 }
@@ -237,25 +270,31 @@ func (c *BenchFreeCache) Del(key string) {
 }
 
 func (c *BenchFreeCache) Bench() *Stats {
-	return nil
+	return c.stats
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchGoburrow struct {
 	cache goburrow.Cache
+	stats *Stats
 }
 
-func NewBenchGoburrow(capacity int) *BenchGoburrow {
+func NewBenchGoburrow(capacity int) Cache {
 	return &BenchGoburrow{
 		cache: goburrow.New(
 			goburrow.WithMaximumSize(capacity),
 		),
+		stats: &Stats{},
 	}
 }
 
 func (c *BenchGoburrow) Get(key string) interface{} {
+	atomic.AddUint64(&c.stats.Reqs, 1)
 	value, _ := c.cache.GetIfPresent(key)
+	if value != nil {
+		atomic.AddUint64(&c.stats.Hits, 1)
+	}
 	return value
 }
 
@@ -268,5 +307,5 @@ func (c *BenchGoburrow) Del(key string) {
 }
 
 func (c *BenchGoburrow) Bench() *Stats {
-	return nil
+	return c.stats
 }
