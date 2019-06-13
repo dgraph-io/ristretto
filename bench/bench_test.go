@@ -17,7 +17,6 @@
 package bench
 
 import (
-	"encoding/csv"
 	"flag"
 	"fmt"
 	"log"
@@ -39,105 +38,24 @@ func init() {
 
 // TestMain is the entry point for running this benchmark suite.
 func TestMain(m *testing.M) {
+	caches := []struct {
+		name   string
+		create func(int) Cache
+	}{
+		{"ristretto  ", NewBenchRistretto},
+		{"base-mutex ", NewBenchBaseMutex},
+		{"bigcache   ", NewBenchBigCache},
+		{"fastcache  ", NewBenchFastCache},
+		{"freecache  ", NewBenchFreeCache},
+		{"goburrow   ", NewBenchGoburrow},
+	}
 	logs := make([]*Log, 0)
-	// TODO: clean this up
-	benchmarks := []*Benchmark{{
-		"fastCache      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchFastCache(GET_SAME_CAPA) },
-	}, {
-		"fastCache      ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchFastCache(GET_ZIPF_CAPA) },
-	}, {
-		"fastCache      ", "set-get", SetGet, 1,
-		func() Cache { return NewBenchFastCache(SET_GET_CAPA) },
-	}, {
-		"fastCache      ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchFastCache(SET_SAME_CAPA) },
-	}, {
-		"fastCache      ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchFastCache(SET_ZIPF_CAPA) },
-	}, {
-		////////////////////////////////////////////////////////////////////////
-		"bigCache       ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchBigCache(GET_SAME_CAPA) },
-	}, {
-		"bigCache       ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchBigCache(GET_ZIPF_CAPA) },
-	}, {
-		"bigCache       ", "set-get", SetGet, 1,
-		func() Cache { return NewBenchBigCache(SET_GET_CAPA) },
-	}, {
-		"bigCache       ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchBigCache(SET_SAME_CAPA) },
-	}, {
-		"bigCache       ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchBigCache(SET_ZIPF_CAPA) },
-	}, {
-		////////////////////////////////////////////////////////////////////////
-		"freeCache      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchFreeCache(GET_SAME_CAPA) },
-	}, {
-		"freeCache      ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchFreeCache(GET_ZIPF_CAPA) },
-	}, {
-		"freeCache      ", "set-get", SetGet, 1,
-		func() Cache { return NewBenchFreeCache(SET_GET_CAPA) },
-	}, {
-		"freeCache      ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchFreeCache(SET_SAME_CAPA) },
-	}, {
-		"freeCache      ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchFreeCache(SET_ZIPF_CAPA) },
-	}, {
-		////////////////////////////////////////////////////////////////////////
-		"baseMutex      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchBaseMutex(GET_SAME_CAPA) },
-	}, {
-		"baseMutex      ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchBaseMutex(GET_ZIPF_CAPA) },
-	}, {
-		"baseMutex      ", "set-get", SetGet, 1,
-		func() Cache { return NewBenchBaseMutex(SET_GET_CAPA) },
-	}, {
-		"baseMutex      ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchBaseMutex(SET_SAME_CAPA) },
-	}, {
-		"baseMutex      ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchBaseMutex(SET_ZIPF_CAPA) },
-	}, {
-		////////////////////////////////////////////////////////////////////////
-		"goburrow       ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchGoburrow(GET_SAME_CAPA) },
-	}, {
-		"goburrow       ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchGoburrow(GET_ZIPF_CAPA) },
-	}, {
-		"goburrow       ", "set-get", SetGet, 1,
-		func() Cache { return NewBenchGoburrow(SET_GET_CAPA) },
-	}, {
-		"goburrow       ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchGoburrow(SET_SAME_CAPA) },
-	}, {
-		"goburrow       ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchGoburrow(SET_ZIPF_CAPA) },
-	}, {
-		////////////////////////////////////////////////////////////////////////
-		"ristretto      ", "get-same", GetSame, 1,
-		func() Cache { return NewBenchRistretto(GET_SAME_CAPA) },
-	}, {
-		"ristretto      ", "get-zipf", GetZipf, 1,
-		func() Cache { return NewBenchRistretto(GET_ZIPF_CAPA) },
-	}, {
-		"ristretto      ", "set-get", GetZipf, 1,
-		func() Cache { return NewBenchRistretto(SET_GET_CAPA) },
-	}, {
-		"ristretto      ", "set-same", SetSame, 1,
-		func() Cache { return NewBenchRistretto(SET_SAME_CAPA) },
-	}, {
-		"ristretto      ", "set-zipf", SetZipf, 1,
-		func() Cache { return NewBenchRistretto(SET_ZIPF_CAPA) },
-	}}
-
+	benchmarks := make([]*Benchmark, 0)
+	// create benchmark generators
+	for i := range caches {
+		benchmarks = append(benchmarks, NewBenchmarks(
+			caches[i].name, 1, caches[i].create)...)
+	}
 	for _, benchmark := range benchmarks {
 		log.Printf("running: %s (%s) * %d",
 			benchmark.Name, benchmark.Label, benchmark.Para)
@@ -147,8 +65,8 @@ func TestMain(m *testing.M) {
 		// append to logs
 		logs = append(logs, &Log{benchmark, NewResult(result)})
 		log.Printf("\t ... %v\n", time.Since(n))
+		runtime.GC()
 	}
-
 	// save CSV to disk
 	if err := save(logs); err != nil {
 		log.Panic(err)
@@ -174,14 +92,30 @@ func save(logs []*Log) error {
 		return err
 	}
 	defer file.Close()
-	return csv.NewWriter(file).WriteAll(records)
+	for i := range records {
+		for j := range records[i] {
+			seg := records[i][j] + ","
+			if j != 0 {
+				seg = " " + seg
+			}
+			if j == len(records[i])-1 {
+				seg = seg[:len(seg)-1]
+			}
+			if _, err := file.WriteString(seg); err != nil {
+				return err
+			}
+		}
+		if _, err := file.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Labels returns the column headers of the CSV data. The order is important and
 // should correspond with Log.Record().
 func Labels() []string {
-	return []string{
-		"name", "label", "goroutines", "ops", "allocs", "bytes"}
+	return []string{"name       ", "label   ", "gr", "ops  ", "ac", "byt"}
 }
 
 // Log is the primary unit of the CSV output files.
@@ -193,12 +127,12 @@ type Log struct {
 // Record generates a CSV record.
 func (l *Log) Record() []string {
 	return []string{
-		strings.Trim(l.Benchmark.Name, " "),
+		l.Benchmark.Name,
 		l.Benchmark.Label,
 		fmt.Sprintf("%d", l.Benchmark.Para*l.Result.Procs),
-		fmt.Sprintf("%.2f", l.Result.Ops),
-		fmt.Sprintf("%d", l.Result.Allocs),
-		fmt.Sprintf("%d", l.Result.Bytes),
+		fmt.Sprintf("%5.2f", l.Result.Ops),
+		fmt.Sprintf("%02d", l.Result.Allocs),
+		fmt.Sprintf("%03d", l.Result.Bytes),
 	}
 }
 
@@ -210,12 +144,37 @@ type Benchmark struct {
 	Label string
 	// Bencher is the function for generating testing.B benchmarks for running
 	// the actual iterations and collecting runtime information.
-	Bencher func(*Benchmark) func(b *testing.B)
+	Bencher func(*Benchmark) func(*testing.B)
 	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
 	Para int
 	// Create is the lazily evaluated function for creating new instances of the
 	// underlying cache.
 	Create func() Cache
+}
+
+func NewBenchmarks(name string, para int, create func(int) Cache) []*Benchmark {
+	variations := []struct {
+		label    string
+		capacity int
+		bencher  func(*Benchmark) func(*testing.B)
+	}{
+		{"get-same", GET_SAME_CAPA, GetSame},
+		{"get-zipf", GET_ZIPF_CAPA, GetZipf},
+		{"set-get ", SET_GET_CAPA, SetGet},
+		{"set-same", SET_SAME_CAPA, SetSame},
+		{"set-zipf", SET_ZIPF_CAPA, SetZipf},
+	}
+	benchmarks := make([]*Benchmark, len(variations))
+	for i := range variations {
+		benchmarks[i] = &Benchmark{
+			Name:    name,
+			Label:   variations[i].label,
+			Bencher: variations[i].bencher,
+			Para:    para,
+			Create:  func() Cache { return create(variations[i].capacity) },
+		}
+	}
+	return benchmarks
 }
 
 // Result is a wrapper for testing.BenchmarkResult that adds fields needed for
