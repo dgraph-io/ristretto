@@ -34,6 +34,7 @@ import (
 // benchmarks to run properly.
 type Cache interface {
 	Get(string) interface{}
+	GetFast(string) interface{}
 	Set(string, interface{})
 	Del(string)
 	Bench() *Stats
@@ -116,6 +117,13 @@ func (c *BenchBaseMutex) Get(key string) interface{} {
 	return value
 }
 
+func (c *BenchBaseMutex) GetFast(key string) interface{} {
+	c.Lock()
+	defer c.Unlock()
+	value, _ := c.cache.Get(key)
+	return value
+}
+
 func (c *BenchBaseMutex) Set(key string, value interface{}) {
 	c.Lock()
 	defer c.Unlock()
@@ -173,6 +181,11 @@ func (c *BenchBigCache) Get(key string) interface{} {
 	} else {
 		c.Set(key, []byte("*"))
 	}
+	return value
+}
+
+func (c *BenchBigCache) GetFast(key string) interface{} {
+	value, _ := c.cache.Get(key)
 	return value
 }
 
@@ -237,6 +250,10 @@ func (c *BenchFastCache) Get(key string) interface{} {
 	return value
 }
 
+func (c *BenchFastCache) GetFast(key string) interface{} {
+	return c.cache.Get(nil, []byte(key))
+}
+
 func (c *BenchFastCache) Set(key string, value interface{}) {
 	c.cache.Set([]byte(key), []byte("*"))
 }
@@ -272,6 +289,11 @@ func (c *BenchFreeCache) Get(key string) interface{} {
 	} else {
 		c.Set(key, []byte("*"))
 	}
+	return value
+}
+
+func (c *BenchFreeCache) GetFast(key string) interface{} {
+	value, _ := c.cache.Get([]byte(key))
 	return value
 }
 
@@ -313,6 +335,11 @@ func (c *BenchGoburrow) Get(key string) interface{} {
 	} else {
 		c.Set(key, []byte("*"))
 	}
+	return value
+}
+
+func (c *BenchGoburrow) GetFast(key string) interface{} {
+	value, _ := c.cache.GetIfPresent(key)
 	return value
 }
 
