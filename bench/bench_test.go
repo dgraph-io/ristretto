@@ -60,10 +60,32 @@ func TestMain(m *testing.M) {
 		log.Printf("running: %s (%s) * %d",
 			benchmark.Name, benchmark.Label, benchmark.Para)
 		n := time.Now()
+		stop := make(chan struct{})
+		stats := make(chan *Stats)
+		var totalHits uint64
+		var totalReqs uint64
+		go func() {
+			for {
+				select {
+				case s := <-stats:
+					totalHits += s.Hits
+					totalReqs += s.Reqs
+				case <-stop:
+					return
+				}
+			}
+		}()
 		// get testing.BenchMarkResult
-		result := testing.Benchmark(benchmark.Bencher(benchmark))
+		result := testing.Benchmark(benchmark.Bencher(benchmark, stats))
+		stop <- struct{}{}
 		// append to logs
-		logs = append(logs, &Log{benchmark, NewResult(result)})
+		logs = append(logs, &Log{
+			benchmark,
+			NewResult(result, Stats{
+				Reqs: totalReqs,
+				Hits: totalHits,
+			}),
+		})
 		log.Printf("\t ... %v\n", time.Since(n))
 		runtime.GC()
 	}
@@ -115,7 +137,17 @@ func save(logs []*Log) error {
 // Labels returns the column headers of the CSV data. The order is important and
 // should correspond with Log.Record().
 func Labels() []string {
-	return []string{"name       ", "label   ", "gr", "ops  ", "ac", "byt"}
+	return []string{
+		"name       ",
+		"label   ",
+		"gr",
+		"ops  ",
+		"ac",
+		"byt",
+		"hits    ",
+		"reqs    ",
+		"rate",
+	}
 }
 
 // Log is the primary unit of the CSV output files.
@@ -133,6 +165,10 @@ func (l *Log) Record() []string {
 		fmt.Sprintf("%5.2f", l.Result.Ops),
 		fmt.Sprintf("%02d", l.Result.Allocs),
 		fmt.Sprintf("%03d", l.Result.Bytes),
+		fmt.Sprintf("%08d", l.Result.Stats.Hits),
+		fmt.Sprintf("%08d", l.Result.Stats.Reqs),
+		fmt.Sprintf("%6.2f%%",
+			100*(float64(l.Result.Stats.Hits)/float64(l.Result.Stats.Reqs))),
 	}
 }
 
@@ -144,7 +180,7 @@ type Benchmark struct {
 	Label string
 	// Bencher is the function for generating testing.B benchmarks for running
 	// the actual iterations and collecting runtime information.
-	Bencher func(*Benchmark) func(*testing.B)
+	Bencher func(*Benchmark, chan *Stats) func(*testing.B)
 	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
 	Para int
 	// Create is the lazily evaluated function for creating new instances of the
@@ -156,7 +192,7 @@ func NewBenchmarks(name string, para int, create func(int) Cache) []*Benchmark {
 	variations := []struct {
 		label    string
 		capacity int
-		bencher  func(*Benchmark) func(*testing.B)
+		bencher  func(*Benchmark, chan *Stats) func(*testing.B)
 	}{
 		{"get-same", GET_SAME_CAPA, GetSame},
 		{"get-zipf", GET_ZIPF_CAPA, GetZipf},
@@ -189,10 +225,12 @@ type Result struct {
 	// Procs is the value of runtime.GOMAXPROCS(0) at the time result was
 	// recorded.
 	Procs int
+	// Hit ratio information
+	Stats Stats
 }
 
 // NewResult extracts the data we're interested in from a BenchmarkResult.
-func NewResult(result testing.BenchmarkResult) *Result {
+func NewResult(result testing.BenchmarkResult, stats Stats) *Result {
 	memops := strings.Trim(strings.Split(result.String(), "\t")[2], " MB/s")
 	opsraw, err := strconv.ParseFloat(memops, 64)
 	if err != nil {
@@ -203,5 +241,6 @@ func NewResult(result testing.BenchmarkResult) *Result {
 		Allocs: uint64(result.AllocsPerOp()),
 		Bytes:  uint64(result.AllocedBytesPerOp()),
 		Procs:  runtime.GOMAXPROCS(0),
+		Stats:  stats,
 	}
 }
