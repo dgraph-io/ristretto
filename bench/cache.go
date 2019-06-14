@@ -71,6 +71,10 @@ func (c *BenchRistretto) Get(key string) interface{} {
 	return value
 }
 
+func (c *BenchRistretto) GetFast(key string) interface{} {
+	return c.cache.Get(key)
+}
+
 func (c *BenchRistretto) Set(key string, value interface{}) {
 	c.cache.Set(key, value)
 }
@@ -220,8 +224,7 @@ func NewBenchFastCache(capacity int) Cache {
 
 func (c *BenchFastCache) Get(key string) interface{} {
 	atomic.AddUint64(&c.stats.Reqs, 1)
-	var value []byte
-	c.cache.Get(value, []byte(key))
+	value := c.cache.Get(nil, []byte(key))
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
 	} else {

@@ -194,11 +194,11 @@ func NewBenchmarks(name string, para int, create func(int) Cache) []*Benchmark {
 		capacity int
 		bencher  func(*Benchmark, chan *Stats) func(*testing.B)
 	}{
-		{"get-same", GET_SAME_CAPA, GetSame},
+		//{"get-same", GET_SAME_CAPA, GetSame},
 		{"get-zipf", GET_ZIPF_CAPA, GetZipf},
-		{"set-get ", SET_GET_CAPA, SetGet},
-		{"set-same", SET_SAME_CAPA, SetSame},
-		{"set-zipf", SET_ZIPF_CAPA, SetZipf},
+		//{"set-get ", SET_GET_CAPA, SetGet},
+		//{"set-same", SET_SAME_CAPA, SetSame},
+		//{"set-zipf", SET_ZIPF_CAPA, SetZipf},
 	}
 	benchmarks := make([]*Benchmark, len(variations))
 	for i := range variations {
