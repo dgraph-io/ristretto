@@ -30,16 +30,25 @@ const (
 
 	SET_SAME_CAPA = 1
 	SET_ZIPF_CAPA = 128
+	SET_ZIPF_MULT = 1024
 
 	SET_GET_CAPA = 1
 
 	// zipf generation variables (see https://golang.org/pkg/math/rand/#Zipf)
-	ZIPF_S = 1.1
+	//
+	// ZIPF_S must be > 1, the larger the value the more spread out the
+	// distribution is
+	ZIPF_S = 1.01
 	ZIPF_V = 1
 )
 
 func report(cache Cache, stats chan *Stats) {
 	stats <- cache.Bench()
+}
+
+func zipfian(size uint64) *rand.Zipf {
+	return rand.NewZipf(rand.New(rand.NewSource(time.Now().UnixNano())),
+		ZIPF_S, ZIPF_V, size)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,33 +69,23 @@ func GetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	}
 }
 
-// zipfKeys generates a string slice with repeating keys corresponding to a
-// zipfian distribution meant to simulate realistic traffic
-//
-// see ZIPF_* constants for the parameters
-func zipfKeys(size int) []string {
-	// create zipf generator
-	zipf := rand.NewZipf(rand.New(rand.NewSource(time.Now().UnixNano())),
-		ZIPF_S, ZIPF_V, uint64(size))
-	// keys with a zipf distribution
-	keys := make([]string, size)
-	// fill keys
-	for i := range keys {
-		keys[i] = fmt.Sprintf("%d", zipf.Uint64())
-	}
-	return keys
-}
-
 func GetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
+		zipf := zipfian(GET_ZIPF_CAPA * GET_ZIPF_MULT)
+		key := make(chan string, 100)
+		go func() {
+			for n := 0; n < b.N; n++ {
+				key <- fmt.Sprintf("%d", zipf.Uint64())
+			}
+		}()
+		defer close(key)
 		cache := benchmark.Create()
-		keys := zipfKeys(GET_ZIPF_CAPA * GET_ZIPF_MULT)
 		b.SetParallelism(benchmark.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
-			for i := 0; pb.Next(); i++ {
-				cache.Get(keys[i&((GET_ZIPF_CAPA*GET_ZIPF_MULT)-1)])
+			for pb.Next() {
+				cache.Get(<-key)
 			}
 		})
 		report(cache, stats)
@@ -113,15 +112,22 @@ func SetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 
 func SetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
+		zipf := zipfian(SET_ZIPF_CAPA * SET_ZIPF_MULT)
+		key := make(chan string, 100)
+		go func() {
+			for n := 0; n < b.N; n++ {
+				key <- fmt.Sprintf("%d", zipf.Uint64())
+			}
+		}()
+		defer close(key)
 		cache := benchmark.Create()
-		keys := zipfKeys(SET_ZIPF_CAPA)
 		data := []byte("*")
 		b.SetParallelism(benchmark.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
-			for i := 0; pb.Next(); i++ {
-				cache.Set(keys[i&(SET_ZIPF_CAPA-1)], data)
+			for pb.Next() {
+				cache.Set(<-key, data)
 			}
 		})
 		report(cache, stats)
