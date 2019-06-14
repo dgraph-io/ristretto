@@ -65,6 +65,8 @@ func (c *BenchRistretto) Get(key string) interface{} {
 	value := c.cache.Get(key)
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		c.Set(key, []byte("*"))
 	}
 	return value
 }
@@ -103,6 +105,9 @@ func (c *BenchBaseMutex) Get(key string) interface{} {
 	value, _ := c.cache.Get(key)
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		// same as c.Set but without nested mutex calls
+		c.cache.Add(key, []byte("*"))
 	}
 	return value
 }
@@ -158,6 +163,8 @@ func (c *BenchBigCache) Get(key string) interface{} {
 	value, _ := c.cache.Get(key)
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		c.Set(key, []byte("*"))
 	}
 	return value
 }
@@ -217,6 +224,8 @@ func (c *BenchFastCache) Get(key string) interface{} {
 	c.cache.Get(value, []byte(key))
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		c.Set(key, []byte("*"))
 	}
 	return value
 }
@@ -249,12 +258,11 @@ func NewBenchFreeCache(capacity int) Cache {
 
 func (c *BenchFreeCache) Get(key string) interface{} {
 	atomic.AddUint64(&c.stats.Reqs, 1)
-	value, err := c.cache.Get([]byte(key))
-	if err != nil {
-		log.Panic(err)
-	}
+	value, _ := c.cache.Get([]byte(key))
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		c.Set(key, []byte("*"))
 	}
 	return value
 }
@@ -294,6 +302,8 @@ func (c *BenchGoburrow) Get(key string) interface{} {
 	value, _ := c.cache.GetIfPresent(key)
 	if value != nil {
 		atomic.AddUint64(&c.stats.Hits, 1)
+	} else {
+		c.Set(key, []byte("*"))
 	}
 	return value
 }

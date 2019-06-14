@@ -26,6 +26,7 @@ import (
 const (
 	GET_SAME_CAPA = 1
 	GET_ZIPF_CAPA = 128
+	GET_ZIPF_MULT = 1024
 
 	SET_SAME_CAPA = 1
 	SET_ZIPF_CAPA = 128
@@ -37,9 +38,13 @@ const (
 	ZIPF_V = 1
 )
 
+func report(cache Cache, stats chan *Stats) {
+	stats <- cache.Bench()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
-func GetSame(benchmark *Benchmark) func(b *testing.B) {
+func GetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
 		cache.Set("*", []byte("*"))
@@ -51,6 +56,7 @@ func GetSame(benchmark *Benchmark) func(b *testing.B) {
 				cache.Get("*")
 			}
 		})
+		report(cache, stats)
 	}
 }
 
@@ -71,28 +77,25 @@ func zipfKeys(size int) []string {
 	return keys
 }
 
-func GetZipf(benchmark *Benchmark) func(b *testing.B) {
+func GetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
-		data := []byte("*")
-		keys := zipfKeys(GET_ZIPF_CAPA)
-		for i := range keys {
-			cache.Set(keys[i], data)
-		}
+		keys := zipfKeys(GET_ZIPF_CAPA * GET_ZIPF_MULT)
 		b.SetParallelism(benchmark.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := 0; pb.Next(); i++ {
-				cache.Get(keys[i&(GET_ZIPF_CAPA-1)])
+				cache.Get(keys[i&((GET_ZIPF_CAPA*GET_ZIPF_MULT)-1)])
 			}
 		})
+		report(cache, stats)
 	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func SetSame(benchmark *Benchmark) func(b *testing.B) {
+func SetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
 		data := []byte("*")
@@ -104,10 +107,11 @@ func SetSame(benchmark *Benchmark) func(b *testing.B) {
 				cache.Set("*", data)
 			}
 		})
+		report(cache, stats)
 	}
 }
 
-func SetZipf(benchmark *Benchmark) func(b *testing.B) {
+func SetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
 		keys := zipfKeys(SET_ZIPF_CAPA)
@@ -120,12 +124,13 @@ func SetZipf(benchmark *Benchmark) func(b *testing.B) {
 				cache.Set(keys[i&(SET_ZIPF_CAPA-1)], data)
 			}
 		})
+		report(cache, stats)
 	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func SetGet(benchmark *Benchmark) func(b *testing.B) {
+func SetGet(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := benchmark.Create()
 		data := []byte("*")
@@ -142,5 +147,6 @@ func SetGet(benchmark *Benchmark) func(b *testing.B) {
 				}
 			}
 		})
+		report(cache, stats)
 	}
 }
