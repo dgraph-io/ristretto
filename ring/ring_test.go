@@ -48,10 +48,10 @@ func TestLossy(t *testing.T) {
 		Capacity: 4,
 	})
 
-	buffer.Push("1")
-	buffer.Push("2")
-	buffer.Push("3")
-	buffer.Push("4")
+	buffer.Push(Element("1"))
+	buffer.Push(Element("2"))
+	buffer.Push(Element("3"))
+	buffer.Push(Element("4"))
 
 	if drainCount != 1 {
 		t.Fatal("drain error")
@@ -63,17 +63,18 @@ func BenchmarkLossy(b *testing.B) {
 		Consumer: &BaseConsumer{},
 		Capacity: CAPACITY,
 	})
+	elem := Element("1")
 	b.Run("Singular", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {
-			buffer.Push("1")
+			buffer.Push(elem)
 		}
 	})
 	b.Run("Parallel", func(b *testing.B) {
 		b.SetBytes(1)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				buffer.Push("1")
+				buffer.Push(elem)
 			}
 		})
 	})
@@ -85,17 +86,18 @@ func BenchmarkLossless(b *testing.B) {
 		Stripes:  STRIPES,
 		Capacity: CAPACITY,
 	})
+	elem := Element("1")
 	b.Run("Singular", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {
-			buffer.Push("1")
+			buffer.Push(elem)
 		}
 	})
 	b.Run("Parallel", func(b *testing.B) {
 		b.SetBytes(1)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				buffer.Push("1")
+				buffer.Push(elem)
 			}
 		})
 	})

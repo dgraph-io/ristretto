@@ -44,9 +44,13 @@ func TestMain(m *testing.M) {
 	}{
 		{"ristretto  ", NewBenchRistretto},
 		{"base-mutex ", NewBenchBaseMutex},
-		{"bigcache   ", NewBenchBigCache},
-		{"fastcache  ", NewBenchFastCache},
-		{"freecache  ", NewBenchFreeCache},
+		/* these caches don't allow a hard capacity limit so there's no point
+		   in including them in hit rate comparisons with small capacities
+
+			{"bigcache   ", NewBenchBigCache},
+			{"fastcache  ", NewBenchFastCache},
+			{"freecache  ", NewBenchFreeCache},
+		*/
 		{"goburrow   ", NewBenchGoburrow},
 	}
 	logs := make([]*Log, 0)

@@ -24,8 +24,13 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
+type Policy interface {
+	ring.Consumer
+	Victim() string
+}
+
 type Cache struct {
-	meta     *Meta
+	meta     Policy
 	data     store.Map
 	size     uint64
 	capacity uint64
@@ -33,7 +38,7 @@ type Cache struct {
 }
 
 func NewCache(capacity uint64) *Cache {
-	meta := &Meta{data: make(map[string]*uint64, capacity)}
+	meta := NewSampledLFU(capacity)
 	return &Cache{
 		meta:     meta,
 		data:     store.NewMap(),
@@ -41,24 +46,19 @@ func NewCache(capacity uint64) *Cache {
 		capacity: capacity,
 		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
 			Consumer: meta,
-			Capacity: 1024 * 2,
+			Capacity: 2048,
 		}),
 	}
 }
 
 func (c *Cache) Get(key string) interface{} {
-	// record access for admission/eviction tracking
 	c.buffer.Push(ring.Element(key))
-	// return value from data store
 	return c.data.Get(key)
 }
 
 func (c *Cache) Set(key string, value interface{}) {
 	// if already exists, just update the value
-	if c.data.Get(key) != nil {
-		// TODO: test whether we should update the metadata on a set operation,
-		//       my gut feeling is that this is better for hit ratio
-		c.buffer.Push(ring.Element(key))
+	if rawValue := c.data.Get(key); rawValue != nil {
 		c.data.Set(key, value)
 		return
 	}
@@ -66,6 +66,8 @@ func (c *Cache) Set(key string, value interface{}) {
 	if atomic.AddUint64(&c.size, 1) >= c.capacity {
 		// delete the victim from data store
 		c.data.Del(c.meta.Victim())
+		// decrement size counter
+		atomic.AddUint64(&c.size, ^uint64(0))
 	}
 	// record the access *after* possible eviction, so as we don't immediately
 	// evict the item just added (in this function call, anyway - eviction
@@ -81,52 +83,120 @@ func (c *Cache) Del(key string) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Meta is a naive metadata manager for admission/eviction statistics. Currently
-// it's just a hash map with counters as values.
-type Meta struct {
+type SampledLFU struct {
 	sync.Mutex
 	data map[string]*uint64
 }
 
-func (m *Meta) Push(keys []ring.Element) {
-	m.Lock()
-	defer m.Unlock()
-	for _, key := range keys {
-		m.record(string(key))
+func NewSampledLFU(capacity uint64) *SampledLFU {
+	return &SampledLFU{
+		data: make(map[string]*uint64, capacity),
 	}
 }
 
-func (m *Meta) record(key string) {
-	if counter, exists := m.data[key]; exists {
+func (p *SampledLFU) Push(elements []ring.Element) {
+	p.Lock()
+	defer p.Unlock()
+	for _, element := range elements {
+		p.Record(string(element))
+	}
+}
+
+func (p *SampledLFU) Record(key string) {
+	if counter, exists := p.data[key]; exists {
 		*counter++
 		return
 	}
-	// make a new counter for this key
+	// make a new counter
 	counter := uint64(1)
-	m.data[key] = &counter
+	p.data[key] = &counter
 }
 
-// number of elements to check when looking for victims
-const SAMPLE_SIZE = 5
+const SAMPLE = 5
+
+func (p *SampledLFU) Victim() string {
+	p.Lock()
+	defer p.Unlock()
+	m := struct {
+		key  string
+		hits uint64
+	}{}
+	i := 0
+	for key, hits := range p.data {
+		h := atomic.LoadUint64(hits)
+		if i == 0 || h < m.hits {
+			m.key, m.hits = key, h
+		}
+		if i++; i == SAMPLE {
+			break
+		}
+	}
+	delete(p.data, m.key)
+	return m.key
+}
+
+/*
+type Meta struct {
+	sync.Mutex
+	tracking *Stack
+}
+
+func NewMeta(capacity uint64) *Meta {
+	return &Meta{
+		tracking: NewStack(capacity),
+	}
+}
+
+func (m *Meta) Push(elements []ring.Element) {
+	m.Lock()
+	defer m.Unlock()
+	for i := range elements {
+		// increment the current element's counter
+		*(elements[i].Hits)++
+		// add to the tracking stack
+		m.tracking.Push(elements[i])
+	}
+}
 
 func (m *Meta) Victim() string {
 	m.Lock()
 	defer m.Unlock()
-	victim := struct {
-		key   string
-		count uint64
-	}{}
-	i := 0
-	for key, counter := range m.data {
-		count := atomic.LoadUint64(counter)
-		if i == 0 || count < victim.count {
-			victim.key, victim.count = key, count
-		}
-		if i == SAMPLE_SIZE {
-			break
-		}
-		i++
+	element := m.tracking.Pop()
+	if element.Key == nil {
+		return ""
 	}
-	delete(m.data, victim.key)
-	return victim.key
+	return *(element.Key)
 }
+
+// Stack is a ring.Element stack that keeps track of the minimum element.
+type Stack struct {
+	size     uint64
+	capacity uint64
+	elements []ring.Element
+}
+
+func NewStack(capacity uint64) *Stack {
+	return &Stack{
+		capacity: capacity,
+		elements: make([]ring.Element, capacity),
+	}
+}
+
+func (s *Stack) Push(element ring.Element) {
+	if s.size == 0 || *(element.Hits) < *(s.elements[s.size-1].Hits) {
+		if s.size == s.capacity {
+			s.elements = append(s.elements[1:], element)
+		} else {
+			s.elements[s.size] = element
+			s.size++
+		}
+	}
+}
+
+func (s *Stack) Pop() ring.Element {
+	if s.size > 0 {
+		s.size--
+	}
+	return s.elements[s.size]
+}
+*/
