@@ -38,7 +38,7 @@ const (
 	//
 	// ZIPF_S must be > 1, the larger the value the more spread out the
 	// distribution is
-	ZIPF_S = 1.01
+	ZIPF_S = 1.5
 	ZIPF_V = 1
 )
 
@@ -69,6 +69,21 @@ func GetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	}
 }
 
+func GetSameFast(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := benchmark.Create()
+		cache.Set("*", []byte("*"))
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				cache.GetFast("*")
+			}
+		})
+	}
+}
+
 func GetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
 		zipf := zipfian(GET_ZIPF_CAPA * GET_ZIPF_MULT)
@@ -89,6 +104,25 @@ func GetZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 			}
 		})
 		report(cache, stats)
+	}
+}
+
+func GetZipfFast(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		zipf := zipfian(GET_ZIPF_CAPA * GET_ZIPF_MULT)
+		keys := make([]string, 10000)
+		for i := range keys {
+			keys[i] = fmt.Sprintf("%d", zipf.Uint64())
+		}
+		cache := benchmark.Create()
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for i := 0; pb.Next(); i++ {
+				cache.GetFast(keys[i&9999])
+			}
+		})
 	}
 }
 
@@ -154,5 +188,24 @@ func SetGet(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 			}
 		})
 		report(cache, stats)
+	}
+}
+
+func SetGetFast(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := benchmark.Create()
+		data := []byte("*")
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for i := 0; pb.Next(); i++ {
+				if i&1 == 0 {
+					cache.Set("*", data)
+				} else {
+					cache.GetFast("*")
+				}
+			}
+		})
 	}
 }
