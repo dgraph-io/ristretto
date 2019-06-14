@@ -138,15 +138,18 @@ type BenchBigCache struct {
 }
 
 func NewBenchBigCache(capacity int) Cache {
+	// NOTE: bigcache automatically allocates more memory, there's no way to set
+	//       a hard limit on the item/memory capacity
+	//
 	// create a bigcache instance with default config values except for the
 	// logger - we don't want them messing with our stdout
 	//
 	// https://github.com/allegro/bigcache/blob/master/config.go#L47
 	cache, err := bigcache.NewBigCache(bigcache.Config{
-		Shards:             1024,
+		Shards:             2,
 		LifeWindow:         time.Second * 30,
 		CleanWindow:        0,
-		MaxEntriesInWindow: 1000 * 10 * 60,
+		MaxEntriesInWindow: capacity,
 		MaxEntrySize:       500,
 		Verbose:            true,
 		Hasher:             newBigCacheHasher(),
@@ -216,6 +219,7 @@ type BenchFastCache struct {
 }
 
 func NewBenchFastCache(capacity int) Cache {
+	// NOTE: if capacity is less than 32MB, then fastcache sets it to 32MB
 	return &BenchFastCache{
 		cache: fastcache.New(capacity),
 		stats: &Stats{},
@@ -253,6 +257,7 @@ type BenchFreeCache struct {
 }
 
 func NewBenchFreeCache(capacity int) Cache {
+	// NOTE: if capacity is less than 512KB, then freecache sets it to 512KB
 	return &BenchFreeCache{
 		cache: freecache.NewCache(capacity),
 		stats: &Stats{},
