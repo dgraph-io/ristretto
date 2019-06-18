@@ -21,6 +21,36 @@ import (
 	"testing"
 )
 
+func BenchmarkSyncMap(b *testing.B) {
+	GenerateBench(func() Map { return NewSyncMap() })(b)
+}
+
+func BenchmarkLockedMap(b *testing.B) {
+	GenerateBench(func() Map { return NewLockedMap() })(b)
+}
+
+func BenchmarkCustomMap(b *testing.B) {
+	GenerateBench(func() Map { return NewCustomMap() })(b)
+}
+
+func GenerateBench(create func() Map) func(*testing.B) {
+	return func(b *testing.B) {
+		b.Run("get  ", func(b *testing.B) {
+			m := create()
+			m.Set("*", 1)
+			b.SetBytes(1)
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					m.Get("*")
+				}
+			})
+		})
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 func TestMap(t *testing.T) {
 	GenerateTest(func() Map { return NewMap() })(t)
 }

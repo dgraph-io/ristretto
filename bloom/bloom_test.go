@@ -51,7 +51,7 @@ func TestCBF(t *testing.T) {
 
 func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
-		s := create()
+		//s := create()
 		// TODO
 	}
 }
