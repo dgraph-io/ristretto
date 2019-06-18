@@ -109,3 +109,25 @@ func (m *LockedMap) Run(f func(interface{}, interface{}) bool) {
 		}
 	}
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+type CustomMap struct {
+}
+
+func NewCustomMap() *CustomMap {
+	return &CustomMap{}
+}
+
+func (m *CustomMap) Get(key string) interface{} {
+	return nil
+}
+
+func (m *CustomMap) Set(key string, value interface{}) {
+}
+
+func (m *CustomMap) Del(key string) {
+}
+
+func (m *CustomMap) Run(f func(interface{}, interface{}) bool) {
+}

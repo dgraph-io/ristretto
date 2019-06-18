@@ -30,13 +30,12 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
-	"sync"
 
 	"github.com/dgraph-io/ristretto/ring"
 )
 
 type Sketch interface {
-	ring.Consumer
+	Increment(string)
 	Estimate(uint64) uint64
 }
 
@@ -45,7 +44,6 @@ type Sketch interface {
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
 // ring.Consumer interface for maintaining admission/eviction statistics.
 type CBF struct {
-	sync.Mutex
 	sample   uint64
 	capacity uint64
 	count    uint64
@@ -80,19 +78,13 @@ func NewCBF(capacity, sample uint64) *CBF {
 	}
 }
 
-func (c *CBF) Push(keys []ring.Element) {
-	c.Lock()
-	defer c.Unlock()
-	for _, key := range keys {
-		c.alg.Write([]byte(key))
-		c.increment(c.alg.Sum64())
-		c.alg.Reset()
-	}
+func (c *CBF) Increment(key string) {
+	c.alg.Write([]byte(key))
+	c.increment(c.alg.Sum64())
+	c.alg.Reset()
 }
 
 func (c *CBF) Estimate(hashed uint64) uint64 {
-	c.Lock()
-	defer c.Unlock()
 	min := uint64(0)
 	for row := uint64(0); row < CBF_ROWS; row++ {
 		var (

@@ -43,13 +43,15 @@ func TestMain(m *testing.M) {
 		create func(int) Cache
 	}{
 		{"ristretto  ", NewBenchRistretto},
-		{"base-mutex ", NewBenchBaseMutex},
-		{"goburrow   ", NewBenchGoburrow},
-		// these caches don't allow a hard capacity limit so there's no point
-		// in including them in hit rate comparisons with small capacities
-		{"bigcache   ", NewBenchBigCache},
-		{"fastcache  ", NewBenchFastCache},
-		{"freecache  ", NewBenchFreeCache},
+		/*
+			{"base-mutex ", NewBenchBaseMutex},
+			{"goburrow   ", NewBenchGoburrow},
+			// these caches don't allow a hard capacity limit so there's no point
+			// in including them in hit rate comparisons with small capacities
+			{"bigcache   ", NewBenchBigCache},
+			{"fastcache  ", NewBenchFastCache},
+			{"freecache  ", NewBenchFreeCache},
+		*/
 	}
 	logs := make([]*Log, 0)
 	benchmarks := make([]*Benchmark, 0)
@@ -141,7 +143,7 @@ func save(logs []*Log) error {
 func Labels() []string {
 	return []string{
 		"name       ",
-		"label   ",
+		"label        ",
 		"gr",
 		"ops  ",
 		"ac",
@@ -196,12 +198,12 @@ func NewBenchmarks(name string, para int, create func(int) Cache) []*Benchmark {
 		capacity int
 		bencher  func(*Benchmark, chan *Stats) func(*testing.B)
 	}{
-		//{"get-same", GET_SAME_CAPA, GetSame},
-		//{"get-zipf", GET_ZIPF_CAPA, GetZipf},
-		//{"set-get ", SET_GET_CAPA, SetGet},
-		//{"set-same", SET_SAME_CAPA, SetSame},
-		//{"set-zipf", SET_ZIPF_CAPA, SetZipf},
-		// {"get-same-fast", GET_SAME_CAPA, GetSameFast},
+		{"get-same     ", GET_SAME_CAPA, GetSame},
+		{"get-zipf     ", GET_ZIPF_CAPA, GetZipf},
+		{"set-get      ", SET_GET_CAPA, SetGet},
+		{"set-same     ", SET_SAME_CAPA, SetSame},
+		{"set-zipf     ", SET_ZIPF_CAPA, SetZipf},
+		{"get-same-fast", GET_SAME_CAPA, GetSameFast},
 		{"get-zipf-fast", GET_ZIPF_CAPA, GetZipfFast},
 	}
 	benchmarks := make([]*Benchmark, len(variations))
