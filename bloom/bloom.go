@@ -36,7 +36,7 @@ import (
 
 type Sketch interface {
 	Increment(string)
-	Estimate(uint64) uint64
+	Estimate(string) uint64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,6 +60,10 @@ const (
 )
 
 func NewCBF(capacity uint64) *CBF {
+	// capacity must be above a certain level because we do division below
+	if capacity < CBF_COUNTERS {
+		capacity = CBF_COUNTERS
+	}
 	// initialize hash seeds for each row
 	seed := make([]uint64, CBF_ROWS)
 	for i := range seed {
@@ -78,11 +82,19 @@ func NewCBF(capacity uint64) *CBF {
 
 func (c *CBF) Increment(key string) {
 	c.alg.Write([]byte(key))
-	c.increment(c.alg.Sum64())
+	hashed := c.alg.Sum64()
 	c.alg.Reset()
+	c.increment(hashed)
 }
 
-func (c *CBF) Estimate(hashed uint64) uint64 {
+func (c *CBF) Estimate(key string) uint64 {
+	c.alg.Write([]byte(key))
+	hashed := c.alg.Sum64()
+	c.alg.Reset()
+	return c.estimate(hashed)
+}
+
+func (c *CBF) estimate(hashed uint64) uint64 {
 	min := uint64(0)
 	for row := uint64(0); row < CBF_ROWS; row++ {
 		var (

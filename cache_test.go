@@ -17,10 +17,43 @@
 package ristretto
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dgraph-io/ristretto/ring"
+	"github.com/dgraph-io/ristretto/store"
 )
+
+func TestTinyLFU(t *testing.T) {
+	t.Run("push", func(t *testing.T) {
+		m := store.NewMap()
+		p := NewTinyLFU(16, m)
+		m.Set("1", nil)
+		p.Push([]ring.Element{"1", "1", "1"})
+		if p.sketch.Estimate("1") != 3 {
+			t.Fatal("push error")
+		}
+	})
+	t.Run("add", func(t *testing.T) {
+		c := uint64(16)
+		// tinylfu counters need a map for eviction
+		m := store.NewMap()
+		p := NewTinyLFU(c, m)
+		// fill it up
+		for i := uint64(0); i < c; i++ {
+			k := fmt.Sprintf("%d", i)
+			// need to add it to the map as well because that's how eviction is
+			// done
+			m.Set(k, nil)
+			p.Add(k)
+		}
+		if victim, _ := p.Add("16"); victim == "" {
+			t.Fatal("eviction error")
+		}
+	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 func TestLRU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {

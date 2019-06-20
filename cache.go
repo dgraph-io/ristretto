@@ -172,16 +172,21 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// TinyLFU keeps track of frequency using tiny (4-bit) counters in the form of a
+// counting bloom filter. For eviction, sampled LFU is done.
 type TinyLFU struct {
 	sync.Mutex
+	data     store.Map
 	size     uint64
 	capacity uint64
 	sketch   bloom.Sketch
 }
 
-func NewTinyLFU(capacity uint64) *TinyLFU {
+func NewTinyLFU(capacity uint64, data store.Map) *TinyLFU {
 	return &TinyLFU{
-		sketch: bloom.NewCBF(capacity / 16),
+		data:     data,
+		sketch:   bloom.NewCBF(capacity),
+		capacity: capacity,
 	}
 }
 
@@ -194,7 +199,46 @@ func (p *TinyLFU) Push(keys []ring.Element) {
 }
 
 func (p *TinyLFU) Add(key string) (victim string, added bool) {
-	// TODO: will need a mixture of hash map + cbf
+	p.Lock()
+	defer p.Unlock()
+	// tinylfu doesn't have an "adding" mechanism because the structure is
+	// probabilistic, so we can just assume it's already in the policy - but we
+	// do need to keep track of the policy size and capacity for eviction
+	// purposes
+	//
+	// check if eviction is needed
+	if p.size >= p.capacity {
+		// eviction is needed
+		//
+		// create a slice that will hold the random sample of keys from the map
+		keys, i := make([]string, LFU_SAMPLE), 0
+		// get the random sample
+		p.data.Run(func(k, v interface{}) bool {
+			keys[i] = k.(string)
+			i++
+			return !(i == LFU_SAMPLE)
+		})
+		// keep track of mins
+		minKey, minHits := "", uint64(0)
+		// find the minimally used item from the random sample
+		for j, k := range keys {
+			if k != "" {
+				// lookup the key in the frequency sketch
+				hits := p.sketch.Estimate(k)
+				// keep track of minimally used item
+				if j == 0 || hits < minHits {
+					minKey = k
+					minHits = hits
+				}
+			}
+		}
+		// set victim to minimally used item
+		victim = minKey
+	}
+	// increment key counter
+	p.sketch.Increment(key)
+	added = true
+	p.size++
 	return
 }
 

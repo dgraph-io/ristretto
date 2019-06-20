@@ -23,6 +23,7 @@ import (
 type TestSketch interface {
 	Sketch
 	increment(uint64)
+	estimate(uint64) uint64
 	reset()
 }
 
@@ -33,11 +34,11 @@ func GenerateTest(create func() TestSketch) func(t *testing.T) {
 		s.increment(1)
 		s.increment(1)
 		s.increment(1)
-		if s.Estimate(1) != 4 {
+		if s.estimate(1) != 4 {
 			t.Fatal("increment/estimate error")
 		}
 		s.reset()
-		if s.Estimate(1) != 2 {
+		if s.estimate(1) != 2 {
 			t.Fatal("reset error")
 		}
 	}
@@ -63,7 +64,7 @@ func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 			b.SetBytes(1)
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				s.Estimate(1)
+				s.estimate(1)
 			}
 		})
 	}
