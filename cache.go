@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"container/list"
 	"sync"
 
 	"github.com/dgraph-io/ristretto/bloom"
@@ -100,6 +101,7 @@ func (c *Cache) Del(key string) {
 // candidates.
 const LFU_SAMPLE = 5
 
+// LFU is a Policy with no admission policy and a sampled LFU eviction policy.
 type LFU struct {
 	sync.Mutex
 	data     map[string]uint64
@@ -194,4 +196,64 @@ func (p *TinyLFU) Push(keys []ring.Element) {
 func (p *TinyLFU) Add(key string) (victim string, added bool) {
 	// TODO: will need a mixture of hash map + cbf
 	return
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// LRU is a Policy with no admission policy and a LRU eviction policy (using
+// doubly linked list).
+type LRU struct {
+	sync.Mutex
+	list     *list.List
+	look     map[string]*list.Element
+	capacity uint64
+	size     uint64
+}
+
+func NewLRU(capacity uint64) *LRU {
+	return &LRU{
+		list:     list.New(),
+		look:     make(map[string]*list.Element),
+		capacity: capacity,
+	}
+}
+
+func (p *LRU) Push(keys []ring.Element) {
+	p.Lock()
+	defer p.Unlock()
+	for _, key := range keys {
+		p.list.MoveToFront(p.look[string(key)])
+	}
+}
+
+func (p *LRU) Add(key string) (victim string, added bool) {
+	p.Lock()
+	defer p.Unlock()
+	// check if the element already exists in the policy
+	if element, exists := p.look[key]; exists {
+		p.list.MoveToFront(element)
+		return
+	}
+	// check if eviction is needed
+	if p.size >= p.capacity {
+		// get the victim key
+		victim = p.list.Back().Value.(string)
+		// delete the victim from the list
+		p.list.Remove(p.list.Back())
+		// delete the victim from the lookup map
+		delete(p.look, victim)
+	}
+	// add the new key to the list
+	p.look[key] = p.list.PushFront(key)
+	added = true
+	p.size++
+	return
+}
+
+func (p *LRU) String() string {
+	out := "["
+	for element := p.list.Front(); element != nil; element = element.Next() {
+		out += element.Value.(string) + ", "
+	}
+	return out[:len(out)-2] + "]"
 }

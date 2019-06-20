@@ -22,7 +22,29 @@ import (
 	"github.com/dgraph-io/ristretto/ring"
 )
 
-func TestCache(t *testing.T) {
+func TestLRU(t *testing.T) {
+	t.Run("push", func(t *testing.T) {
+		p := NewLRU(4)
+		p.Add("1")
+		p.Add("3")
+		p.Add("2")
+		p.Push([]ring.Element{"1", "3", "1"})
+		if p.String() != "[1, 3, 2]" {
+			t.Fatal("push order error")
+		}
+	})
+	t.Run("add", func(t *testing.T) {
+		p := NewLRU(4)
+		p.Add("1")
+		p.Add("2")
+		p.Add("3")
+		p.Add("4")
+		p.Push([]ring.Element{"1", "3"})
+		victim, added := p.Add("5")
+		if added && victim != "2" {
+			t.Fatal("eviction error")
+		}
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
