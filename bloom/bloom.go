@@ -44,7 +44,6 @@ type Sketch interface {
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
 // ring.Consumer interface for maintaining admission/eviction statistics.
 type CBF struct {
-	sample   uint64
 	capacity uint64
 	count    uint64
 	blocks   uint64
@@ -56,11 +55,11 @@ type CBF struct {
 const (
 	CBF_BITS     = 4
 	CBF_MAX      = 16
-	CBF_ROWS     = 2
+	CBF_ROWS     = 3
 	CBF_COUNTERS = 64 / CBF_BITS
 )
 
-func NewCBF(capacity, sample uint64) *CBF {
+func NewCBF(capacity uint64) *CBF {
 	// initialize hash seeds for each row
 	seed := make([]uint64, CBF_ROWS)
 	for i := range seed {
@@ -69,7 +68,6 @@ func NewCBF(capacity, sample uint64) *CBF {
 		seed[i] = binary.LittleEndian.Uint64(tmp)
 	}
 	return &CBF{
-		sample:   sample,
 		capacity: capacity,
 		blocks:   capacity / CBF_MAX,
 		data:     make([]uint64, (capacity/CBF_MAX)*CBF_ROWS),

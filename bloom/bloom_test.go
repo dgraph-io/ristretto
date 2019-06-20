@@ -44,14 +44,31 @@ func GenerateTest(create func() TestSketch) func(t *testing.T) {
 }
 
 func TestCBF(t *testing.T) {
-	GenerateTest(func() TestSketch { return NewCBF(16, 0) })(t)
+	GenerateTest(func() TestSketch { return NewCBF(16) })(t)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
-		//s := create()
-		// TODO
+		s := create()
+		b.Run("increment", func(b *testing.B) {
+			b.SetBytes(1)
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				s.Increment("1")
+			}
+		})
+		b.Run("estimate", func(b *testing.B) {
+			b.SetBytes(1)
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				s.Estimate(1)
+			}
+		})
 	}
+}
+
+func BenchmarkCBF(b *testing.B) {
+	GenerateBenchmark(func() TestSketch { return NewCBF(16) })(b)
 }

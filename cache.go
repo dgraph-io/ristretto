@@ -19,6 +19,7 @@ package ristretto
 import (
 	"sync"
 
+	"github.com/dgraph-io/ristretto/bloom"
 	"github.com/dgraph-io/ristretto/ring"
 	"github.com/dgraph-io/ristretto/store"
 )
@@ -101,14 +102,14 @@ const LFU_SAMPLE = 5
 
 type LFU struct {
 	sync.Mutex
-	data     map[string]*uint64
+	data     map[string]uint64
 	size     uint64
 	capacity uint64
 }
 
 func NewLFU(capacity uint64) *LFU {
 	return &LFU{
-		data:     make(map[string]*uint64, capacity),
+		data:     make(map[string]uint64, capacity),
 		capacity: capacity,
 	}
 }
@@ -118,9 +119,8 @@ func NewLFU(capacity uint64) *LFU {
 //
 // NOTE: this function needs to be wrapped in a mutex to be safe.
 func (p *LFU) hit(key string) {
-	counter := p.data[key]
-	if counter != nil {
-		*(counter)++
+	if _, exists := p.data[key]; exists {
+		p.data[key]++
 	}
 }
 
@@ -140,15 +140,9 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 	defer p.Unlock()
 	// if it's already in the policy, just increment the counter and return
 	if _, exists := p.data[key]; exists {
-		p.hit(key)
+		p.data[key]++
 		return
 	}
-	// the key doesn't exist in our records yet, so create a new counter
-	counter := uint64(0)
-	// add the counter
-	p.data[key] = &counter
-	added = true
-	p.size++
 	// check if eviction is needed
 	if p.size >= p.capacity {
 		// find a victim
@@ -158,8 +152,8 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 			if i == LFU_SAMPLE {
 				break
 			}
-			if i == 0 || *v < min {
-				min = *v
+			if i == 0 || v < min {
+				min = v
 				victim = k
 			}
 			i++
@@ -167,5 +161,37 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 		// delete the victim
 		delete(p.data, victim)
 	}
+	// add the new item to the policy
+	p.data[key] = 1
+	added = true
+	p.size++
+	return
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type TinyLFU struct {
+	sync.Mutex
+	size     uint64
+	capacity uint64
+	sketch   bloom.Sketch
+}
+
+func NewTinyLFU(capacity uint64) *TinyLFU {
+	return &TinyLFU{
+		sketch: bloom.NewCBF(capacity / 16),
+	}
+}
+
+func (p *TinyLFU) Push(keys []ring.Element) {
+	p.Lock()
+	defer p.Unlock()
+	for _, key := range keys {
+		p.sketch.Increment(string(key))
+	}
+}
+
+func (p *TinyLFU) Add(key string) (victim string, added bool) {
+	// TODO: will need a mixture of hash map + cbf
 	return
 }
