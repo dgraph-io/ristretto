@@ -40,14 +40,19 @@ type Cache struct {
 	buffer *ring.Buffer
 }
 
-func NewCache(capacity uint64) *Cache {
-	policy := NewLFU(capacity)
+type Config struct {
+	CacheSize  uint64
+	BufferSize uint64
+}
+
+func NewCache(config *Config) *Cache {
+	policy := NewLFU(config.CacheSize)
 	return &Cache{
 		data:   store.NewMap(),
 		policy: policy,
 		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
 			Consumer: policy,
-			Capacity: 2048,
+			Capacity: config.BufferSize,
 		}),
 	}
 }
@@ -65,7 +70,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	}
 	// attempt to add and delete victim if needed
 	if victim, added := c.policy.Add(key); added {
-		// there is an eviction victim
+		// check if there was an eviction victim
 		if victim != "" {
 			c.data.Del(key)
 		}
@@ -76,4 +81,8 @@ func (c *Cache) Set(key string, value interface{}) {
 
 func (c *Cache) Del(key string) {
 	c.data.Del(key)
+}
+
+func (c *Cache) Log() PolicyLog {
+	return c.policy.Log()
 }
