@@ -24,6 +24,8 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
+////////////////////////////////////////////////////////////////////////////////
+
 func TestTinyLFU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {
 		m := store.NewMap()
@@ -133,4 +135,19 @@ func BenchmarkLFU(b *testing.B) {
 			}
 		})
 	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func TestClairvoyant(t *testing.T) {
+	p := NewClairvoyant(5)
+	p.Push([]ring.Element{
+		"1", "2", "3", "4", "5", "6", "3", "9",
+		"4", "3", "1", "7", "8", "9", "5", "3",
+		"5", "7",
+	})
+	l := p.Log()
+	if l.Hits != 9 || l.Requests != 18 || l.Evictions != 4 {
+		t.Fatal("log error")
+	}
 }
