@@ -25,6 +25,10 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
+// LFU_SAMPLE is the number of items to sample when looking at eviction
+// candidates.
+const LFU_SAMPLE = 5
+
 // Policy is the interface encapsulating eviction/admission behavior.
 type Policy interface {
 	ring.Consumer
@@ -96,10 +100,6 @@ func (c *Cache) Del(key string) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-// LFU_SAMPLE is the number of items to sample when looking at eviction
-// candidates.
-const LFU_SAMPLE = 5
 
 // LFU is a Policy with no admission policy and a sampled LFU eviction policy.
 type LFU struct {
