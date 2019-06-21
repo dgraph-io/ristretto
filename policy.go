@@ -40,9 +40,12 @@ type Policy interface {
 	// victim and thus added it to the Policy. The caller of Add would then
 	// delete the victim and store the key-value pair.
 	Add(string) (string, bool)
-	Log() *PolicyLog
+	// Log returns a PolicyLog with performance statistics.
+	Log() PolicyLog
 }
 
+// PolicyLog is maintained by all Policys and is useful for tracking statistics
+// about Policy efficiency.
 type PolicyLog struct {
 	Hits      uint64
 	Requests  uint64
@@ -68,6 +71,8 @@ func (p *PolicyLog) evict() {
 // Push and Add operations just maintain a history log. The real work is done
 // when Log is called, and it "looks into the future" to evict the best
 // candidates (the furthest away).
+//
+// [1]: https://bit.ly/2WTPdJ9
 //
 // This Policy is primarily for benchmarking purposes (as a baseline).
 type Clairvoyant struct {
@@ -127,7 +132,7 @@ func (p *Clairvoyant) Add(key string) (victim string, added bool) {
 	return
 }
 
-func (p *Clairvoyant) Log() *PolicyLog {
+func (p *Clairvoyant) Log() PolicyLog {
 	p.Lock()
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
@@ -178,7 +183,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 		data[key] = struct{}{}
 		size++
 	}
-	return p.log
+	return *p.log
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -186,6 +191,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 // LFU is a Policy with no admission policy and a sampled LFU eviction policy.
 type LFU struct {
 	sync.Mutex
+	log      *PolicyLog
 	data     map[string]uint64
 	size     uint64
 	capacity uint64
@@ -193,6 +199,7 @@ type LFU struct {
 
 func NewLFU(capacity uint64) *LFU {
 	return &LFU{
+		log:      &PolicyLog{},
 		data:     make(map[string]uint64, capacity),
 		capacity: capacity,
 	}
@@ -200,11 +207,10 @@ func NewLFU(capacity uint64) *LFU {
 
 // hit is called for each key in a Push() operation or when the key is accessed
 // during an Add() operation.
-//
-// NOTE: this function needs to be wrapped in a mutex to be safe.
 func (p *LFU) hit(key string) {
 	if _, exists := p.data[key]; exists {
 		p.data[key]++
+		p.log.hit()
 	}
 }
 
@@ -225,8 +231,10 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 	// if it's already in the policy, just increment the counter and return
 	if _, exists := p.data[key]; exists {
 		p.data[key]++
+		p.log.hit()
 		return
 	}
+	p.log.miss()
 	// check if eviction is needed
 	if p.size >= p.capacity {
 		// find a victim
@@ -244,6 +252,7 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 		}
 		// delete the victim
 		delete(p.data, victim)
+		p.log.evict()
 	}
 	// add the new item to the policy
 	p.data[key] = 1
@@ -252,9 +261,8 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 	return
 }
 
-func (p *LFU) Log() *PolicyLog {
-	// TODO
-	return nil
+func (p *LFU) Log() PolicyLog {
+	return *p.log
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -50,7 +50,7 @@ func NewStripe(config *Config) *Stripe {
 	return &Stripe{
 		Consumer: config.Consumer,
 		data:     make([]Element, config.Capacity),
-		capacity: config.Capacity,
+		capacity: int(config.Capacity),
 	}
 }
 
@@ -70,8 +70,8 @@ func (s *Stripe) Push(element Element) {
 
 type Config struct {
 	Consumer Consumer
-	Stripes  int
-	Capacity int
+	Stripes  uint64
+	Capacity uint64
 }
 
 // Buffer stores multiple buffers (stripes) and distributes Pushed elements
@@ -116,7 +116,7 @@ func NewBuffer(Type BufferType, config *Config) *Buffer {
 	}
 	return &Buffer{
 		stripes: stripes,
-		mask:    config.Stripes - 1,
+		mask:    int(config.Stripes - 1),
 		rand:    int(time.Now().UnixNano()), // random seed for picking stripes
 		push:    pushLossless,
 	}
