@@ -7,7 +7,8 @@ output CSV data for easy analysis and visualization.
 ## usage 
 
 ```
-$ go test -path stats.csv
+$ go build
+$ ./bench -path stats.csv
 
   2019/05/30 20:00:36 running: fastCache       (get-same) * 1
   2019/05/30 20:00:38      ... 1.552760541s

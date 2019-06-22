@@ -65,9 +65,10 @@ func (c *Cache) Get(key string) interface{} {
 func (c *Cache) Set(key string, value interface{}) {
 	// if already exists, just update the value
 	if rawValue := c.data.Get(key); rawValue != nil {
+		// hit
 		c.data.Set(key, value)
-		return
 	}
+	// miss
 	// attempt to add and delete victim if needed
 	if victim, added := c.policy.Add(key); added {
 		// check if there was an eviction victim
