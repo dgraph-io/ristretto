@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package bench
+package main
 
 import (
 	"flag"
@@ -28,36 +28,140 @@ import (
 	"time"
 )
 
-// Rather than just writing to stdout, we can use a user-defined file location
-// for saving benchmark data so we can use stdout for logs.
-var PATH = flag.String("path", "stats.csv", "Filepath for benchmark CSV data.")
+var (
+	// PATH is the user-defined location for writing the stats.csv file.
+	PATH = flag.String(
+		"path",
+		"stats.csv",
+		"Filepath for benchmark CSV data.",
+	)
+	// CACHE determines what libraries to include in the benchmarks.
+	CACHE = flag.String(
+		"cache",
+		"ristretto",
+		`Libraries to include in the benchmark: either "all" or "ristretto".`,
+	)
+	// SUITE is the flag determing what collection of benchmarks to run.
+	SUITE = flag.String(
+		"suite",
+		"full",
+		`You can chose from the following options:
+		"full"  - hit ratio and speed performance
+		"hits"  - hit ratio
+		"speed" - throughput
+		`,
+	)
+	// PARALLEL is the goroutine multiplier to use for benchmarking performance
+	// using a variable number of goroutines.
+	PARALLEL = flag.Int(
+		"parallel",
+		1,
+		"The goroutine multiplier (see runtime.GOMAXPROCS()).",
+	)
+	// CAPACITY is the hard limit of items to keep in a cache.
+	CAPACITY = flag.Int(
+		"capacity",
+		1024,
+		`The number of "items" to keep in a cache.`,
+	)
+)
+
+// Benchmark is used to generate benchmarks.
+type Benchmark struct {
+	// Name is the cache implementation identifier.
+	Name string
+	// Label is for denoting variations within implementations.
+	Label string
+	// Bencher is the function for generating testing.B benchmarks for running
+	// the actual iterations and collecting runtime information.
+	Bencher func(*Benchmark, chan *Stats) func(*testing.B)
+	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
+	Para int
+	// Create is the lazily evaluated function for creating new instances of the
+	// underlying cache.
+	Create func() Cache
+}
+
+type benchSuite struct {
+	label   string
+	bencher func(*Benchmark, chan *Stats) func(*testing.B)
+}
+
+func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark {
+	suite := make([]*benchSuite, 0)
+	// create the bench suite from the suite param (SUITE flag)
+	if kind == "hits" || kind == "full" {
+		suite = append(suite, []*benchSuite{
+			{"hits-uniform", HitsUniform},
+			{"hits-zipf", HitsZipf},
+		}...)
+	}
+	if kind == "speed" || kind == "full" {
+		suite = append(suite, []*benchSuite{
+			{"get-same", GetSame},
+			{"get-zipf", GetZipf},
+			{"set-get ", SetGet},
+			{"set-same", SetSame},
+			{"set-zipf", SetZipf},
+		}...)
+	}
+	// create benchmarks from bench suite
+	benchmarks := make([]*Benchmark, len(suite))
+	for i := range benchmarks {
+		benchmarks[i] = &Benchmark{
+			Name:    cache.name,
+			Label:   suite[i].label,
+			Bencher: suite[i].bencher,
+			Para:    para,
+			Create:  func() Cache { return cache.create(capa) },
+		}
+	}
+	return benchmarks
+}
+
+type benchCache struct {
+	name   string
+	create func(int) Cache
+}
+
+// getBenchCaches() returns a slice of benchCache's depending on the value of
+// the include param (which is the *CACHE flag passed from main).
+func getBenchCaches(include string) []*benchCache {
+	caches := []*benchCache{
+		{"ristretto", NewBenchRistretto},
+	}
+	if include == "ristretto" {
+		return caches
+	}
+	if include == "all" {
+		caches = append(caches, []*benchCache{
+			{"base-mutex ", NewBenchBaseMutex},
+			{"goburrow   ", NewBenchGoburrow},
+			{"bigcache   ", NewBenchBigCache},
+			{"fastcache  ", NewBenchFastCache},
+			{"freecache  ", NewBenchFreeCache},
+		}...)
+	}
+	return caches
+}
 
 func init() {
 	flag.Parse()
 }
 
 // TestMain is the entry point for running this benchmark suite.
-func TestMain(m *testing.M) {
-	caches := []struct {
-		name   string
-		create func(int) Cache
-	}{
-		{"ristretto  ", NewBenchRistretto},
-		{"base-mutex ", NewBenchBaseMutex},
-		{"goburrow   ", NewBenchGoburrow},
-		// these caches don't allow a hard capacity limit so there's no point
-		// in including them in hit rate comparisons with small capacities
-		{"bigcache   ", NewBenchBigCache},
-		{"fastcache  ", NewBenchFastCache},
-		{"freecache  ", NewBenchFreeCache},
-	}
-	logs := make([]*Log, 0)
-	benchmarks := make([]*Benchmark, 0)
-	// create benchmark generators
-	for i := range caches {
+func main() {
+	var (
+		caches     = getBenchCaches(*CACHE)
+		logs       = make([]*Log, 0)
+		benchmarks = make([]*Benchmark, 0)
+	)
+	// create benchmark generators for each cache
+	for _, cache := range caches {
 		benchmarks = append(benchmarks, NewBenchmarks(
-			caches[i].name, 1, caches[i].create)...)
+			*SUITE, *PARALLEL, *CAPACITY, cache)...)
 	}
+
 	for _, benchmark := range benchmarks {
 		log.Printf("running: %s (%s) * %d",
 			benchmark.Name, benchmark.Label, benchmark.Para)
@@ -172,49 +276,6 @@ func (l *Log) Record() []string {
 		fmt.Sprintf("%6.2f%%",
 			100*(float64(l.Result.Stats.Hits)/float64(l.Result.Stats.Reqs))),
 	}
-}
-
-// Benchmark is used to generate benchmarks.
-type Benchmark struct {
-	// Name is the cache implementation identifier.
-	Name string
-	// Label is for denoting variations within implementations.
-	Label string
-	// Bencher is the function for generating testing.B benchmarks for running
-	// the actual iterations and collecting runtime information.
-	Bencher func(*Benchmark, chan *Stats) func(*testing.B)
-	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
-	Para int
-	// Create is the lazily evaluated function for creating new instances of the
-	// underlying cache.
-	Create func() Cache
-}
-
-func NewBenchmarks(name string, para int, create func(int) Cache) []*Benchmark {
-	variations := []struct {
-		label    string
-		capacity int
-		bencher  func(*Benchmark, chan *Stats) func(*testing.B)
-	}{
-		{"get-same     ", GET_SAME_CAPA, GetSame},
-		{"get-zipf     ", GET_ZIPF_CAPA, GetZipf},
-		{"set-get      ", SET_GET_CAPA, SetGet},
-		{"set-same     ", SET_SAME_CAPA, SetSame},
-		{"set-zipf     ", SET_ZIPF_CAPA, SetZipf},
-		{"get-same-fast", GET_SAME_CAPA, GetSameFast},
-		{"get-zipf-fast", GET_ZIPF_CAPA, GetZipfFast},
-	}
-	benchmarks := make([]*Benchmark, len(variations))
-	for i := range variations {
-		benchmarks[i] = &Benchmark{
-			Name:    name,
-			Label:   variations[i].label,
-			Bencher: variations[i].bencher,
-			Para:    para,
-			Create:  func() Cache { return create(variations[i].capacity) },
-		}
-	}
-	return benchmarks
 }
 
 // Result is a wrapper for testing.BenchmarkResult that adds fields needed for

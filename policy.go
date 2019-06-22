@@ -19,6 +19,7 @@ package ristretto
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/bloom"
 	"github.com/dgraph-io/ristretto/ring"
@@ -47,22 +48,34 @@ type Policy interface {
 // PolicyLog is maintained by all Policys and is useful for tracking statistics
 // about Policy efficiency.
 type PolicyLog struct {
-	Hits      uint64
-	Requests  uint64
-	Evictions uint64
+	hits      uint64
+	requests  uint64
+	evictions uint64
 }
 
 func (p *PolicyLog) hit() {
-	p.Hits++
-	p.Requests++
+	atomic.AddUint64(&p.hits, 1)
+	atomic.AddUint64(&p.requests, 1)
 }
 
 func (p *PolicyLog) miss() {
-	p.Requests++
+	atomic.AddUint64(&p.requests, 1)
 }
 
 func (p *PolicyLog) evict() {
-	p.Evictions++
+	atomic.AddUint64(&p.evictions, 1)
+}
+
+func (p *PolicyLog) Hits() uint64 {
+	return atomic.LoadUint64(&p.hits)
+}
+
+func (p *PolicyLog) Requests() uint64 {
+	return atomic.LoadUint64(&p.requests)
+}
+
+func (p *PolicyLog) Evictions() uint64 {
+	return atomic.LoadUint64(&p.evictions)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

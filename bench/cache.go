@@ -14,65 +14,77 @@
  * limitations under the License.
  */
 
-package bench
+package main
 
 import (
-	"log"
 	"sync"
-	"sync/atomic"
-	"time"
 
-	"github.com/VictoriaMetrics/fastcache"
-	"github.com/allegro/bigcache"
-	"github.com/coocood/freecache"
 	"github.com/dgraph-io/ristretto"
-	goburrow "github.com/goburrow/cache"
 	"github.com/golang/groupcache/lru"
 )
 
-// Cache needs to be fulfilled by the cache implementations in order for the
-// benchmarks to run properly.
 type Cache interface {
 	Get(string) interface{}
-	GetFast(string) interface{}
 	Set(string, interface{})
 	Del(string)
-	Bench() *Stats
 }
 
-// Stats holds hit/miss information after a round of benchmark iterations has
-// been ran.
-type Stats struct {
-	Reqs uint64
-	Hits uint64
+type HitCache interface {
+	Cache
+	Log() ristretto.PolicyLog
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type tempCache struct {
+	cache Cache
+	log   *policyLog
+}
+
+func NewHitCache(cache Cache) HitCache {
+	return &tempCache{
+		cache: cache,
+		log:   &ristretto.PolicyLog{},
+	}
+}
+
+func (c *tempCache) Get(key string) interface{} {
+	value := c.cache.Get(key)
+	if value == nil {
+		c.log.miss()
+	} else {
+		c.log.hit()
+	}
+	return value
+}
+
+func (c *tempCache) Set(key string, value interface{}) {
+
+}
+
+func (c *tempCache) Del(key string) {
+}
+
+func (c *tempCache) Log() ristretto.PolicyLog {
+	return *c.log
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
-	stats *Stats
 }
 
-func NewBenchRistretto(capacity int) Cache {
+func NewBenchRistretto(capacity int) BenchCache {
 	return &BenchRistretto{
-		cache: ristretto.NewCache(uint64(capacity)),
-		stats: &Stats{},
+		cache: ristretto.NewCache(&ristretto.Config{
+			CacheSize:  uint64(capacity),
+			BufferSize: uint64(capacity) / 2,
+		}),
 	}
 }
 
 func (c *BenchRistretto) Get(key string) interface{} {
-	atomic.AddUint64(&c.stats.Reqs, 1)
-	value := c.cache.Get(key)
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		c.Set(key, []byte("*"))
-	}
-	return value
-}
-
-func (c *BenchRistretto) GetFast(key string) interface{} {
 	return c.cache.Get(key)
 }
 
@@ -84,40 +96,20 @@ func (c *BenchRistretto) Del(key string) {
 	c.cache.Del(key)
 }
 
-func (c *BenchRistretto) Bench() *Stats {
-	return c.stats
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
-	stats *Stats
 }
 
 func NewBenchBaseMutex(capacity int) Cache {
 	return &BenchBaseMutex{
 		cache: lru.New(capacity),
-		stats: &Stats{},
 	}
 }
 
 func (c *BenchBaseMutex) Get(key string) interface{} {
-	c.Lock()
-	defer c.Unlock()
-	atomic.AddUint64(&c.stats.Reqs, 1)
-	value, _ := c.cache.Get(key)
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		// same as c.Set but without nested mutex calls
-		c.cache.Add(key, []byte("*"))
-	}
-	return value
-}
-
-func (c *BenchBaseMutex) GetFast(key string) interface{} {
 	c.Lock()
 	defer c.Unlock()
 	value, _ := c.cache.Get(key)
@@ -134,10 +126,7 @@ func (c *BenchBaseMutex) Del(key string) {
 	c.cache.Remove(key)
 }
 
-func (c *BenchBaseMutex) Bench() *Stats {
-	return c.stats
-}
-
+/*
 ////////////////////////////////////////////////////////////////////////////////
 
 type BenchBigCache struct {
@@ -354,3 +343,4 @@ func (c *BenchGoburrow) Del(key string) {
 func (c *BenchGoburrow) Bench() *Stats {
 	return c.stats
 }
+*/

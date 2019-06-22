@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package bench
+package main
 
 import (
 	"fmt"
@@ -24,16 +24,6 @@ import (
 )
 
 const (
-	GET_SAME_CAPA = 1
-	GET_ZIPF_CAPA = 128
-	GET_ZIPF_MULT = 1024
-
-	SET_SAME_CAPA = 1
-	SET_ZIPF_CAPA = 128
-	SET_ZIPF_MULT = 1024
-
-	SET_GET_CAPA = 1
-
 	// zipf generation variables (see https://golang.org/pkg/math/rand/#Zipf)
 	//
 	// ZIPF_S must be > 1, the larger the value the more spread out the
@@ -65,9 +55,26 @@ func GetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 				cache.Get("*")
 			}
 		})
+	}
+}
+
+/*
+func GetSame(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := benchmark.Create()
+		cache.Set("*", []byte("*"))
+		b.SetParallelism(benchmark.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				cache.Get("*")
+			}
+		})
 		report(cache, stats)
 	}
 }
+*/
 
 func GetSameFast(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 	return func(b *testing.B) {
@@ -207,5 +214,21 @@ func SetGetFast(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// HitsUniform records the hit ratio using a uniformly random distribution.
+func HitsUniform(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		//	cache := benchmark.Create()
+	}
+}
+
+// HitsZipf records the hit ratio using a Zipfian distribution.
+func HitsZipf(benchmark *Benchmark, stats chan *Stats) func(b *testing.B) {
+	return func(b *testing.B) {
+		// cache := benchmark.Create()
 	}
 }
