@@ -21,7 +21,7 @@ import (
 )
 
 func TestCache(t *testing.T) {
-	c := NewCache(&Config{4, 1})
+	c := NewCache(&Config{4, 1, true})
 	c.Set("1", nil)
 	c.Set("2", nil)
 	c.Set("3", nil)

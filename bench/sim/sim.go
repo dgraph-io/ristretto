@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
+// sim is a package encapsulating the generation/simulation of keys for
+// benchmarking cache implementations.
 package sim
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"math/rand"
 	"strconv"
@@ -62,6 +65,15 @@ func Collection(simulator Simulator, size uint64) []uint64 {
 	collection := make([]uint64, size)
 	for i := range collection {
 		collection[i], _ = simulator()
+	}
+	return collection
+}
+
+func StringCollection(simulator Simulator, size uint64) []string {
+	collection := make([]string, size)
+	for i := range collection {
+		n, _ := simulator()
+		collection[i] = fmt.Sprintf("%d", n)
 	}
 	return collection
 }

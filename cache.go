@@ -35,21 +35,27 @@ const LFU_SAMPLE = 5
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	data   store.Map
-	policy Policy
-	buffer *ring.Buffer
+	logging bool
+	log     *PolicyLog
+	data    store.Map
+	policy  Policy
+	buffer  *ring.Buffer
 }
 
 type Config struct {
 	CacheSize  uint64
 	BufferSize uint64
+	Log        bool
 }
 
 func NewCache(config *Config) *Cache {
-	policy := NewLFU(config.CacheSize)
+	data := store.NewMap()
+	policy := NewTinyLFU(config, data)
 	return &Cache{
-		data:   store.NewMap(),
-		policy: policy,
+		logging: config.Log,
+		log:     &PolicyLog{},
+		data:    data,
+		policy:  policy,
 		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
 			Consumer: policy,
 			Capacity: config.BufferSize,
@@ -62,17 +68,27 @@ func (c *Cache) Get(key string) interface{} {
 	return c.data.Get(key)
 }
 
+// TODO: clean up the policy logging, right now it's here to abstract it out
+//       from the individual policies (for example, it's impossible to track
+//       from within the probablistic tinylfu policy)
 func (c *Cache) Set(key string, value interface{}) {
 	// if already exists, just update the value
 	if rawValue := c.data.Get(key); rawValue != nil {
-		// hit
+		if c.logging {
+			c.log.Hit()
+		}
 		c.data.Set(key, value)
 	}
-	// miss
 	// attempt to add and delete victim if needed
 	if victim, added := c.policy.Add(key); added {
+		if c.logging {
+			c.log.Miss()
+		}
 		// check if there was an eviction victim
 		if victim != "" {
+			if c.logging {
+				c.log.Evict()
+			}
 			c.data.Del(key)
 		}
 		// since the key was added to the policy, add it to the data store too
@@ -84,6 +100,6 @@ func (c *Cache) Del(key string) {
 	c.data.Del(key)
 }
 
-func (c *Cache) Log() PolicyLog {
-	return c.policy.Log()
+func (c *Cache) Log() *PolicyLog {
+	return c.log
 }

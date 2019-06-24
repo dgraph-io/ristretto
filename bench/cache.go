@@ -17,69 +17,26 @@
 package main
 
 import (
-	"sync"
-
 	"github.com/dgraph-io/ristretto"
-	"github.com/golang/groupcache/lru"
 )
 
 type Cache interface {
 	Get(string) interface{}
 	Set(string, interface{})
 	Del(string)
+	Log() *ristretto.PolicyLog
 }
-
-type HitCache interface {
-	Cache
-	Log() ristretto.PolicyLog
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type tempCache struct {
-	cache Cache
-	log   *policyLog
-}
-
-func NewHitCache(cache Cache) HitCache {
-	return &tempCache{
-		cache: cache,
-		log:   &ristretto.PolicyLog{},
-	}
-}
-
-func (c *tempCache) Get(key string) interface{} {
-	value := c.cache.Get(key)
-	if value == nil {
-		c.log.miss()
-	} else {
-		c.log.hit()
-	}
-	return value
-}
-
-func (c *tempCache) Set(key string, value interface{}) {
-
-}
-
-func (c *tempCache) Del(key string) {
-}
-
-func (c *tempCache) Log() ristretto.PolicyLog {
-	return *c.log
-}
-
-////////////////////////////////////////////////////////////////////////////////
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
 }
 
-func NewBenchRistretto(capacity int) BenchCache {
+func NewBenchRistretto(capacity int) Cache {
 	return &BenchRistretto{
 		cache: ristretto.NewCache(&ristretto.Config{
 			CacheSize:  uint64(capacity),
-			BufferSize: uint64(capacity) / 2,
+			BufferSize: uint64(capacity),
+			Log:        true,
 		}),
 	}
 }
@@ -96,8 +53,11 @@ func (c *BenchRistretto) Del(key string) {
 	c.cache.Del(key)
 }
 
-////////////////////////////////////////////////////////////////////////////////
+func (c *BenchRistretto) Log() *ristretto.PolicyLog {
+	return c.cache.Log()
+}
 
+/*
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
@@ -125,9 +85,6 @@ func (c *BenchBaseMutex) Set(key string, value interface{}) {
 func (c *BenchBaseMutex) Del(key string) {
 	c.cache.Remove(key)
 }
-
-/*
-////////////////////////////////////////////////////////////////////////////////
 
 type BenchBigCache struct {
 	cache *bigcache.BigCache
@@ -194,8 +151,6 @@ func (c *BenchBigCache) Bench() *Stats {
 	return c.stats
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // bigCacheHasher is just trying to mimic bigcache's internal implementation of
 // a 64bit fnv-1a hasher
 //
@@ -212,8 +167,6 @@ func (h bigCacheHasher) Sum64(key string) uint64 {
 	}
 	return hash
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 type BenchFastCache struct {
 	cache *fastcache.Cache
@@ -254,8 +207,6 @@ func (c *BenchFastCache) Del(key string) {
 func (c *BenchFastCache) Bench() *Stats {
 	return c.stats
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 type BenchFreeCache struct {
 	cache *freecache.Cache
@@ -299,8 +250,6 @@ func (c *BenchFreeCache) Del(key string) {
 func (c *BenchFreeCache) Bench() *Stats {
 	return c.stats
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 type BenchGoburrow struct {
 	cache goburrow.Cache

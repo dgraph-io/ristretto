@@ -84,7 +84,7 @@ func TestLRU(t *testing.T) {
 
 func TestLFU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {
-		p := NewLFU(4)
+		p := NewLFU(&Config{4, 4, true})
 		p.Add("1")
 		p.Push([]ring.Element{"1", "1", "1"})
 		if p.data["1"] != 4 {
@@ -92,7 +92,7 @@ func TestLFU(t *testing.T) {
 		}
 	})
 	t.Run("add", func(t *testing.T) {
-		p := NewLFU(4)
+		p := NewLFU(&Config{4, 4, true})
 		p.Add("1")
 		p.Add("2")
 		p.Add("3")
@@ -114,7 +114,7 @@ func BenchmarkLFU(b *testing.B) {
 	k := "1"
 	data := []ring.Element{"1", "1"}
 	b.Run("single", func(b *testing.B) {
-		p := NewLFU(1000000)
+		p := NewLFU(&Config{1000000, 1000000, true})
 		p.Add(k)
 		b.SetBytes(1)
 		b.ResetTimer()
@@ -123,7 +123,7 @@ func BenchmarkLFU(b *testing.B) {
 		}
 	})
 	b.Run("parallel", func(b *testing.B) {
-		p := NewLFU(1000000)
+		p := NewLFU(&Config{1000000, 1000000, true})
 		p.Add(k)
 		b.SetBytes(1)
 		b.ResetTimer()
@@ -145,7 +145,7 @@ func TestClairvoyant(t *testing.T) {
 		"5", "7",
 	})
 	l := p.Log()
-	if l.Hits != 9 || l.Requests != 18 || l.Evictions != 4 {
+	if l.GetHits() != 9 || l.GetHits()+l.GetMisses() != 18 || l.GetEvictions() != 4 {
 		t.Fatal("log error")
 	}
 }
