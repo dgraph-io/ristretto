@@ -21,10 +21,6 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
-// LFU_SAMPLE is the number of items to sample when looking at eviction
-// candidates.
-const LFU_SAMPLE = 5
-
 // Cache ties everything together. The three main components are:
 //
 //     1) The hash map: this is the store.Map interface.
@@ -35,27 +31,31 @@ const LFU_SAMPLE = 5
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	logging bool
-	log     *PolicyLog
-	data    store.Map
-	policy  Policy
-	buffer  *ring.Buffer
+	data   store.Map
+	policy Policy
+	buffer *ring.Buffer
 }
 
 type Config struct {
 	CacheSize  uint64
 	BufferSize uint64
+	Policy     func(uint64, store.Map) Policy
 	Log        bool
 }
 
 func NewCache(config *Config) *Cache {
+	// data is the hash map for the entire cache, it's initialized outside of
+	// the cache struct declaration because it may need to be passed to the
+	// policy in some cases
 	data := store.NewMap()
-	policy := NewTinyLFU(config, data)
+	// initialize the policy (with a recorder wrapping if logging is enabled)
+	var policy Policy = config.Policy(config.CacheSize, data)
+	if config.Log {
+		policy = NewRecorder(config.Policy(config.CacheSize, data), data)
+	}
 	return &Cache{
-		logging: config.Log,
-		log:     &PolicyLog{},
-		data:    data,
-		policy:  policy,
+		data:   data,
+		policy: policy,
 		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
 			Consumer: policy,
 			Capacity: config.BufferSize,
@@ -68,27 +68,11 @@ func (c *Cache) Get(key string) interface{} {
 	return c.data.Get(key)
 }
 
-// TODO: clean up the policy logging, right now it's here to abstract it out
-//       from the individual policies (for example, it's impossible to track
-//       from within the probablistic tinylfu policy)
 func (c *Cache) Set(key string, value interface{}) {
-	// if already exists, just update the value
-	if rawValue := c.data.Get(key); rawValue != nil {
-		if c.logging {
-			c.log.Hit()
-		}
-		c.data.Set(key, value)
-	}
 	// attempt to add and delete victim if needed
 	if victim, added := c.policy.Add(key); added {
-		if c.logging {
-			c.log.Miss()
-		}
 		// check if there was an eviction victim
 		if victim != "" {
-			if c.logging {
-				c.log.Evict()
-			}
 			c.data.Del(key)
 		}
 		// since the key was added to the policy, add it to the data store too
@@ -101,5 +85,5 @@ func (c *Cache) Del(key string) {
 }
 
 func (c *Cache) Log() *PolicyLog {
-	return c.log
+	return c.policy.Log()
 }

@@ -33,7 +33,7 @@ const (
 	//
 	// ZIPF_S must be > 1, the larger the value the more spread out the
 	// distribution is
-	ZIPF_S = 1.1
+	ZIPF_S = 1.01
 	ZIPF_V = 2
 )
 
@@ -41,14 +41,14 @@ const (
 func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewUniform(W), W)
+		keys := sim.StringCollection(sim.NewUniform(W), uint64(b.N))
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(W-1)], vals)
+				cache.Set(keys[i&(uint64(b.N-1))], vals)
 			}
 		})
 		// save hit ratio stats
@@ -60,14 +60,14 @@ func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewZipfian(ZIPF_S, ZIPF_V, W), W)
+		keys := sim.StringCollection(sim.NewZipfian(ZIPF_S, ZIPF_V, W), uint64(b.N))
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(W-1)], vals)
+				cache.Set(keys[i&(uint64(b.N)-1)], vals)
 			}
 		})
 		// save hit ratio stats

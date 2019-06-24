@@ -26,6 +26,12 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
+const (
+	// LFU_SAMPLE is the number of items to sample when looking at eviction
+	// candidates.
+	LFU_SAMPLE = 5
+)
+
 // Policy is the interface encapsulating eviction/admission behavior.
 type Policy interface {
 	ring.Consumer
@@ -41,8 +47,44 @@ type Policy interface {
 	// victim and thus added it to the Policy. The caller of Add would then
 	// delete the victim and store the key-value pair.
 	Add(string) (string, bool)
-	// Log returns a PolicyLog with performance statistics.
 	Log() *PolicyLog
+}
+
+type (
+	recorder struct {
+		data   store.Map
+		policy Policy
+		log    *PolicyLog
+	}
+)
+
+func NewRecorder(policy Policy, data store.Map) Policy {
+	return &recorder{
+		data:   data,
+		policy: policy,
+		log:    &PolicyLog{},
+	}
+}
+
+func (r *recorder) Push(keys []ring.Element) {
+	r.policy.Push(keys)
+}
+
+func (r *recorder) Add(key string) (string, bool) {
+	if r.data.Get(key) != nil {
+		r.log.Hit()
+	} else {
+		r.log.Miss()
+	}
+	victim, added := r.policy.Add(key)
+	if victim != "" {
+		r.log.Evict()
+	}
+	return victim, added
+}
+
+func (r *recorder) Log() *PolicyLog {
+	return r.log
 }
 
 // PolicyLog is maintained by all Policys and is useful for tracking statistics
@@ -77,8 +119,6 @@ func (p *PolicyLog) GetEvictions() uint64 {
 	return atomic.LoadUint64(&p.evictions)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // Clairvoyant is a Policy meant to be theoretically optimal (see [1]). Normal
 // Push and Add operations just maintain a history log. The real work is done
 // when Log is called, and it "looks into the future" to evict the best
@@ -96,11 +136,15 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(config *Config) *Clairvoyant {
+func NewClairvoyant(capacity uint64, data store.Map) Policy {
+	return newClairvoyant(capacity, data)
+}
+
+func newClairvoyant(capacity uint64, data store.Map) *Clairvoyant {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
-		capacity: config.CacheSize,
-		access:   make(map[string][]uint64, config.CacheSize),
+		capacity: capacity,
+		access:   make(map[string][]uint64, capacity),
 	}
 }
 
@@ -198,8 +242,6 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	return p.log
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // LFU is a Policy with no admission policy and a sampled LFU eviction policy.
 type LFU struct {
 	sync.Mutex
@@ -208,10 +250,14 @@ type LFU struct {
 	capacity uint64
 }
 
-func NewLFU(config *Config) *LFU {
+func NewLFU(capacity uint64, data store.Map) Policy {
+	return newLFU(capacity, data)
+}
+
+func newLFU(capacity uint64, data store.Map) *LFU {
 	return &LFU{
-		data:     make(map[string]uint64, config.CacheSize),
-		capacity: config.CacheSize,
+		data:     make(map[string]uint64, capacity),
+		capacity: capacity,
 	}
 }
 
@@ -272,8 +318,6 @@ func (p *LFU) Log() *PolicyLog {
 	return nil
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // TinyLFU keeps track of frequency using tiny (4-bit) counters in the form of a
 // counting bloom filter. For eviction, sampled LFU is done.
 type TinyLFU struct {
@@ -284,11 +328,15 @@ type TinyLFU struct {
 	sketch   bloom.Sketch
 }
 
-func NewTinyLFU(config *Config, data store.Map) *TinyLFU {
+func NewTinyLFU(capacity uint64, data store.Map) Policy {
+	return newTinyLFU(capacity, data)
+}
+
+func newTinyLFU(capacity uint64, data store.Map) *TinyLFU {
 	return &TinyLFU{
 		data:     data,
-		sketch:   bloom.NewCBF(config.CacheSize),
-		capacity: config.CacheSize,
+		sketch:   bloom.NewCBF(capacity),
+		capacity: capacity,
 	}
 }
 
@@ -345,12 +393,9 @@ func (p *TinyLFU) Add(key string) (victim string, added bool) {
 	return
 }
 
-// TODO miss and hits are properly recorded
 func (p *TinyLFU) Log() *PolicyLog {
 	return nil
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 // LRU is a Policy with no admission policy and a LRU eviction policy (using
 // doubly linked list).
@@ -362,11 +407,15 @@ type LRU struct {
 	size     uint64
 }
 
-func NewLRU(config *Config) *LRU {
+func NewLRU(capacity uint64, data store.Map) Policy {
+	return newLRU(capacity, data)
+}
+
+func newLRU(capacity uint64, data store.Map) *LRU {
 	return &LRU{
 		list:     list.New(),
-		look:     make(map[string]*list.Element, config.CacheSize),
-		capacity: config.CacheSize,
+		look:     make(map[string]*list.Element, capacity),
+		capacity: capacity,
 	}
 }
 
@@ -415,13 +464,16 @@ func (p *LRU) String() string {
 	return out[:len(out)-2] + "]"
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
+// None is a policy that does nothing.
 type None struct {
 	log *PolicyLog
 }
 
-func NewNone(config *Config) *None {
+func NewNone(capacity uint64, data store.Map) Policy {
+	return newNone(capacity, data)
+}
+
+func newNone(capacity uint64, data store.Map) *None {
 	return &None{
 		log: &PolicyLog{},
 	}

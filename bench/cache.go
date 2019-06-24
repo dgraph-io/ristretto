@@ -36,6 +36,7 @@ func NewBenchRistretto(capacity int) Cache {
 		cache: ristretto.NewCache(&ristretto.Config{
 			CacheSize:  uint64(capacity),
 			BufferSize: uint64(capacity),
+			Policy:     ristretto.NewLFU,
 			Log:        true,
 		}),
 	}
