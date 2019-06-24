@@ -17,15 +17,51 @@
 package ristretto
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/dgraph-io/ristretto/bench/sim"
 )
 
-func TestCache(t *testing.T) {
-	c := NewCache(&Config{4, 1, true})
-	c.Set("1", nil)
-	c.Set("2", nil)
-	c.Set("3", nil)
-	c.Get("3")
-	c.Get("3")
-	// TODO
+func TestCacheLFU(t *testing.T) {
+	c := NewCache(&Config{
+		CacheSize:  16,
+		BufferSize: 16,
+		Policy:     NewLFU,
+		Log:        true,
+	})
+	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
+	for i := 0; i < 256; i++ {
+		c.Set(fmt.Sprintf("%d", u[i]), i)
+	}
+	spew.Dump(c.Log())
+}
+
+func TestCacheLRU(t *testing.T) {
+	c := NewCache(&Config{
+		CacheSize:  16,
+		BufferSize: 16,
+		Policy:     NewLRU,
+		Log:        true,
+	})
+	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
+	for i := 0; i < 256; i++ {
+		c.Set(fmt.Sprintf("%d", u[i]), i)
+	}
+	spew.Dump(c.Log())
+}
+
+func TestCacheTinyLFU(t *testing.T) {
+	c := NewCache(&Config{
+		CacheSize:  16,
+		BufferSize: 16,
+		Policy:     NewTinyLFU,
+		Log:        true,
+	})
+	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
+	for i := 0; i < 256; i++ {
+		c.Set(fmt.Sprintf("%d", u[i]), i)
+	}
+	spew.Dump(c.Log())
 }

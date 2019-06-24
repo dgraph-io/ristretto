@@ -27,7 +27,7 @@ import (
 func TestTinyLFU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {
 		m := store.NewMap()
-		p := NewTinyLFU(16, m)
+		p := newTinyLFU(16, m)
 		m.Set("1", nil)
 		p.Push([]ring.Element{"1", "1", "1"})
 		if p.sketch.Estimate("1") != 3 {
@@ -38,7 +38,7 @@ func TestTinyLFU(t *testing.T) {
 		c := uint64(16)
 		// tinylfu counters need a map for eviction
 		m := store.NewMap()
-		p := NewTinyLFU(c, m)
+		p := newTinyLFU(c, m)
 		// fill it up
 		for i := uint64(0); i < c; i++ {
 			k := fmt.Sprintf("%d", i)
@@ -57,7 +57,8 @@ func TestTinyLFU(t *testing.T) {
 
 func TestLRU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {
-		p := NewLRU(4)
+		m := store.NewMap()
+		p := newLRU(4, m)
 		p.Add("1")
 		p.Add("3")
 		p.Add("2")
@@ -67,7 +68,8 @@ func TestLRU(t *testing.T) {
 		}
 	})
 	t.Run("add", func(t *testing.T) {
-		p := NewLRU(4)
+		m := store.NewMap()
+		p := newLRU(4, m)
 		p.Add("1")
 		p.Add("2")
 		p.Add("3")
@@ -84,7 +86,8 @@ func TestLRU(t *testing.T) {
 
 func TestLFU(t *testing.T) {
 	t.Run("push", func(t *testing.T) {
-		p := NewLFU(&Config{4, 4, true})
+		m := store.NewMap()
+		p := newLFU(4, m)
 		p.Add("1")
 		p.Push([]ring.Element{"1", "1", "1"})
 		if p.data["1"] != 4 {
@@ -92,7 +95,8 @@ func TestLFU(t *testing.T) {
 		}
 	})
 	t.Run("add", func(t *testing.T) {
-		p := NewLFU(&Config{4, 4, true})
+		m := store.NewMap()
+		p := newLFU(4, m)
 		p.Add("1")
 		p.Add("2")
 		p.Add("3")
@@ -114,7 +118,8 @@ func BenchmarkLFU(b *testing.B) {
 	k := "1"
 	data := []ring.Element{"1", "1"}
 	b.Run("single", func(b *testing.B) {
-		p := NewLFU(&Config{1000000, 1000000, true})
+		m := store.NewMap()
+		p := newLFU(1000000, m)
 		p.Add(k)
 		b.SetBytes(1)
 		b.ResetTimer()
@@ -123,7 +128,8 @@ func BenchmarkLFU(b *testing.B) {
 		}
 	})
 	b.Run("parallel", func(b *testing.B) {
-		p := NewLFU(&Config{1000000, 1000000, true})
+		m := store.NewMap()
+		p := newLFU(1000000, m)
 		p.Add(k)
 		b.SetBytes(1)
 		b.ResetTimer()
@@ -138,7 +144,8 @@ func BenchmarkLFU(b *testing.B) {
 ////////////////////////////////////////////////////////////////////////////////
 
 func TestClairvoyant(t *testing.T) {
-	p := NewClairvoyant(5)
+	m := store.NewMap()
+	p := newClairvoyant(5, m)
 	p.Push([]ring.Element{
 		"1", "2", "3", "4", "5", "6", "3", "9",
 		"4", "3", "1", "7", "8", "9", "5", "3",
