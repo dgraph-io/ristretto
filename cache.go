@@ -63,6 +63,15 @@ func NewCache(config *Config) *Cache {
 	}
 }
 
+func (c *Cache) GetOrSet(key string, get func() interface{}) interface{} {
+	value := c.Get(key)
+	if value == nil {
+		value = get()
+		c.Set(key, value)
+	}
+	return value
+}
+
 func (c *Cache) Get(key string) interface{} {
 	c.buffer.Push(ring.Element(key))
 	return c.data.Get(key)
