@@ -42,39 +42,38 @@ type Policy interface {
 	// delete the victim and store the key-value pair.
 	Add(string) (string, bool)
 	// Log returns a PolicyLog with performance statistics.
-	Log() PolicyLog
+	Log() *PolicyLog
 }
 
 // PolicyLog is maintained by all Policys and is useful for tracking statistics
 // about Policy efficiency.
 type PolicyLog struct {
 	hits      uint64
-	requests  uint64
+	miss      uint64
 	evictions uint64
 }
 
-func (p *PolicyLog) hit() {
+func (p *PolicyLog) Hit() {
 	atomic.AddUint64(&p.hits, 1)
-	atomic.AddUint64(&p.requests, 1)
 }
 
-func (p *PolicyLog) miss() {
-	atomic.AddUint64(&p.requests, 1)
+func (p *PolicyLog) Miss() {
+	atomic.AddUint64(&p.miss, 1)
 }
 
-func (p *PolicyLog) evict() {
+func (p *PolicyLog) Evict() {
 	atomic.AddUint64(&p.evictions, 1)
 }
 
-func (p *PolicyLog) Hits() uint64 {
+func (p *PolicyLog) GetHits() uint64 {
 	return atomic.LoadUint64(&p.hits)
 }
 
-func (p *PolicyLog) Requests() uint64 {
-	return atomic.LoadUint64(&p.requests)
+func (p *PolicyLog) GetMisses() uint64 {
+	return atomic.LoadUint64(&p.miss)
 }
 
-func (p *PolicyLog) Evictions() uint64 {
+func (p *PolicyLog) GetEvictions() uint64 {
 	return atomic.LoadUint64(&p.evictions)
 }
 
@@ -97,11 +96,11 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(capacity uint64) *Clairvoyant {
+func NewClairvoyant(config *Config) *Clairvoyant {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
-		capacity: capacity,
-		access:   make(map[string][]uint64, capacity),
+		capacity: config.CacheSize,
+		access:   make(map[string][]uint64, config.CacheSize),
 	}
 }
 
@@ -145,7 +144,7 @@ func (p *Clairvoyant) Add(key string) (victim string, added bool) {
 	return
 }
 
-func (p *Clairvoyant) Log() PolicyLog {
+func (p *Clairvoyant) Log() *PolicyLog {
 	p.Lock()
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
@@ -154,10 +153,10 @@ func (p *Clairvoyant) Log() PolicyLog {
 	for i, key := range p.future {
 		// check if already exists
 		if _, exists := data[key]; exists {
-			p.log.hit()
+			p.log.Hit()
 			continue
 		}
-		p.log.miss()
+		p.log.Miss()
 		// check if eviction is needed
 		if size == p.capacity {
 			// eviction is needed
@@ -171,7 +170,7 @@ func (p *Clairvoyant) Log() PolicyLog {
 					// there's no good distances because the key isn't used
 					// again in the future, so we can just stop here and delete
 					// it, and skip over the rest
-					p.log.evict()
+					p.log.Evict()
 					delete(data, k)
 					size--
 					goto add
@@ -187,7 +186,7 @@ func (p *Clairvoyant) Log() PolicyLog {
 				c++
 			}
 			// delete the item furthest away
-			p.log.evict()
+			p.log.Evict()
 			delete(data, maxKey)
 			size--
 		}
@@ -196,7 +195,7 @@ func (p *Clairvoyant) Log() PolicyLog {
 		data[key] = struct{}{}
 		size++
 	}
-	return *p.log
+	return p.log
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -204,17 +203,15 @@ func (p *Clairvoyant) Log() PolicyLog {
 // LFU is a Policy with no admission policy and a sampled LFU eviction policy.
 type LFU struct {
 	sync.Mutex
-	log      *PolicyLog
 	data     map[string]uint64
 	size     uint64
 	capacity uint64
 }
 
-func NewLFU(capacity uint64) *LFU {
+func NewLFU(config *Config) *LFU {
 	return &LFU{
-		log:      &PolicyLog{},
-		data:     make(map[string]uint64, capacity),
-		capacity: capacity,
+		data:     make(map[string]uint64, config.CacheSize),
+		capacity: config.CacheSize,
 	}
 }
 
@@ -223,7 +220,6 @@ func NewLFU(capacity uint64) *LFU {
 func (p *LFU) hit(key string) {
 	if _, exists := p.data[key]; exists {
 		p.data[key]++
-		p.log.hit()
 	}
 }
 
@@ -244,10 +240,8 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 	// if it's already in the policy, just increment the counter and return
 	if _, exists := p.data[key]; exists {
 		p.data[key]++
-		p.log.hit()
 		return
 	}
-	p.log.miss()
 	// check if eviction is needed
 	if p.size >= p.capacity {
 		// find a victim
@@ -265,7 +259,7 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 		}
 		// delete the victim
 		delete(p.data, victim)
-		p.log.evict()
+		p.size--
 	}
 	// add the new item to the policy
 	p.data[key] = 1
@@ -274,8 +268,8 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 	return
 }
 
-func (p *LFU) Log() PolicyLog {
-	return *p.log
+func (p *LFU) Log() *PolicyLog {
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -290,11 +284,11 @@ type TinyLFU struct {
 	sketch   bloom.Sketch
 }
 
-func NewTinyLFU(capacity uint64, data store.Map) *TinyLFU {
+func NewTinyLFU(config *Config, data store.Map) *TinyLFU {
 	return &TinyLFU{
 		data:     data,
-		sketch:   bloom.NewCBF(capacity),
-		capacity: capacity,
+		sketch:   bloom.NewCBF(config.CacheSize),
+		capacity: config.CacheSize,
 	}
 }
 
@@ -342,12 +336,18 @@ func (p *TinyLFU) Add(key string) (victim string, added bool) {
 		}
 		// set victim to minimally used item
 		victim = minKey
+		p.size--
 	}
 	// increment key counter
 	p.sketch.Increment(key)
 	added = true
 	p.size++
 	return
+}
+
+// TODO miss and hits are properly recorded
+func (p *TinyLFU) Log() *PolicyLog {
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -362,11 +362,11 @@ type LRU struct {
 	size     uint64
 }
 
-func NewLRU(capacity uint64) *LRU {
+func NewLRU(config *Config) *LRU {
 	return &LRU{
 		list:     list.New(),
-		look:     make(map[string]*list.Element),
-		capacity: capacity,
+		look:     make(map[string]*list.Element, config.CacheSize),
+		capacity: config.CacheSize,
 	}
 }
 
@@ -394,6 +394,7 @@ func (p *LRU) Add(key string) (victim string, added bool) {
 		p.list.Remove(p.list.Back())
 		// delete the victim from the lookup map
 		delete(p.look, victim)
+		p.size--
 	}
 	// add the new key to the list
 	p.look[key] = p.list.PushFront(key)
@@ -402,10 +403,37 @@ func (p *LRU) Add(key string) (victim string, added bool) {
 	return
 }
 
+func (p *LRU) Log() *PolicyLog {
+	return nil
+}
+
 func (p *LRU) String() string {
 	out := "["
 	for element := p.list.Front(); element != nil; element = element.Next() {
 		out += element.Value.(string) + ", "
 	}
 	return out[:len(out)-2] + "]"
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type None struct {
+	log *PolicyLog
+}
+
+func NewNone(config *Config) *None {
+	return &None{
+		log: &PolicyLog{},
+	}
+}
+
+func (p *None) Push(keys []ring.Element) {
+}
+
+func (p *None) Add(key string) (victim string, added bool) {
+	return
+}
+
+func (p *None) Log() *PolicyLog {
+	return p.log
 }
