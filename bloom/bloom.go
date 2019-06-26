@@ -43,7 +43,6 @@ type Sketch interface {
 // ring.Consumer interface for maintaining admission/eviction statistics.
 type CBF struct {
 	capacity uint64
-	count    uint64
 	blocks   uint64
 	data     []uint64
 	seed     []uint64
@@ -66,7 +65,9 @@ func NewCBF(capacity uint64) *CBF {
 	seed := make([]uint64, CBF_ROWS)
 	for i := range seed {
 		tmp := make([]byte, 8)
-		rand.Read(tmp)
+		if _, err := rand.Read(tmp); err != nil {
+			panic(err)
+		}
 		seed[i] = binary.LittleEndian.Uint64(tmp)
 	}
 	return &CBF{
@@ -79,14 +80,18 @@ func NewCBF(capacity uint64) *CBF {
 }
 
 func (c *CBF) Increment(key string) {
-	c.alg.Write([]byte(key))
+	if _, err := c.alg.Write([]byte(key)); err != nil {
+		panic(err)
+	}
 	hashed := c.alg.Sum64()
 	c.alg.Reset()
 	c.increment(hashed)
 }
 
 func (c *CBF) Estimate(key string) uint64 {
-	c.alg.Write([]byte(key))
+	if _, err := c.alg.Write([]byte(key)); err != nil {
+		panic(err)
+	}
 	hashed := c.alg.Sum64()
 	c.alg.Reset()
 	return c.estimate(hashed)
