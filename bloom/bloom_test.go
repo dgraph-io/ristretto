@@ -48,8 +48,6 @@ func TestCBF(t *testing.T) {
 	GenerateTest(func() TestSketch { return NewCBF(16) })(t)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
 		s := create()

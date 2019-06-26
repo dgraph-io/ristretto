@@ -28,7 +28,7 @@ import (
 
 const (
 	// LFU_SAMPLE is the number of items to sample when looking at eviction
-	// candidates.
+	// candidates. 5 seems to be the most optimal number [citation needed].
 	LFU_SAMPLE = 5
 )
 
@@ -47,76 +47,12 @@ type Policy interface {
 	// victim and thus added it to the Policy. The caller of Add would then
 	// delete the victim and store the key-value pair.
 	Add(string) (string, bool)
+	// Has is just an existence check (whether the key exists in the Policy).
+	Has(string) bool
+	// Del deletes the key from the Policy (in some Policies this does nothing
+	// because they don't store keys, but it's useful otherwise).
+	Del(string)
 	Log() *PolicyLog
-}
-
-type (
-	recorder struct {
-		data   store.Map
-		policy Policy
-		log    *PolicyLog
-	}
-)
-
-func NewRecorder(policy Policy, data store.Map) Policy {
-	return &recorder{
-		data:   data,
-		policy: policy,
-		log:    &PolicyLog{},
-	}
-}
-
-func (r *recorder) Push(keys []ring.Element) {
-	r.policy.Push(keys)
-}
-
-func (r *recorder) Add(key string) (string, bool) {
-	if r.data.Get(key) != nil {
-		r.log.Hit()
-	} else {
-		r.log.Miss()
-	}
-	victim, added := r.policy.Add(key)
-	if victim != "" {
-		r.log.Evict()
-	}
-	return victim, added
-}
-
-func (r *recorder) Log() *PolicyLog {
-	return r.log
-}
-
-// PolicyLog is maintained by all Policys and is useful for tracking statistics
-// about Policy efficiency.
-type PolicyLog struct {
-	hits      uint64
-	miss      uint64
-	evictions uint64
-}
-
-func (p *PolicyLog) Hit() {
-	atomic.AddUint64(&p.hits, 1)
-}
-
-func (p *PolicyLog) Miss() {
-	atomic.AddUint64(&p.miss, 1)
-}
-
-func (p *PolicyLog) Evict() {
-	atomic.AddUint64(&p.evictions, 1)
-}
-
-func (p *PolicyLog) GetHits() uint64 {
-	return atomic.LoadUint64(&p.hits)
-}
-
-func (p *PolicyLog) GetMisses() uint64 {
-	return atomic.LoadUint64(&p.miss)
-}
-
-func (p *PolicyLog) GetEvictions() uint64 {
-	return atomic.LoadUint64(&p.evictions)
 }
 
 // Clairvoyant is a Policy meant to be theoretically optimal (see [1]). Normal
@@ -170,6 +106,21 @@ func (p *Clairvoyant) record(key string) {
 	}
 	p.access[key] = append(p.access[key], p.time)
 	p.future = append(p.future, key)
+}
+
+func (p *Clairvoyant) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	delete(p.access, key)
+}
+
+func (p *Clairvoyant) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	if _, exists := p.access[key]; exists {
+		return true
+	}
+	return false
 }
 
 func (p *Clairvoyant) Push(keys []ring.Element) {
@@ -269,6 +220,22 @@ func (p *LFU) hit(key string) {
 	}
 }
 
+func (p *LFU) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	delete(p.data, key)
+	p.size--
+}
+
+func (p *LFU) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	if _, exists := p.data[key]; exists {
+		return true
+	}
+	return false
+}
+
 // Push acquires a lock and calls hit() for each key (incrementing the counter).
 func (p *LFU) Push(keys []ring.Element) {
 	p.Lock()
@@ -340,6 +307,27 @@ func newTinyLFU(capacity uint64, data store.Map) *TinyLFU {
 	}
 }
 
+func (p *TinyLFU) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	p.size--
+	// TinyLFU doesn't store keys, no need to delete anything.
+	//
+	// NOTE: look into zero'ing the counter?
+}
+
+// Has for TinyLFU is not 100% accurate due to the underlying, probabilistic
+// data strucute (counting bloom filters or count-min sketches).
+func (p *TinyLFU) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	// TODO: should we also look into p.data for 100% accuracy?
+	if p.sketch.Estimate(key) > 0 {
+		return true
+	}
+	return false
+}
+
 func (p *TinyLFU) Push(keys []ring.Element) {
 	p.Lock()
 	defer p.Unlock()
@@ -368,6 +356,9 @@ func (p *TinyLFU) Add(key string) (victim string, added bool) {
 			i++
 			return !(i == LFU_SAMPLE)
 		})
+		// if the sampling stopped short of the LFU_SAMPLE, then resize to
+		// prevent including empty strings in the keys slice
+		keys = keys[:i]
 		// keep track of mins
 		minKey, minHits := "", uint64(0)
 		// find the minimally used item from the random sample
@@ -419,11 +410,29 @@ func newLRU(capacity uint64, data store.Map) *LRU {
 	}
 }
 
+func (p *LRU) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	delete(p.look, key)
+	p.size--
+}
+
+func (p *LRU) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	if _, exists := p.look[key]; exists {
+		return true
+	}
+	return false
+}
+
 func (p *LRU) Push(keys []ring.Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
-		p.list.MoveToFront(p.look[string(key)])
+		if element, exists := p.look[string(key)]; exists {
+			p.list.MoveToFront(element)
+		}
 	}
 }
 
@@ -479,6 +488,13 @@ func newNone(capacity uint64, data store.Map) *None {
 	}
 }
 
+func (p *None) Del(key string) {
+}
+
+func (p *None) Has(key string) bool {
+	return false
+}
+
 func (p *None) Push(keys []ring.Element) {
 }
 
@@ -488,4 +504,89 @@ func (p *None) Add(key string) (victim string, added bool) {
 
 func (p *None) Log() *PolicyLog {
 	return p.log
+}
+
+// recorder is a wrapper type useful for logging policy performance. Because hit
+// ratio tracking adds substantial overhead (either by atomically incrementing
+// counters or using policy-level mutexes), this struct allows us to only incur
+// that overhead when we want to analyze the hit ratio performance.
+type recorder struct {
+	data   store.Map
+	policy Policy
+	log    *PolicyLog
+}
+
+func NewRecorder(policy Policy, data store.Map) Policy {
+	return &recorder{
+		data:   data,
+		policy: policy,
+		log:    &PolicyLog{},
+	}
+}
+
+func (r *recorder) Del(key string) {
+	r.policy.Del(key)
+}
+
+func (r *recorder) Has(key string) bool {
+	return r.policy.Has(key)
+}
+
+func (r *recorder) Push(keys []ring.Element) {
+	r.policy.Push(keys)
+}
+
+func (r *recorder) Add(key string) (string, bool) {
+	if r.data.Get(key) != nil {
+		r.log.Hit()
+	} else {
+		r.log.Miss()
+	}
+	victim, added := r.policy.Add(key)
+	if victim != "" {
+		r.log.Evict()
+	}
+	return victim, added
+}
+
+func (r *recorder) Log() *PolicyLog {
+	return r.log
+}
+
+// PolicyLog is the struct for hit ratio statistics. Note that there is some
+// cost to maintaining the counters, so it's best to wrap Policies via the
+// Recorder type when hit ratio analysis is needed.
+type PolicyLog struct {
+	hits      uint64
+	miss      uint64
+	evictions uint64
+}
+
+func (p *PolicyLog) Hit() {
+	atomic.AddUint64(&p.hits, 1)
+}
+
+func (p *PolicyLog) Miss() {
+	atomic.AddUint64(&p.miss, 1)
+}
+
+func (p *PolicyLog) Evict() {
+	atomic.AddUint64(&p.evictions, 1)
+}
+
+func (p *PolicyLog) GetHits() uint64 {
+	return atomic.LoadUint64(&p.hits)
+}
+
+func (p *PolicyLog) GetMisses() uint64 {
+	return atomic.LoadUint64(&p.miss)
+}
+
+func (p *PolicyLog) GetEvictions() uint64 {
+	return atomic.LoadUint64(&p.evictions)
+}
+
+func (p *PolicyLog) Ratio() float64 {
+	hits, misses := atomic.LoadUint64(&p.hits), atomic.LoadUint64(&p.miss)
+	return float64(hits) / float64(hits+misses)
 }

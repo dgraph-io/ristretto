@@ -49,8 +49,6 @@ func GenerateBench(create func() Map) func(*testing.B) {
 	}
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 func TestMap(t *testing.T) {
 	GenerateTest(func() Map { return NewMap() })(t)
 }

@@ -63,6 +63,8 @@ func NewCache(config *Config) *Cache {
 	}
 }
 
+/*
+// TODO: finalize this and make it atomic
 func (c *Cache) GetOrSet(key string, get func() interface{}) interface{} {
 	value := c.Get(key)
 	if value == nil {
@@ -71,6 +73,7 @@ func (c *Cache) GetOrSet(key string, get func() interface{}) interface{} {
 	}
 	return value
 }
+*/
 
 func (c *Cache) Get(key string) interface{} {
 	c.buffer.Push(ring.Element(key))
@@ -78,9 +81,9 @@ func (c *Cache) Get(key string) interface{} {
 }
 
 func (c *Cache) Set(key string, value interface{}) {
-	// attempt to add and delete victim if needed
+	// attempt to add the key to the admission/eviction policy
 	if victim, added := c.policy.Add(key); added {
-		// check if there was an eviction victim
+		// delete the victim if there was an eviction
 		if victim != "" {
 			c.data.Del(key)
 		}
@@ -89,6 +92,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	}
 }
 
+// TODO: also delete from policy?
 func (c *Cache) Del(key string) {
 	c.data.Del(key)
 }

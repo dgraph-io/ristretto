@@ -24,135 +24,41 @@ import (
 	"github.com/dgraph-io/ristretto/store"
 )
 
-func TestTinyLFU(t *testing.T) {
-	t.Run("push", func(t *testing.T) {
-		m := store.NewMap()
-		p := newTinyLFU(16, m)
-		m.Set("1", nil)
-		p.Push([]ring.Element{"1", "1", "1"})
-		if p.sketch.Estimate("1") != 3 {
-			t.Fatal("push error")
-		}
-	})
-	t.Run("add", func(t *testing.T) {
-		c := uint64(16)
-		// tinylfu counters need a map for eviction
-		m := store.NewMap()
-		p := newTinyLFU(c, m)
-		// fill it up
-		for i := uint64(0); i < c; i++ {
-			k := fmt.Sprintf("%d", i)
-			// need to add it to the map as well because that's how eviction is
-			// done
-			m.Set(k, nil)
-			p.Add(k)
-		}
-		if victim, _ := p.Add("16"); victim == "" {
-			t.Fatal("eviction error")
-		}
-	})
-}
+type PolicyCreator func(uint64, store.Map) Policy
 
-////////////////////////////////////////////////////////////////////////////////
-
-func TestLRU(t *testing.T) {
-	t.Run("push", func(t *testing.T) {
-		m := store.NewMap()
-		p := newLRU(4, m)
-		p.Add("1")
-		p.Add("3")
-		p.Add("2")
-		p.Push([]ring.Element{"1", "3", "1"})
-		if p.String() != "[1, 3, 2]" {
-			t.Fatal("push order error")
-		}
-	})
-	t.Run("add", func(t *testing.T) {
-		m := store.NewMap()
-		p := newLRU(4, m)
-		p.Add("1")
-		p.Add("2")
-		p.Add("3")
-		p.Add("4")
-		p.Push([]ring.Element{"1", "3"})
-		victim, added := p.Add("5")
-		if added && victim != "2" {
-			t.Fatal("eviction error")
-		}
-	})
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-func TestLFU(t *testing.T) {
-	t.Run("push", func(t *testing.T) {
-		m := store.NewMap()
-		p := newLFU(4, m)
-		p.Add("1")
-		p.Push([]ring.Element{"1", "1", "1"})
-		if p.data["1"] != 4 {
-			t.Fatal("push error")
-		}
-	})
-	t.Run("add", func(t *testing.T) {
-		m := store.NewMap()
-		p := newLFU(4, m)
-		p.Add("1")
-		p.Add("2")
-		p.Add("3")
-		p.Add("4")
-		p.Push([]ring.Element{
-			"1", "1", "1", "1",
-			"2", "2", "2",
-			"3",
-			"4", "4",
-		})
-		victim, added := p.Add("5")
-		if added && victim != "3" {
-			t.Fatal("eviction error")
-		}
-	})
-}
-
-func BenchmarkLFU(b *testing.B) {
-	k := "1"
-	data := []ring.Element{"1", "1"}
-	b.Run("single", func(b *testing.B) {
-		m := store.NewMap()
-		p := newLFU(1000000, m)
-		p.Add(k)
-		b.SetBytes(1)
-		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
-			p.hit(k)
-		}
-	})
-	b.Run("parallel", func(b *testing.B) {
-		m := store.NewMap()
-		p := newLFU(1000000, m)
-		p.Add(k)
-		b.SetBytes(1)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				p.Push(data)
+func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
+	iterations := uint64(4)
+	return func(t *testing.T) {
+		t.Run("push", func(t *testing.T) {
+			policy := create(iterations, store.NewMap())
+			values := make([]ring.Element, iterations)
+			for i := range values {
+				values[i] = ring.Element(fmt.Sprintf("%d", i))
+			}
+			policy.Add("0")
+			policy.Push(values)
+			if !policy.Has("0") || policy.Has("*") {
+				t.Fatal("add/push error")
 			}
 		})
-	})
+		t.Run("add", func(t *testing.T) {
+			data := store.NewMap()
+			policy := create(iterations, data)
+			for i := uint64(0); i < iterations; i++ {
+				data.Set(fmt.Sprintf("%d", i), i)
+				policy.Add(fmt.Sprintf("%d", i))
+			}
+			if victim, added := policy.Add("*"); victim == "" || !added {
+				fmt.Println(victim, added)
+				t.Fatal("add/eviction error")
+			}
+		})
+	}
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
-func TestClairvoyant(t *testing.T) {
-	m := store.NewMap()
-	p := newClairvoyant(5, m)
-	p.Push([]ring.Element{
-		"1", "2", "3", "4", "5", "6", "3", "9",
-		"4", "3", "1", "7", "8", "9", "5", "3",
-		"5", "7",
-	})
-	l := p.Log()
-	if l.GetHits() != 9 || l.GetHits()+l.GetMisses() != 18 || l.GetEvictions() != 4 {
-		t.Fatal("log error")
+func TestPolicy(t *testing.T) {
+	policies := []PolicyCreator{NewLFU, NewLRU, NewTinyLFU}
+	for _, policy := range policies {
+		GeneratePolicyTest(policy)(t)
 	}
 }
