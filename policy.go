@@ -159,7 +159,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 			// collect item distances
 			good := false
 			distance := make(map[string]uint64, p.capacity)
-			for k, _ := range data {
+			for k := range data {
 				distance[k], good = p.distance(uint64(i), p.access[k])
 				if !good {
 					// there's no good distances because the key isn't used
@@ -322,10 +322,7 @@ func (p *TinyLFU) Has(key string) bool {
 	p.Lock()
 	defer p.Unlock()
 	// TODO: should we also look into p.data for 100% accuracy?
-	if p.sketch.Estimate(key) > 0 {
-		return true
-	}
-	return false
+	return p.sketch.Estimate(key) > 0
 }
 
 func (p *TinyLFU) Push(keys []ring.Element) {
