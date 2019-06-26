@@ -24,7 +24,7 @@ import (
 
 const (
 	// CAPACITY is the cache size in number of elements
-	CAPACITY = 16
+	CAPACITY = 1024 * 8
 	// W is the number of elements in the "sample size" as mentioned in the
 	// TinyLFU paper, where W/C = 16. W denotes the sample size, and C is the
 	// cache size (denoted by *CAPA).
@@ -41,18 +41,19 @@ const (
 func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewUniform(W), uint64(b.N))
+		keys := sim.StringCollection(sim.NewUniform(W), W)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(uint64(b.N-1))], vals)
+				cache.Set(keys[i&(uint64(W-1))], vals)
 			}
 		})
-		// save hit ratio stats
-		coll.Append(cache.Log())
+		if stats := cache.Log(); stats != nil {
+			coll.Append(stats)
+		}
 	}
 }
 
@@ -60,18 +61,19 @@ func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewZipfian(ZIPF_S, ZIPF_V, W), uint64(b.N))
+		keys := sim.StringCollection(sim.NewZipfian(ZIPF_S, ZIPF_V, W), W)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(uint64(b.N)-1)], vals)
+				cache.Set(keys[i&(W-1)], vals)
 			}
 		})
-		// save hit ratio stats
-		coll.Append(cache.Log())
+		if stats := cache.Log(); stats != nil {
+			coll.Append(stats)
+		}
 	}
 }
 

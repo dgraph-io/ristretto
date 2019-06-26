@@ -113,7 +113,9 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			Label:   suite[i].label,
 			Bencher: suite[i].bencher,
 			Para:    para,
-			Create:  func() Cache { return cache.create(capa) },
+			Create: func() Cache {
+				return cache.create(capa, suite[i].label[:4] == "hits")
+			},
 		}
 	}
 	return benchmarks
@@ -121,7 +123,7 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 
 type benchCache struct {
 	name   string
-	create func(int) Cache
+	create func(int, bool) Cache
 }
 
 // getBenchCaches() returns a slice of benchCache's depending on the value of
@@ -133,17 +135,15 @@ func getBenchCaches(include string) []*benchCache {
 	if include == "ristretto" {
 		return caches
 	}
-	/*
-		if include == "all" {
-			caches = append(caches, []*benchCache{
-				{"base-mutex ", NewBenchBaseMutex},
-				{"goburrow   ", NewBenchGoburrow},
-				{"bigcache   ", NewBenchBigCache},
-				{"fastcache  ", NewBenchFastCache},
-				{"freecache  ", NewBenchFreeCache},
-			}...)
-		}
-	*/
+	if include == "all" {
+		caches = append(caches, []*benchCache{
+			{"base-mutex ", NewBenchBaseMutex},
+			{"goburrow   ", NewBenchGoburrow},
+			{"bigcache   ", NewBenchBigCache},
+			{"fastcache  ", NewBenchFastCache},
+			{"freecache  ", NewBenchFreeCache},
+		}...)
+	}
 	return caches
 }
 
@@ -302,7 +302,9 @@ type LogCollection struct {
 }
 
 func NewLogCollection() *LogCollection {
-	return &LogCollection{Logs: make([]*ristretto.PolicyLog, 0)}
+	return &LogCollection{
+		Logs: make([]*ristretto.PolicyLog, 0),
+	}
 }
 
 func (c *LogCollection) Append(plog *ristretto.PolicyLog) {

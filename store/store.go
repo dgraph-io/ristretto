@@ -44,8 +44,6 @@ func NewMap() Map {
 	return NewSyncMap()
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 type SyncMap struct {
 	*sync.Map
 }
@@ -70,8 +68,6 @@ func (m *SyncMap) Del(key string) {
 func (m *SyncMap) Run(f func(key, value interface{}) bool) {
 	m.Range(f)
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 type LockedMap struct {
 	sync.RWMutex
@@ -109,8 +105,6 @@ func (m *LockedMap) Run(f func(interface{}, interface{}) bool) {
 		}
 	}
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 type CustomMap struct {
 }

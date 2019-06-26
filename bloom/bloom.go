@@ -39,8 +39,6 @@ type Sketch interface {
 	Estimate(string) uint64
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
 // ring.Consumer interface for maintaining admission/eviction statistics.
 type CBF struct {
@@ -181,8 +179,6 @@ func (c *CBF) string() string {
 	return state
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // TODO
 //
 // Fingerprint Counting Bloom Filter (FP-CBF): lower false positive rates than
@@ -195,8 +191,6 @@ type FPCBF struct {
 func (c *FPCBF) Push(keys []ring.Element)      {}
 func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
 
-////////////////////////////////////////////////////////////////////////////////
-
 // TODO
 //
 // d-left Counting Bloom Filter: based on d-left hashing which allows for much
@@ -208,8 +202,6 @@ type DLCBF struct {
 
 func (c *DLCBF) Push(keys []ring.Element)      {}
 func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 // TODO
 //

@@ -20,48 +20,67 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/ristretto/bench/sim"
 )
 
-func TestCacheLFU(t *testing.T) {
-	c := NewCache(&Config{
-		CacheSize:  16,
-		BufferSize: 16,
-		Policy:     NewLFU,
-		Log:        true,
-	})
-	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
-	for i := 0; i < 256; i++ {
-		c.Set(fmt.Sprintf("%d", u[i]), i)
+const (
+	CACHE_SIZE  = 256
+	BUFFER_SIZE = CACHE_SIZE / 4
+	SAMPLE_SIZE = CACHE_SIZE * 8
+	ZIPF_V      = 1.01
+	ZIPF_S      = 2
+)
+
+func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
+	return func(t *testing.T) {
+		// create the cache with the provided policy and constant params
+		cache := NewCache(&Config{CACHE_SIZE, BUFFER_SIZE, p, true})
+		// must iterate through SAMPLE_SIZE because it's fixed and should be
+		// much larger than the CACHE_SIZE
+		for i := 0; i < SAMPLE_SIZE; i++ {
+			// generate a key from the simulator
+			key, err := k()
+			if err != nil {
+				panic(err)
+			}
+			// must be a set operation for hit ratio logging
+			cache.Set(fmt.Sprintf("%d", key), i)
+		}
+		// stats is the hit ratio stats for the cache instance
+		stats := cache.Log()
+		// log the hit ratio
+		t.Logf("------------------- %d%%\n", uint64(stats.Ratio()*100))
 	}
-	spew.Dump(c.Log())
 }
 
-func TestCacheLRU(t *testing.T) {
-	c := NewCache(&Config{
-		CacheSize:  16,
-		BufferSize: 16,
-		Policy:     NewLRU,
-		Log:        true,
-	})
-	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
-	for i := 0; i < 256; i++ {
-		c.Set(fmt.Sprintf("%d", u[i]), i)
+type (
+	policyTest struct {
+		label   string
+		creator PolicyCreator
 	}
-	spew.Dump(c.Log())
-}
+	accessTest struct {
+		label  string
+		access sim.Simulator
+	}
+)
 
-func TestCacheTinyLFU(t *testing.T) {
-	c := NewCache(&Config{
-		CacheSize:  16,
-		BufferSize: 16,
-		Policy:     NewTinyLFU,
-		Log:        true,
-	})
-	u := sim.Collection(sim.NewZipfian(1.01, 2, 256), 256)
-	for i := 0; i < 256; i++ {
-		c.Set(fmt.Sprintf("%d", u[i]), i)
+func TestCache(t *testing.T) {
+	// policies is a slice of all policies to test (see policy.go)
+	policies := []policyTest{
+		{"clairvoyant", NewClairvoyant},
+		{"        lfu", NewLFU},
+		{"        lru", NewLRU},
+		{"    tinylfu", NewTinyLFU},
 	}
-	spew.Dump(c.Log())
+	// accesses is a slice of all access distributions to test (see sim package)
+	accesses := []accessTest{
+		{"uniform    ", sim.NewUniform(SAMPLE_SIZE)},
+		{"zipfian    ", sim.NewZipfian(ZIPF_V, ZIPF_S, SAMPLE_SIZE)},
+	}
+	for _, access := range accesses {
+		for _, policy := range policies {
+			t.Logf("%s-%s", policy.label, access.label)
+			GenerateCacheTest(policy.creator, access.access)(t)
+		}
+	}
 }

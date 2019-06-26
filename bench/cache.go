@@ -17,7 +17,16 @@
 package main
 
 import (
+	"log"
+	"sync"
+	"time"
+
+	"github.com/VictoriaMetrics/fastcache"
+	"github.com/allegro/bigcache"
+	"github.com/coocood/freecache"
 	"github.com/dgraph-io/ristretto"
+	goburrow "github.com/goburrow/cache"
+	"github.com/golang/groupcache/lru"
 )
 
 type Cache interface {
@@ -31,13 +40,13 @@ type BenchRistretto struct {
 	cache *ristretto.Cache
 }
 
-func NewBenchRistretto(capacity int) Cache {
+func NewBenchRistretto(capacity int, track bool) Cache {
 	return &BenchRistretto{
 		cache: ristretto.NewCache(&ristretto.Config{
 			CacheSize:  uint64(capacity),
-			BufferSize: uint64(capacity),
-			Policy:     ristretto.NewLFU,
-			Log:        true,
+			BufferSize: uint64(capacity) / 16,
+			Policy:     ristretto.NewTinyLFU,
+			Log:        track,
 		}),
 	}
 }
@@ -58,15 +67,18 @@ func (c *BenchRistretto) Log() *ristretto.PolicyLog {
 	return c.cache.Log()
 }
 
-/*
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
+	log   *ristretto.PolicyLog
+	track bool
 }
 
-func NewBenchBaseMutex(capacity int) Cache {
+func NewBenchBaseMutex(capacity int, track bool) Cache {
 	return &BenchBaseMutex{
 		cache: lru.New(capacity),
+		log:   &ristretto.PolicyLog{},
+		track: track,
 	}
 }
 
@@ -80,6 +92,13 @@ func (c *BenchBaseMutex) Get(key string) interface{} {
 func (c *BenchBaseMutex) Set(key string, value interface{}) {
 	c.Lock()
 	defer c.Unlock()
+	if c.track {
+		if value, _ := c.cache.Get(key); value != nil {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	c.cache.Add(key, value)
 }
 
@@ -87,12 +106,17 @@ func (c *BenchBaseMutex) Del(key string) {
 	c.cache.Remove(key)
 }
 
-type BenchBigCache struct {
-	cache *bigcache.BigCache
-	stats *Stats
+func (c *BenchBaseMutex) Log() *ristretto.PolicyLog {
+	return c.log
 }
 
-func NewBenchBigCache(capacity int) Cache {
+type BenchBigCache struct {
+	cache *bigcache.BigCache
+	log   *ristretto.PolicyLog
+	track bool
+}
+
+func NewBenchBigCache(capacity int, track bool) Cache {
 	// NOTE: bigcache automatically allocates more memory, there's no way to set
 	//       a hard limit on the item/memory capacity
 	//
@@ -116,27 +140,24 @@ func NewBenchBigCache(capacity int) Cache {
 	}
 	return &BenchBigCache{
 		cache: cache,
-		stats: &Stats{},
+		log:   &ristretto.PolicyLog{},
+		track: track,
 	}
 }
 
 func (c *BenchBigCache) Get(key string) interface{} {
-	atomic.AddUint64(&c.stats.Reqs, 1)
-	value, _ := c.cache.Get(key)
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		c.Set(key, []byte("*"))
-	}
-	return value
-}
-
-func (c *BenchBigCache) GetFast(key string) interface{} {
 	value, _ := c.cache.Get(key)
 	return value
 }
 
 func (c *BenchBigCache) Set(key string, value interface{}) {
+	if c.track {
+		if value, _ := c.cache.Get(key); value != nil {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	if err := c.cache.Set(key, value.([]byte)); err != nil {
 		log.Panic(err)
 	}
@@ -148,8 +169,8 @@ func (c *BenchBigCache) Del(key string) {
 	}
 }
 
-func (c *BenchBigCache) Bench() *Stats {
-	return c.stats
+func (c *BenchBigCache) Log() *ristretto.PolicyLog {
+	return c.log
 }
 
 // bigCacheHasher is just trying to mimic bigcache's internal implementation of
@@ -171,25 +192,21 @@ func (h bigCacheHasher) Sum64(key string) uint64 {
 
 type BenchFastCache struct {
 	cache *fastcache.Cache
-	stats *Stats
+	log   *ristretto.PolicyLog
+	track bool
 }
 
-func NewBenchFastCache(capacity int) Cache {
+func NewBenchFastCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 32MB, then fastcache sets it to 32MB
 	return &BenchFastCache{
 		cache: fastcache.New(capacity),
-		stats: &Stats{},
+		log:   &ristretto.PolicyLog{},
+		track: track,
 	}
 }
 
 func (c *BenchFastCache) Get(key string) interface{} {
-	atomic.AddUint64(&c.stats.Reqs, 1)
 	value := c.cache.Get(nil, []byte(key))
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		c.Set(key, []byte("*"))
-	}
 	return value
 }
 
@@ -198,6 +215,13 @@ func (c *BenchFastCache) GetFast(key string) interface{} {
 }
 
 func (c *BenchFastCache) Set(key string, value interface{}) {
+	if c.track {
+		if c.cache.Get(nil, []byte(key)) != nil {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	c.cache.Set([]byte(key), []byte("*"))
 }
 
@@ -205,40 +229,38 @@ func (c *BenchFastCache) Del(key string) {
 	c.cache.Del([]byte(key))
 }
 
-func (c *BenchFastCache) Bench() *Stats {
-	return c.stats
+func (c *BenchFastCache) Log() *ristretto.PolicyLog {
+	return c.log
 }
 
 type BenchFreeCache struct {
 	cache *freecache.Cache
-	stats *Stats
+	log   *ristretto.PolicyLog
+	track bool
 }
 
-func NewBenchFreeCache(capacity int) Cache {
+func NewBenchFreeCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 512KB, then freecache sets it to 512KB
 	return &BenchFreeCache{
 		cache: freecache.NewCache(capacity),
-		stats: &Stats{},
+		log:   &ristretto.PolicyLog{},
+		track: track,
 	}
 }
 
 func (c *BenchFreeCache) Get(key string) interface{} {
-	atomic.AddUint64(&c.stats.Reqs, 1)
-	value, _ := c.cache.Get([]byte(key))
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		c.Set(key, []byte("*"))
-	}
-	return value
-}
-
-func (c *BenchFreeCache) GetFast(key string) interface{} {
 	value, _ := c.cache.Get([]byte(key))
 	return value
 }
 
 func (c *BenchFreeCache) Set(key string, value interface{}) {
+	if c.track {
+		if value, _ := c.cache.Get([]byte(key)); value != nil {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	if err := c.cache.Set([]byte(key), value.([]byte), 0); err != nil {
 		log.Panic(err)
 	}
@@ -248,41 +270,39 @@ func (c *BenchFreeCache) Del(key string) {
 	c.cache.Del([]byte(key))
 }
 
-func (c *BenchFreeCache) Bench() *Stats {
-	return c.stats
+func (c *BenchFreeCache) Log() *ristretto.PolicyLog {
+	return c.log
 }
 
 type BenchGoburrow struct {
 	cache goburrow.Cache
-	stats *Stats
+	log   *ristretto.PolicyLog
+	track bool
 }
 
-func NewBenchGoburrow(capacity int) Cache {
+func NewBenchGoburrow(capacity int, track bool) Cache {
 	return &BenchGoburrow{
 		cache: goburrow.New(
 			goburrow.WithMaximumSize(capacity),
 		),
-		stats: &Stats{},
+		log:   &ristretto.PolicyLog{},
+		track: track,
 	}
 }
 
 func (c *BenchGoburrow) Get(key string) interface{} {
-	atomic.AddUint64(&c.stats.Reqs, 1)
-	value, _ := c.cache.GetIfPresent(key)
-	if value != nil {
-		atomic.AddUint64(&c.stats.Hits, 1)
-	} else {
-		c.Set(key, []byte("*"))
-	}
-	return value
-}
-
-func (c *BenchGoburrow) GetFast(key string) interface{} {
 	value, _ := c.cache.GetIfPresent(key)
 	return value
 }
 
 func (c *BenchGoburrow) Set(key string, value interface{}) {
+	if c.track {
+		if value, _ := c.cache.GetIfPresent(key); value != nil {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	c.cache.Put(key, value)
 }
 
@@ -290,7 +310,6 @@ func (c *BenchGoburrow) Del(key string) {
 	c.cache.Invalidate(key)
 }
 
-func (c *BenchGoburrow) Bench() *Stats {
-	return c.stats
+func (c *BenchGoburrow) Log() *ristretto.PolicyLog {
+	return c.log
 }
-*/
