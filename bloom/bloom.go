@@ -50,19 +50,19 @@ type CBF struct {
 }
 
 const (
-	CBF_BITS     = 4
-	CBF_MAX      = 16
-	CBF_ROWS     = 3
-	CBF_COUNTERS = 64 / CBF_BITS
+	cbfBits     = 4
+	cbfMax      = 16
+	cbfRows     = 3
+	cbfCounters = 64 / cbfBits
 )
 
 func NewCBF(capacity uint64) *CBF {
 	// capacity must be above a certain level because we do division below
-	if capacity < CBF_COUNTERS {
-		capacity = CBF_COUNTERS
+	if capacity < cbfCounters {
+		capacity = cbfCounters
 	}
 	// initialize hash seeds for each row
-	seed := make([]uint64, CBF_ROWS)
+	seed := make([]uint64, cbfRows)
 	for i := range seed {
 		tmp := make([]byte, 8)
 		if _, err := rand.Read(tmp); err != nil {
@@ -72,8 +72,8 @@ func NewCBF(capacity uint64) *CBF {
 	}
 	return &CBF{
 		capacity: capacity,
-		blocks:   capacity / CBF_MAX,
-		data:     make([]uint64, (capacity/CBF_MAX)*CBF_ROWS),
+		blocks:   capacity / cbfMax,
+		data:     make([]uint64, (capacity/cbfMax)*cbfRows),
 		seed:     seed,
 		alg:      fnv.New64a(),
 	}
@@ -99,13 +99,13 @@ func (c *CBF) Estimate(key string) uint64 {
 
 func (c *CBF) estimate(hashed uint64) uint64 {
 	min := uint64(0)
-	for row := uint64(0); row < CBF_ROWS; row++ {
+	for row := uint64(0); row < cbfRows; row++ {
 		var (
 			rowHashed uint64 = hashed ^ c.seed[row]
 			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
-			counterId uint64 = ((rowHashed >> CBF_BITS) & (CBF_COUNTERS - 1))
-			left      uint64 = (CBF_BITS * counterId)
-			right     uint64 = 64 - CBF_BITS
+			counterId uint64 = ((rowHashed >> cbfBits) & (cbfCounters - 1))
+			left      uint64 = (cbfBits * counterId)
+			right     uint64 = 64 - cbfBits
 		)
 		// current count
 		count := c.data[blockId] << left >> right
@@ -118,7 +118,7 @@ func (c *CBF) estimate(hashed uint64) uint64 {
 
 func (c *CBF) increment(hashed uint64) {
 	full := uint64(0xffffffffffffffff)
-	for row := uint64(0); row < CBF_ROWS; row++ {
+	for row := uint64(0); row < cbfRows; row++ {
 		var (
 			rowHashed uint64 = hashed ^ c.seed[row]
 			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
@@ -127,18 +127,18 @@ func (c *CBF) increment(hashed uint64) {
 			// all available counters in the block
 			//
 			// TODO: clean this up
-			counterId uint64 = ((rowHashed >> CBF_BITS) & (CBF_COUNTERS - 1))
-			left      uint64 = (CBF_BITS * counterId)
-			right     uint64 = 64 - CBF_BITS
+			counterId uint64 = ((rowHashed >> cbfBits) & (cbfCounters - 1))
+			left      uint64 = (cbfBits * counterId)
+			right     uint64 = 64 - cbfBits
 		)
 		// current count
 		count := c.data[blockId] << left >> right
 		// if the current count is max
-		if count == (CBF_MAX-1) && row == 0 {
+		if count == (cbfMax-1) && row == 0 {
 			c.reset()
 		}
 		// skip if max value already
-		if count == CBF_MAX-1 {
+		if count == cbfMax-1 {
 			continue
 		}
 		// mask for isolating counter for mutation
@@ -147,7 +147,7 @@ func (c *CBF) increment(hashed uint64) {
 		isol := (c.data[blockId] | mask) ^ mask
 		// increment
 		c.data[blockId] = isol | ((count + 1) <<
-			(((CBF_COUNTERS - 1) - counterId) * CBF_BITS))
+			(((cbfCounters - 1) - counterId) * cbfBits))
 	}
 }
 
@@ -170,8 +170,8 @@ func (c *CBF) string() string {
 	for i := 0; i < len(c.data); i++ {
 		state += "  ["
 		block := c.data[i]
-		for j := uint64(0); j < CBF_COUNTERS; j++ {
-			count := block << (j * CBF_BITS) >> 60
+		for j := uint64(0); j < cbfCounters; j++ {
+			count := block << (j * cbfBits) >> 60
 			if count > 0 {
 				state += fmt.Sprintf("%2d ", count)
 			} else {
@@ -190,11 +190,11 @@ func (c *CBF) string() string {
 // basic CBF with little added complexity.
 //
 // https://doi.org/10.1016/j.ipl.2015.11.002
-type FPCBF struct {
+type fpcbf struct {
 }
 
-func (c *FPCBF) Push(keys []ring.Element)      {}
-func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *fpcbf) Push(keys []ring.Element)      {}
+func (c *fpcbf) Estimtae(hashed uint64) uint64 { return 0 }
 
 // TODO
 //
@@ -202,11 +202,11 @@ func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
 // better space efficiency (usually saving a factor of 2 or more).
 //
 // https://link.springer.com/chapter/10.1007/11841036_61
-type DLCBF struct {
+type dlcbf struct {
 }
 
-func (c *DLCBF) Push(keys []ring.Element)      {}
-func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *dlcbf) Push(keys []ring.Element)      {}
+func (c *dlcbf) Estimtae(hashed uint64) uint64 { return 0 }
 
 // TODO
 //
@@ -214,7 +214,7 @@ func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
 // in a space efficient, probabilistic manner.
 //
 // https://arxiv.org/abs/1905.13064
-type BC struct{}
+type bc struct{}
 
-func (c *BC) Push(keys []ring.Element)      {}
-func (c *BC) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *bc) Push(keys []ring.Element)      {}
+func (c *bc) Estimtae(hashed uint64) uint64 { return 0 }

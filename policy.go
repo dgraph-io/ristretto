@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	// LFU_SAMPLE is the number of items to sample when looking at eviction
+	// lfuSample is the number of items to sample when looking at eviction
 	// candidates. 5 seems to be the most optimal number [citation needed].
-	LFU_SAMPLE = 5
+	lfuSample = 5
 )
 
 // Policy is the interface encapsulating eviction/admission behavior.
@@ -261,7 +261,7 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 		min, i := uint64(0), 0
 		for k, v := range p.data {
 			// stop once we reach the sample size
-			if i == LFU_SAMPLE {
+			if i == lfuSample {
 				break
 			}
 			if i == 0 || v < min {
@@ -346,16 +346,13 @@ func (p *TinyLFU) Add(key string) (victim string, added bool) {
 		// eviction is needed
 		//
 		// create a slice that will hold the random sample of keys from the map
-		keys, i := make([]string, LFU_SAMPLE), 0
+		keys, i := make([]string, 0, lfuSample), 0
 		// get the random sample
 		p.data.Run(func(k, v interface{}) bool {
-			keys[i] = k.(string)
+			keys = append(keys, k.(string))
 			i++
-			return !(i == LFU_SAMPLE)
+			return !(i == lfuSample)
 		})
-		// if the sampling stopped short of the LFU_SAMPLE, then resize to
-		// prevent including empty strings in the keys slice
-		keys = keys[:i]
 		// keep track of mins
 		minKey, minHits := "", uint64(0)
 		// find the minimally used item from the random sample

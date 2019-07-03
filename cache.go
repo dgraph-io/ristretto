@@ -92,8 +92,8 @@ func (c *Cache) Set(key string, value interface{}) {
 	}
 }
 
-// TODO: also delete from policy?
 func (c *Cache) Del(key string) {
+	c.policy.Del(key)
 	c.data.Del(key)
 }
 
