@@ -30,8 +30,6 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
-
-	"github.com/dgraph-io/ristretto/ring"
 )
 
 type Sketch interface {
@@ -184,17 +182,18 @@ func (c *CBF) string() string {
 	return state
 }
 
+/*
 // TODO
 //
 // Fingerprint Counting Bloom Filter (FP-CBF): lower false positive rates than
 // basic CBF with little added complexity.
 //
 // https://doi.org/10.1016/j.ipl.2015.11.002
-type fpcbf struct {
+type FPCBF struct {
 }
 
-func (c *fpcbf) Push(keys []ring.Element)      {}
-func (c *fpcbf) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *FPCBF) Push(keys []ring.Element)      {}
+func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
 
 // TODO
 //
@@ -202,11 +201,11 @@ func (c *fpcbf) Estimtae(hashed uint64) uint64 { return 0 }
 // better space efficiency (usually saving a factor of 2 or more).
 //
 // https://link.springer.com/chapter/10.1007/11841036_61
-type dlcbf struct {
+type DLCBF struct {
 }
 
-func (c *dlcbf) Push(keys []ring.Element)      {}
-func (c *dlcbf) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *DLCBF) Push(keys []ring.Element)      {}
+func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
 
 // TODO
 //
@@ -214,7 +213,8 @@ func (c *dlcbf) Estimtae(hashed uint64) uint64 { return 0 }
 // in a space efficient, probabilistic manner.
 //
 // https://arxiv.org/abs/1905.13064
-type bc struct{}
+type BC struct{}
 
-func (c *bc) Push(keys []ring.Element)      {}
-func (c *bc) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *BC) Push(keys []ring.Element)      {}
+func (c *BC) Estimtae(hashed uint64) uint64 { return 0 }
+*/
