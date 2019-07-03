@@ -32,19 +32,19 @@ import (
 
 var (
 	// PATH is the user-defined location for writing the stats.csv file.
-	PATH = flag.String(
+	flagPath = flag.String(
 		"path",
 		"stats.csv",
 		"Filepath for benchmark CSV data.",
 	)
 	// CACHE determines what libraries to include in the benchmarks.
-	CACHE = flag.String(
+	flagCache = flag.String(
 		"cache",
 		"ristretto",
 		`Libraries to include in the benchmark: either "all" or "ristretto".`,
 	)
 	// SUITE is the flag determing what collection of benchmarks to run.
-	SUITE = flag.String(
+	flagSuite = flag.String(
 		"suite",
 		"full",
 		`You can chose from the following options:
@@ -55,7 +55,7 @@ var (
 	)
 	// PARALLEL is the goroutine multiplier to use for benchmarking performance
 	// using a variable number of goroutines.
-	PARALLEL = flag.Int(
+	flagParallel = flag.Int(
 		"parallel",
 		1,
 		"The goroutine multiplier (see runtime.GOMAXPROCS()).",
@@ -153,14 +153,14 @@ func init() {
 
 func main() {
 	var (
-		caches     = getBenchCaches(*CACHE)
+		caches     = getBenchCaches(*flagCache)
 		logs       = make([]*Log, 0)
 		benchmarks = make([]*Benchmark, 0)
 	)
 	// create benchmark generators for each cache
 	for _, cache := range caches {
 		benchmarks = append(benchmarks,
-			NewBenchmarks(*SUITE, *PARALLEL, CAPACITY, cache)...,
+			NewBenchmarks(*flagSuite, *flagParallel, capacity, cache)...,
 		)
 	}
 	for _, benchmark := range benchmarks {
@@ -191,7 +191,7 @@ func save(logs []*Log) error {
 	// write csv data
 	records = append([][]string{Labels()}, records...)
 	// create file for writing
-	file, err := os.OpenFile(*PATH, os.O_WRONLY|os.O_CREATE, 0666)
+	file, err := os.OpenFile(*flagPath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}
