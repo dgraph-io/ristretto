@@ -333,7 +333,10 @@ func (p *TinyLFU) Push(keys []ring.Element) {
 	}
 }
 
+// TODO: Add signature should be changed to include a key and a cost.
 func (p *TinyLFU) Add(key string) (victim string, added bool) {
+	// TODO: If we're acquiring a mutex lock anyway, then why do we need to have p.data be
+	// sync.Mutex? It can then just be a normal map, which would be cheaper.
 	p.Lock()
 	defer p.Unlock()
 	// tinylfu doesn't have an "adding" mechanism because the structure is
@@ -342,37 +345,47 @@ func (p *TinyLFU) Add(key string) (victim string, added bool) {
 	// purposes
 	//
 	// check if eviction is needed
+	//
+	// TODO: In a cost based cache, this eviction should be repeated to evict multiple keys.
 	if p.size >= p.capacity {
 		// eviction is needed
 		//
 		// create a slice that will hold the random sample of keys from the map
-		keys, i := make([]string, 0, lfuSample), 0
+		keys := make([]string, 0, lfuSample)
 		// get the random sample
+
+		// TODO: Should also include a cost. So, when we remove a key, we also can know it's cost.
+		// Or, maybe store it separately in a map[uint64]int, a much cheaper map which only contains
+		// the hash of the key and it's cost.
 		p.data.Run(func(k, v interface{}) bool {
 			keys = append(keys, k.(string))
-			i++
-			return !(i == lfuSample)
+			return len(keys) < lfuSample
 		})
 		// keep track of mins
 		minKey, minHits := "", uint64(0)
 		// find the minimally used item from the random sample
-		for j, k := range keys {
-			if k != "" {
-				// lookup the key in the frequency sketch
-				hits := p.sketch.Estimate(k)
-				// keep track of minimally used item
-				if j == 0 || hits < minHits {
-					minKey = k
-					minHits = hits
-				}
+		for i, key := range keys {
+			if len(key) == 0 {
+				continue
+			}
+			// lookup the key in the frequency sketch
+			hits := p.sketch.Estimate(key)
+			// keep track of minimally used item
+			if i == 0 || hits < minHits {
+				minKey = key
+				minHits = hits
 			}
 		}
 		// set victim to minimally used item
 		victim = minKey
+		// TODO: The size should be based on a cost provided by the user.
 		p.size--
 	}
 	// increment key counter
 	p.sketch.Increment(key)
+
+	// TODO: Add a bloom filter doorkeeper so added can be false. In fact, if we're not going to add
+	// the key, then we can skip the key eviction above.
 	added = true
 	p.size++
 	return
