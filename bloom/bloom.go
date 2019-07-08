@@ -35,6 +35,110 @@ import (
 type Sketch interface {
 	Increment(string)
 	Estimate(string) uint64
+	Reset()
+}
+
+// CM is a Count-Min sketch implementation with 4-bit counters, heavily based
+// of Damian Gryski's CM4 [1].
+//
+// [1]: https://github.com/dgryski/go-tinylfu/blob/master/cm4.go
+type CM struct {
+	alg  hash.Hash64
+	rows [cmDepth]cmRow
+	mask uint64
+}
+
+// cmDepth is the number of counter copies to store (think of it as rows)
+const cmDepth = 4
+
+func NewCM(w uint64) *CM {
+	if w == 0 {
+		panic("CM: bad width")
+	}
+	// get the next power of 2 for better cache performance
+	w = next2Power(w)
+	// sketch with FNV-64a hashing algorithm
+	s := &CM{
+		alg:  fnv.New64a(),
+		mask: w - 1,
+	}
+	// initialize rows of counters
+	for i := 0; i < cmDepth; i++ {
+		s.rows[i] = newCMRow(w)
+	}
+	return s
+}
+
+func (c *CM) hash(key string) uint64 {
+	if _, err := c.alg.Write([]byte(key)); err != nil {
+		panic(err)
+	}
+	hashed := c.alg.Sum64()
+	c.alg.Reset()
+	return hashed
+}
+
+func (c *CM) Increment(key string) {
+	c.increment(c.hash(key))
+}
+
+func (c *CM) increment(hashed uint64) {
+	for i := range c.rows {
+		// increment the counter on each row
+		c.rows[i].inc(hashed & c.mask)
+	}
+}
+
+func (c *CM) Estimate(key string) uint64 {
+	return c.estimate(c.hash(key))
+}
+
+func (c *CM) estimate(hashed uint64) uint64 {
+	min := byte(255)
+	for i := range c.rows {
+		// find the smallest counter value from all the rows
+		if v := c.rows[i].get(hashed & c.mask); v < min {
+			min = v
+		}
+	}
+	return uint64(min)
+}
+
+func (c *CM) Reset() {
+	for _, r := range c.rows {
+		r.reset()
+	}
+}
+
+// cmRow is a row of bytes, with each byte holding two counters
+type cmRow []byte
+
+func newCMRow(w uint64) cmRow {
+	return make(cmRow, w/2)
+}
+
+func (r cmRow) get(n uint64) byte {
+	return byte(r[n/2]>>((n&1)*4)) & 0x0f
+}
+
+func (r cmRow) inc(n uint64) {
+	// index of the counter
+	i := n / 2
+	// shift distance
+	s := (n & 1) * 4
+	// counter value
+	v := (r[i] >> s) & 0x0f
+	// only increment if not max value (overflow wrap is bad for LFU)
+	if v < 15 {
+		r[i] += 1 << s
+	}
+}
+
+func (r cmRow) reset() {
+	// halve each counter
+	for i := range r {
+		r[i] = (r[i] >> 1) & 0x77
+	}
 }
 
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
@@ -86,6 +190,44 @@ func (c *CBF) Increment(key string) {
 	c.increment(hashed)
 }
 
+func (c *CBF) increment(hashed uint64) {
+	full := uint64(0xffffffffffffffff)
+	for row := uint64(0); row < cbfRows; row++ {
+		var (
+			rowHashed uint64 = hashed ^ c.seed[row]
+			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
+			// counterId uses rowHashed >> CBF_BITS because otherwise it would
+			// equal blockId and counters wouldn't be evenly distributed across
+			// all available counters in the block
+			//
+			// TODO: clean this up
+			counterId uint64 = ((rowHashed >> cbfBits) & (cbfCounters - 1))
+			left      uint64 = (cbfBits * counterId)
+			right     uint64 = 64 - cbfBits
+		)
+		// current count
+		count := c.data[blockId] << left >> right
+		// TODO: look into calling Reset() from the cache itself, as it has a
+		//       better understanding of when new items are added.
+		//
+		// if the current count is max
+		if count == (cbfMax-1) && row == 0 {
+			c.Reset()
+		}
+		// skip if max value already
+		if count == cbfMax-1 {
+			continue
+		}
+		// mask for isolating counter for mutation
+		mask := full << right >> left
+		// clear out the counter for mutation
+		isol := (c.data[blockId] | mask) ^ mask
+		// increment
+		c.data[blockId] = isol | ((count + 1) <<
+			(((cbfCounters - 1) - counterId) * cbfBits))
+	}
+}
+
 func (c *CBF) Estimate(key string) uint64 {
 	if _, err := c.alg.Write([]byte(key)); err != nil {
 		panic(err)
@@ -114,47 +256,12 @@ func (c *CBF) estimate(hashed uint64) uint64 {
 	return min
 }
 
-func (c *CBF) increment(hashed uint64) {
-	full := uint64(0xffffffffffffffff)
-	for row := uint64(0); row < cbfRows; row++ {
-		var (
-			rowHashed uint64 = hashed ^ c.seed[row]
-			blockId   uint64 = (row * c.blocks) + (rowHashed & (c.blocks - 1))
-			// counterId uses rowHashed >> CBF_BITS because otherwise it would
-			// equal blockId and counters wouldn't be evenly distributed across
-			// all available counters in the block
-			//
-			// TODO: clean this up
-			counterId uint64 = ((rowHashed >> cbfBits) & (cbfCounters - 1))
-			left      uint64 = (cbfBits * counterId)
-			right     uint64 = 64 - cbfBits
-		)
-		// current count
-		count := c.data[blockId] << left >> right
-		// if the current count is max
-		if count == (cbfMax-1) && row == 0 {
-			c.reset()
-		}
-		// skip if max value already
-		if count == cbfMax-1 {
-			continue
-		}
-		// mask for isolating counter for mutation
-		mask := full << right >> left
-		// clear out the counter for mutation
-		isol := (c.data[blockId] | mask) ^ mask
-		// increment
-		c.data[blockId] = isol | ((count + 1) <<
-			(((cbfCounters - 1) - counterId) * cbfBits))
-	}
-}
-
 // CBF.reset() serves as the freshness mechanism described in section 3.3 of the
 // TinyLFU paper [1]. It is called by CBF.increment() when the number of items
 // reaches the sample size (W).
 //
 // [1]: https://arxiv.org/abs/1512.00727
-func (c *CBF) reset() {
+func (c *CBF) Reset() {
 	mask := uint64(0xf0f0f0f0f0f0f0f0)
 	// divide the counters in each block by 2
 	for blockId := 0; blockId < len(c.data); blockId++ {
@@ -180,6 +287,19 @@ func (c *CBF) string() string {
 	}
 	state += "\n"
 	return state
+}
+
+// next2Power rounds x up to the next power of 2, if it's not already one.
+func next2Power(x uint64) uint64 {
+	x--
+	x |= x >> 1
+	x |= x >> 2
+	x |= x >> 4
+	x |= x >> 8
+	x |= x >> 16
+	x |= x >> 32
+	x++
+	return x
 }
 
 /*

@@ -24,7 +24,6 @@ type TestSketch interface {
 	Sketch
 	increment(uint64)
 	estimate(uint64) uint64
-	reset()
 }
 
 func GenerateTest(create func() TestSketch) func(t *testing.T) {
@@ -37,7 +36,7 @@ func GenerateTest(create func() TestSketch) func(t *testing.T) {
 		if s.estimate(1) != 4 {
 			t.Fatal("increment/estimate error")
 		}
-		s.reset()
+		s.Reset()
 		if s.estimate(1) != 2 {
 			t.Fatal("reset error")
 		}
@@ -48,6 +47,10 @@ func TestCBF(t *testing.T) {
 	GenerateTest(func() TestSketch { return NewCBF(16) })(t)
 }
 
+func TestCM(t *testing.T) {
+	GenerateTest(func() TestSketch { return NewCM(16) })(t)
+}
+
 func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
 		s := create()
@@ -55,7 +58,7 @@ func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 			b.SetBytes(1)
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				s.Increment("1")
+				s.increment(1)
 			}
 		})
 		b.Run("estimate", func(b *testing.B) {
@@ -70,4 +73,8 @@ func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 
 func BenchmarkCBF(b *testing.B) {
 	GenerateBenchmark(func() TestSketch { return NewCBF(16) })(b)
+}
+
+func BenchmarkCM(b *testing.B) {
+	GenerateBenchmark(func() TestSketch { return NewCM(16) })(b)
 }
