@@ -85,7 +85,7 @@ func (c *Cache) Set(key string, value interface{}) {
 	if victim, added := c.policy.Add(key); added {
 		// delete the victim if there was an eviction
 		if victim != "" {
-			c.data.Del(key)
+			c.data.Del(victim)
 		}
 		// since the key was added to the policy, add it to the data store too
 		c.data.Set(key, value)
