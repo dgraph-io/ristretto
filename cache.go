@@ -34,6 +34,7 @@ type Cache struct {
 	data   store.Map
 	policy Policy
 	buffer *ring.Buffer
+	config *Config
 }
 
 type Config struct {
@@ -51,7 +52,7 @@ func NewCache(config *Config) *Cache {
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	var policy Policy = config.Policy(config.CacheSize, data)
 	if config.Log {
-		policy = NewRecorder(config.Policy(config.CacheSize, data), data)
+		policy = NewRecorder(policy, data)
 	}
 	return &Cache{
 		data:   data,
@@ -60,6 +61,7 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferSize,
 		}),
+		config: config,
 	}
 }
 
@@ -99,4 +101,17 @@ func (c *Cache) Del(key string) {
 
 func (c *Cache) Log() *PolicyLog {
 	return c.policy.Log()
+}
+
+func (c *Cache) Reset() {
+	c.data = store.NewMap()
+	var policy Policy = c.config.Policy(c.config.CacheSize, c.data)
+	if c.config.Log {
+		policy = NewRecorder(policy, c.data)
+	}
+	c.policy = policy
+	c.buffer = ring.NewBuffer(ring.LOSSY, &ring.Config{
+		Consumer: policy,
+		Capacity: c.config.BufferSize,
+	})
 }
