@@ -301,8 +301,9 @@ func NewTinyLFU(capacity uint64, data store.Map) Policy {
 
 func newTinyLFU(capacity uint64, data store.Map) *TinyLFU {
 	return &TinyLFU{
-		data:     data,
-		sketch:   bloom.NewCM(capacity),
+		data:   data,
+		sketch: bloom.NewCM(capacity),
+		//sketch:   bloom.NewCBF(capacity),
 		capacity: capacity,
 	}
 }
