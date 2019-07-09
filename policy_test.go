@@ -30,11 +30,13 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 	iterations := uint64(4)
 	return func(t *testing.T) {
 		t.Run("push", func(t *testing.T) {
-			policy := create(iterations, store.NewMap())
+			data := store.NewMap()
+			policy := create(iterations, data)
 			values := make([]ring.Element, iterations)
 			for i := range values {
 				values[i] = ring.Element(fmt.Sprintf("%d", i))
 			}
+			data.Set("0", 1)
 			policy.Add("0")
 			policy.Push(values)
 			if !policy.Has("0") || policy.Has("*") {
