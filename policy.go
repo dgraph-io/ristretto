@@ -302,7 +302,7 @@ func NewTinyLFU(capacity uint64, data store.Map) Policy {
 func newTinyLFU(capacity uint64, data store.Map) *TinyLFU {
 	return &TinyLFU{
 		data:     data,
-		sketch:   bloom.NewCBF(capacity),
+		sketch:   bloom.NewCM(capacity),
 		capacity: capacity,
 	}
 }
@@ -317,12 +317,11 @@ func (p *TinyLFU) Del(key string) {
 }
 
 // Has for TinyLFU is not 100% accurate due to the underlying, probabilistic
-// data strucute (counting bloom filters or count-min sketches).
+// data structure (counting bloom filters or count-min sketches).
 func (p *TinyLFU) Has(key string) bool {
 	p.Lock()
 	defer p.Unlock()
-	// TODO: should we also look into p.data for 100% accuracy?
-	return p.sketch.Estimate(key) > 0
+	return p.data.Get(key) != nil
 }
 
 func (p *TinyLFU) Push(keys []ring.Element) {

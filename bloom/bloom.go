@@ -39,7 +39,7 @@ type Sketch interface {
 }
 
 // CM is a Count-Min sketch implementation with 4-bit counters, heavily based
-// of Damian Gryski's CM4 [1].
+// on Damian Gryski's CM4 [1].
 //
 // [1]: https://github.com/dgryski/go-tinylfu/blob/master/cm4.go
 type CM struct {
@@ -49,7 +49,7 @@ type CM struct {
 }
 
 // cmDepth is the number of counter copies to store (think of it as rows)
-const cmDepth = 4
+const cmDepth = 1
 
 func NewCM(w uint64) *CM {
 	if w == 0 {
@@ -110,6 +110,16 @@ func (c *CM) Reset() {
 	}
 }
 
+func (c *CM) string() string {
+	var state string
+	for i := range c.rows {
+		state += "  [ "
+		state += c.rows[i].string()
+		state += " ]\n"
+	}
+	return state
+}
+
 // cmRow is a row of bytes, with each byte holding two counters
 type cmRow []byte
 
@@ -124,7 +134,7 @@ func (r cmRow) get(n uint64) byte {
 func (r cmRow) inc(n uint64) {
 	// index of the counter
 	i := n / 2
-	// shift distance
+	// shift distance (even 0, odd 4)
 	s := (n & 1) * 4
 	// counter value
 	v := (r[i] >> s) & 0x0f
@@ -139,6 +149,15 @@ func (r cmRow) reset() {
 	for i := range r {
 		r[i] = (r[i] >> 1) & 0x77
 	}
+}
+
+func (r cmRow) string() string {
+	var state string
+	for i := uint64(0); i < uint64(len(r)*2); i++ {
+		state += fmt.Sprintf("%02d ", (r[(i/2)]>>((i&1)*4))&0x0f)
+	}
+	state = state[:len(state)-1]
+	return state
 }
 
 // CBF is a basic Counting Bloom Filter implementation that fulfills the
@@ -273,19 +292,13 @@ func (c *CBF) Reset() {
 func (c *CBF) string() string {
 	var state string
 	for i := 0; i < len(c.data); i++ {
-		state += "  ["
+		state += "  [ "
 		block := c.data[i]
 		for j := uint64(0); j < cbfCounters; j++ {
-			count := block << (j * cbfBits) >> 60
-			if count > 0 {
-				state += fmt.Sprintf("%2d ", count)
-			} else {
-				state += "   "
-			}
+			state += fmt.Sprintf("%02d ", block<<(j*cbfBits)>>60)
 		}
-		state = state[:len(state)-1] + "]\n"
+		state = state[:len(state)-1] + " ]\n"
 	}
-	state += "\n"
 	return state
 }
 
