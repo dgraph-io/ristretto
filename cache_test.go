@@ -71,6 +71,7 @@ func TestCache(t *testing.T) {
 		{"        lfu", NewLFU},
 		{"        lru", NewLRU},
 		{"    tinylfu", NewTinyLFU},
+		{"       wlfu", NewWLFU},
 	}
 	// accesses is a slice of all access distributions to test (see sim package)
 	accesses := []accessTest{

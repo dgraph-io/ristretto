@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"container/list"
+	"math"
 	"sync"
 	"sync/atomic"
 
@@ -283,6 +284,146 @@ func (p *LFU) Add(key string) (victim string, added bool) {
 
 func (p *LFU) Log() *PolicyLog {
 	return nil
+}
+
+type seg struct {
+	data map[string]uint8
+	size uint64
+}
+
+func newSeg(size uint64) *seg {
+	return &seg{
+		data: make(map[string]uint8, size),
+		size: size,
+	}
+}
+
+func (s *seg) add(key string) (string, uint8) {
+	victimKey, victimCount := s.candidate()
+	if victimKey != "" {
+		delete(s.data, victimKey)
+	}
+	s.data[key]++
+	return victimKey, victimCount
+}
+
+func (s *seg) candidate() (string, uint8) {
+	// check if eviction is needed
+	if uint64(len(s.data)) != s.size {
+		return "", 0
+	}
+	// sample items and find the minimally used
+	i, minKey, minCount := 0, "", uint8(math.MaxUint8)
+	for key, count := range s.data {
+		if count < minCount {
+			minKey, minCount = key, count
+		}
+		if i++; i == lfuSample {
+			break
+		}
+	}
+	return minKey, minCount
+}
+
+type WLFU struct {
+	sync.Mutex
+	segs [2]*seg
+}
+
+func NewWLFU(size uint64, data store.Map) Policy {
+	return newWLFU(size)
+}
+
+func newWLFU(size uint64) *WLFU {
+	return &WLFU{
+		segs: [2]*seg{
+			// window segment (1% of total size as per TinyLFU paper)
+			newSeg(uint64(math.Ceil(float64(size) * 0.01))),
+			// main  segment (99% of total size as per TinyLFU paper)
+			newSeg(uint64(math.Floor(float64(size) * 0.99))),
+		},
+	}
+}
+
+func (p *WLFU) Push(keys []ring.Element) {
+	p.Lock()
+	defer p.Unlock()
+	for _, key := range keys {
+		k := string(key)
+		if seg := p.seg(k); seg != -1 {
+			p.segs[seg].data[k]++
+		}
+	}
+}
+
+func (p *WLFU) Add(key string) (victim string, added bool) {
+	p.Lock()
+	defer p.Unlock()
+	// do nothing if the item is already in the policy
+	if p.seg(key) != -1 {
+		return
+	}
+	// get the window victim and count if the window is full
+	windowKey, windowCount := p.segs[0].add(key)
+	if windowKey != "" {
+		// window has room, so nothing else needs to be done
+		added = true
+		return
+	}
+	// get the main eviction candidate key and count if the main segment is full
+	mainKey, mainCount := p.segs[1].candidate()
+	if mainKey != "" {
+		// main has room, so just move the window victim to there
+		goto move
+	}
+	// compare the window victim with the main candidate, also note that window
+	// victims are preferred (>=) over main candidates, as we can assume that
+	// window victims have been used more recently than the main candidate
+	if windowCount >= mainCount {
+		// main candidate lost to the window victim, so actually evict the main
+		// candidate
+		victim = mainKey
+		delete(p.segs[1].data, mainKey)
+		// main now has room for one more, so move the window victim to there
+		goto move
+	} else {
+		// window victim lost to the main candidate, and the window victim has
+		// already been evicted from the window, so nothing else needs to be
+		// done
+		victim = windowKey
+	}
+	return
+move:
+	// move places the window key-count pair in the main segment
+	p.segs[1].data[windowKey] = windowCount
+	added = true
+	return
+}
+
+func (p *WLFU) Has(key string) bool {
+	return p.seg(key) != -1
+}
+
+func (p *WLFU) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	if seg := p.seg(key); seg != -1 {
+		delete(p.segs[seg].data, key)
+	}
+	return
+}
+
+func (p *WLFU) Log() *PolicyLog {
+	return nil
+}
+
+func (p *WLFU) seg(key string) int {
+	if p.segs[0].data[key] != 0 {
+		return 0
+	} else if p.segs[1].data[key] != 0 {
+		return 1
+	}
+	return -1
 }
 
 // TinyLFU keeps track of frequency using tiny (4-bit) counters in the form of a
