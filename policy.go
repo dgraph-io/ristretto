@@ -194,98 +194,6 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	return p.log
 }
 
-// LFU is a Policy with no admission policy and a sampled LFU eviction policy.
-type LFU struct {
-	sync.Mutex
-	data     map[string]uint64
-	size     uint64
-	capacity uint64
-}
-
-func NewLFU(capacity uint64, data store.Map) Policy {
-	return newLFU(capacity, data)
-}
-
-func newLFU(capacity uint64, data store.Map) *LFU {
-	return &LFU{
-		data:     make(map[string]uint64, capacity),
-		capacity: capacity,
-	}
-}
-
-// hit is called for each key in a Push() operation or when the key is accessed
-// during an Add() operation.
-func (p *LFU) hit(key string) {
-	if _, exists := p.data[key]; exists {
-		p.data[key]++
-	}
-}
-
-func (p *LFU) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	delete(p.data, key)
-	p.size--
-}
-
-func (p *LFU) Has(key string) bool {
-	p.Lock()
-	defer p.Unlock()
-	if _, exists := p.data[key]; exists {
-		return true
-	}
-	return false
-}
-
-// Push acquires a lock and calls hit() for each key (incrementing the counter).
-func (p *LFU) Push(keys []ring.Element) {
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		p.hit(string(key))
-	}
-}
-
-// Add attempts to add the key param to the policy. If added, it may return the
-// victim key so the caller can delete the victim from its data store.
-func (p *LFU) Add(key string) (victim string, added bool) {
-	p.Lock()
-	defer p.Unlock()
-	// if it's already in the policy, just increment the counter and return
-	if _, exists := p.data[key]; exists {
-		p.data[key]++
-		return
-	}
-	// check if eviction is needed
-	if p.size >= p.capacity {
-		// find a victim
-		min, i := uint64(0), 0
-		for k, v := range p.data {
-			// stop once we reach the sample size
-			if i == lfuSample {
-				break
-			}
-			if i == 0 || v < min {
-				min = v
-				victim = k
-			}
-			i++
-		}
-		// delete the victim
-		delete(p.data, victim)
-		p.size--
-	}
-	// add the new item to the policy
-	p.data[key] = 1
-	added = true
-	p.size++
-	return
-}
-
-func (p *LFU) Log() *PolicyLog {
-	return nil
-}
-
 type seg struct {
 	data map[string]uint8
 	size uint64
@@ -323,6 +231,59 @@ func (s *seg) candidate() (string, uint8) {
 		}
 	}
 	return minKey, minCount
+}
+
+// LFU is a Policy with no admission policy and a sampled LFU eviction policy.
+type LFU struct {
+	sync.Mutex
+	freq *seg
+}
+
+func NewLFU(size uint64, data store.Map) Policy {
+	return newLFU(size, data)
+}
+
+func newLFU(size uint64, data store.Map) *LFU {
+	return &LFU{
+		freq: newSeg(size),
+	}
+}
+
+func (p *LFU) Push(keys []ring.Element) {
+	p.Lock()
+	defer p.Unlock()
+	for _, key := range keys {
+		p.freq.data[string(key)]++
+	}
+}
+
+func (p *LFU) Add(key string) (victim string, added bool) {
+	p.Lock()
+	defer p.Unlock()
+	if _, exists := p.freq.data[key]; exists {
+		return
+	}
+	victim, _ = p.freq.add(key)
+	added = true
+	return
+}
+
+func (p *LFU) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	delete(p.freq.data, key)
+	return
+}
+
+func (p *LFU) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	_, exists := p.freq.data[key]
+	return exists
+}
+
+func (p *LFU) Log() *PolicyLog {
+	return nil
 }
 
 type WLFU struct {
@@ -430,36 +391,30 @@ func (p *WLFU) seg(key string) int {
 // counting bloom filter. For eviction, sampled LFU is done.
 type TinyLFU struct {
 	sync.Mutex
-	data     store.Map
-	size     uint64
-	capacity uint64
-	sketch   bloom.Sketch
+	data store.Map
+	size uint64
+	used uint64
+	freq bloom.Sketch
 }
 
-func NewTinyLFU(capacity uint64, data store.Map) Policy {
-	return newTinyLFU(capacity, data)
+func NewTinyLFU(size uint64, data store.Map) Policy {
+	return newTinyLFU(size, data)
 }
 
-func newTinyLFU(capacity uint64, data store.Map) *TinyLFU {
+func newTinyLFU(size uint64, data store.Map) *TinyLFU {
 	return &TinyLFU{
-		data:   data,
-		sketch: bloom.NewCM(capacity),
-		//sketch:   bloom.NewCBF(capacity),
-		capacity: capacity,
+		data: data,
+		size: size,
+		freq: bloom.NewCM(size),
 	}
 }
 
 func (p *TinyLFU) Del(key string) {
 	p.Lock()
 	defer p.Unlock()
-	p.size--
-	// TinyLFU doesn't store keys, no need to delete anything.
-	//
-	// NOTE: look into zero'ing the counter?
+	p.used--
 }
 
-// Has for TinyLFU is not 100% accurate due to the underlying, probabilistic
-// data structure (counting bloom filters or count-min sketches).
 func (p *TinyLFU) Has(key string) bool {
 	p.Lock()
 	defer p.Unlock()
@@ -470,57 +425,49 @@ func (p *TinyLFU) Push(keys []ring.Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
-		p.sketch.Increment(string(key))
+		p.freq.Increment(string(key))
 	}
 }
 
 func (p *TinyLFU) Add(key string) (victim string, added bool) {
 	p.Lock()
 	defer p.Unlock()
-	// tinylfu doesn't have an "adding" mechanism because the structure is
-	// probabilistic, so we can just assume it's already in the policy - but we
-	// do need to keep track of the policy size and capacity for eviction
-	// purposes
-	//
-	// check if eviction is needed
-	if p.size >= p.capacity {
-		// eviction is needed
-		//
-		// create a slice that will hold the random sample of keys from the map
-		keys, i := make([]string, 0, lfuSample), 0
-		// get the random sample
-		p.data.Run(func(k, v interface{}) bool {
-			keys = append(keys, k.(string))
-			i++
-			return !(i == lfuSample)
-		})
-		// keep track of mins
-		minKey, minHits := "", uint64(0)
-		// find the minimally used item from the random sample
-		for j, k := range keys {
-			if k != "" {
-				// lookup the key in the frequency sketch
-				hits := p.sketch.Estimate(k)
-				// keep track of minimally used item
-				if j == 0 || hits < minHits {
-					minKey = k
-					minHits = hits
-				}
-			}
-		}
-		// set victim to minimally used item
-		victim = minKey
-		p.size--
+	if p.used == p.size {
+		victim = p.candidate()
+		p.used--
 	}
-	// increment key counter
-	p.sketch.Increment(key)
+	p.freq.Increment(key)
 	added = true
-	p.size++
+	p.used++
 	return
 }
 
 func (p *TinyLFU) Log() *PolicyLog {
 	return nil
+}
+
+func (p *TinyLFU) candidate() string {
+	keys := p.sample()
+	minKey, minHits := "", uint64(math.MaxUint64)
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if hits := p.freq.Estimate(key); hits < minHits {
+			minKey, minHits = key, hits
+		}
+	}
+	return minKey
+}
+
+func (p *TinyLFU) sample() []string {
+	keys, i := make([]string, 0, lfuSample), 0
+	p.data.Run(func(key, value interface{}) bool {
+		keys = append(keys, key.(string))
+		i++
+		return !(i == lfuSample)
+	})
+	return keys
 }
 
 // LRU is a Policy with no admission policy and a LRU eviction policy (using
