@@ -85,3 +85,23 @@ func TestCache(t *testing.T) {
 		}
 	}
 }
+
+func TestSetGet(t *testing.T) {
+	c := NewCache(&Config{
+		CacheSize:  4,
+		BufferSize: 4,
+		Policy:     NewLFU,
+		Log:        false,
+	})
+	for i := 0; i < 16; i++ {
+		key := fmt.Sprintf("%d", i)
+		vic := c.Set(key, i)
+		val := c.Get(key)
+		if val == nil || val.(int) != i {
+			t.Fatal("set/get error")
+		}
+		if i > 4 && vic == "" {
+			t.Fatal("no eviction")
+		}
+	}
+}
