@@ -253,7 +253,10 @@ func (p *LFU) Push(keys []ring.Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
-		p.freq.data[string(key)]++
+		k := string(key)
+		if _, exists := p.freq.data[k]; exists {
+			p.freq.data[k]++
+		}
 	}
 }
 
@@ -311,8 +314,12 @@ func (p *WLFU) Push(keys []ring.Element) {
 	defer p.Unlock()
 	for _, key := range keys {
 		k := string(key)
-		if seg := p.seg(k); seg != -1 {
-			p.segs[seg].data[k]++
+		s := p.seg(k)
+		if s == -1 {
+			continue
+		}
+		if _, exists := p.segs[s].data[k]; exists {
+			p.segs[s].data[k]++
 		}
 	}
 }
@@ -326,14 +333,14 @@ func (p *WLFU) Add(key string) (victim string, added bool) {
 	}
 	// get the window victim and count if the window is full
 	windowKey, windowCount := p.segs[0].add(key)
-	if windowKey != "" {
+	if windowKey == "" {
 		// window has room, so nothing else needs to be done
 		added = true
 		return
 	}
 	// get the main eviction candidate key and count if the main segment is full
 	mainKey, mainCount := p.segs[1].candidate()
-	if mainKey != "" {
+	if mainKey == "" {
 		// main has room, so just move the window victim to there
 		goto move
 	}
@@ -352,6 +359,7 @@ func (p *WLFU) Add(key string) (victim string, added bool) {
 		// already been evicted from the window, so nothing else needs to be
 		// done
 		victim = windowKey
+		added = true
 	}
 	return
 move:

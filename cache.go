@@ -68,7 +68,7 @@ func (c *Cache) Get(key string) interface{} {
 	return c.data.Get(key)
 }
 
-func (c *Cache) Set(key string, value interface{}) {
+func (c *Cache) Set(key string, value interface{}) string {
 	// attempt to add the key to the admission/eviction policy
 	if victim, added := c.policy.Add(key); added {
 		// delete the victim if there was an eviction
@@ -77,7 +77,9 @@ func (c *Cache) Set(key string, value interface{}) {
 		}
 		// since the key was added to the policy, add it to the data store too
 		c.data.Set(key, value)
+		return victim
 	}
+	return ""
 }
 
 func (c *Cache) Del(key string) {
