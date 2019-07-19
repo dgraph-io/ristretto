@@ -34,7 +34,12 @@ const (
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 	return func(t *testing.T) {
 		// create the cache with the provided policy and constant params
-		cache := NewCache(&Config{CACHE_SIZE, BUFFER_SIZE, p, true})
+		cache := NewCache(&Config{
+			CacheSize:  CACHE_SIZE,
+			BufferSize: BUFFER_SIZE,
+			Policy:     p,
+			Log:        true,
+		})
 		// must iterate through SAMPLE_SIZE because it's fixed and should be
 		// much larger than the CACHE_SIZE
 		for i := 0; i < SAMPLE_SIZE; i++ {

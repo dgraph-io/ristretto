@@ -34,12 +34,14 @@ type Cache struct {
 	data   store.Map
 	policy Policy
 	buffer *ring.Buffer
+	notify func(string)
 }
 
 type Config struct {
 	CacheSize  uint64
 	BufferSize uint64
 	Policy     func(uint64, store.Map) Policy
+	OnEvict    func(string)
 	Log        bool
 }
 
@@ -60,6 +62,7 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferSize,
 		}),
+		notify: config.OnEvict,
 	}
 }
 
@@ -74,6 +77,10 @@ func (c *Cache) Set(key string, value interface{}) string {
 		// delete the victim if there was an eviction
 		if victim != "" {
 			c.data.Del(victim)
+			// run eviction callback function if provided
+			if c.notify != nil {
+				c.notify(victim)
+			}
 		}
 		// since the key was added to the policy, add it to the data store too
 		c.data.Set(key, value)
