@@ -19,22 +19,19 @@ package ristretto
 import (
 	"fmt"
 	"testing"
-
-	"github.com/dgraph-io/ristretto/ring"
-	"github.com/dgraph-io/ristretto/store"
 )
 
-type PolicyCreator func(uint64, store.Map) Policy
+type PolicyCreator func(uint64, Map) Policy
 
 func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 	iterations := uint64(4)
 	return func(t *testing.T) {
 		t.Run("push", func(t *testing.T) {
-			data := store.NewMap()
+			data := NewMap()
 			policy := create(iterations, data)
-			values := make([]ring.Element, iterations)
+			values := make([]Element, iterations)
 			for i := range values {
-				values[i] = ring.Element(fmt.Sprintf("%d", i))
+				values[i] = Element(fmt.Sprintf("%d", i))
 			}
 			data.Set("0", 1)
 			policy.Add("0")
@@ -44,7 +41,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 			}
 		})
 		t.Run("add", func(t *testing.T) {
-			data := store.NewMap()
+			data := NewMap()
 			policy := create(iterations, data)
 			for i := uint64(0); i < iterations; i++ {
 				data.Set(fmt.Sprintf("%d", i), i)

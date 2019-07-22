@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package store
+package ristretto
 
 import "sync"
 

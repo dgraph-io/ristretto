@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ring
+package ristretto
 
 import (
 	"sync"
@@ -46,7 +46,7 @@ type Stripe struct {
 	busy     int32
 }
 
-func NewStripe(config *Config) *Stripe {
+func NewStripe(config *RingConfig) *Stripe {
 	return &Stripe{
 		Consumer: config.Consumer,
 		data:     make([]Element, config.Capacity),
@@ -68,7 +68,7 @@ func (s *Stripe) Push(element Element) {
 	}
 }
 
-type Config struct {
+type RingConfig struct {
 	Consumer Consumer
 	Stripes  uint64
 	Capacity uint64
@@ -91,7 +91,7 @@ type Buffer struct {
 // LOSSLESS. LOSSY should provide better performance. The Consumer in Config
 // will be called when individual stripes are full and need to drain their
 // elements.
-func NewBuffer(Type BufferType, config *Config) *Buffer {
+func NewBuffer(Type BufferType, config *RingConfig) *Buffer {
 	if Type == LOSSY {
 		// LOSSY buffers use a very simple sync.Pool for concurrently reusing
 		// stripes. We do lose some stripes due to GC (unheld items in sync.Pool
