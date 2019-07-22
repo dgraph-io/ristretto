@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package bloom
+package ristretto
 
 import (
 	"testing"

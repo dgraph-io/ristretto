@@ -21,10 +21,6 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
-
-	"github.com/dgraph-io/ristretto/bloom"
-	"github.com/dgraph-io/ristretto/ring"
-	"github.com/dgraph-io/ristretto/store"
 )
 
 const (
@@ -35,7 +31,7 @@ const (
 
 // Policy is the interface encapsulating eviction/admission behavior.
 type Policy interface {
-	ring.Consumer
+	Consumer
 	// Add is the most important function of a Policy. It determines what keys
 	// are added and what keys are evicted. An important distinction is that
 	// Add is an *attempt* to add a key to the policy (and later the cache as
@@ -73,11 +69,11 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(capacity uint64, data store.Map) Policy {
+func NewClairvoyant(capacity uint64, data Map) Policy {
 	return newClairvoyant(capacity, data)
 }
 
-func newClairvoyant(capacity uint64, data store.Map) *Clairvoyant {
+func newClairvoyant(capacity uint64, data Map) *Clairvoyant {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
 		capacity: capacity,
@@ -124,7 +120,7 @@ func (p *Clairvoyant) Has(key string) bool {
 	return false
 }
 
-func (p *Clairvoyant) Push(keys []ring.Element) {
+func (p *Clairvoyant) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -239,17 +235,17 @@ type LFU struct {
 	freq *seg
 }
 
-func NewLFU(size uint64, data store.Map) Policy {
+func NewLFU(size uint64, data Map) Policy {
 	return newLFU(size, data)
 }
 
-func newLFU(size uint64, data store.Map) *LFU {
+func newLFU(size uint64, data Map) *LFU {
 	return &LFU{
 		freq: newSeg(size),
 	}
 }
 
-func (p *LFU) Push(keys []ring.Element) {
+func (p *LFU) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -294,7 +290,7 @@ type WLFU struct {
 	segs [2]*seg
 }
 
-func NewWLFU(size uint64, data store.Map) Policy {
+func NewWLFU(size uint64, data Map) Policy {
 	return newWLFU(size)
 }
 
@@ -309,7 +305,7 @@ func newWLFU(size uint64) *WLFU {
 	}
 }
 
-func (p *WLFU) Push(keys []ring.Element) {
+func (p *WLFU) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -399,21 +395,21 @@ func (p *WLFU) seg(key string) int {
 // counting bloom filter. For eviction, sampled LFU is done.
 type TinyLFU struct {
 	sync.Mutex
-	data store.Map
+	data Map
 	size uint64
 	used uint64
-	freq bloom.Sketch
+	freq Sketch
 }
 
-func NewTinyLFU(size uint64, data store.Map) Policy {
+func NewTinyLFU(size uint64, data Map) Policy {
 	return newTinyLFU(size, data)
 }
 
-func newTinyLFU(size uint64, data store.Map) *TinyLFU {
+func newTinyLFU(size uint64, data Map) *TinyLFU {
 	return &TinyLFU{
 		data: data,
 		size: size,
-		freq: bloom.NewCM(size),
+		freq: NewCM(size),
 	}
 }
 
@@ -429,7 +425,7 @@ func (p *TinyLFU) Has(key string) bool {
 	return p.data.Get(key) != nil
 }
 
-func (p *TinyLFU) Push(keys []ring.Element) {
+func (p *TinyLFU) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -488,11 +484,11 @@ type LRU struct {
 	size     uint64
 }
 
-func NewLRU(capacity uint64, data store.Map) Policy {
+func NewLRU(capacity uint64, data Map) Policy {
 	return newLRU(capacity, data)
 }
 
-func newLRU(capacity uint64, data store.Map) *LRU {
+func newLRU(capacity uint64, data Map) *LRU {
 	return &LRU{
 		list:     list.New(),
 		look:     make(map[string]*list.Element, capacity),
@@ -516,7 +512,7 @@ func (p *LRU) Has(key string) bool {
 	return false
 }
 
-func (p *LRU) Push(keys []ring.Element) {
+func (p *LRU) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -568,11 +564,11 @@ type None struct {
 	log *PolicyLog
 }
 
-func NewNone(capacity uint64, data store.Map) Policy {
+func NewNone(capacity uint64, data Map) Policy {
 	return newNone(capacity, data)
 }
 
-func newNone(capacity uint64, data store.Map) *None {
+func newNone(capacity uint64, data Map) *None {
 	return &None{
 		log: &PolicyLog{},
 	}
@@ -585,7 +581,7 @@ func (p *None) Has(key string) bool {
 	return false
 }
 
-func (p *None) Push(keys []ring.Element) {
+func (p *None) Push(keys []Element) {
 }
 
 func (p *None) Add(key string) (victim string, added bool) {
@@ -601,12 +597,12 @@ func (p *None) Log() *PolicyLog {
 // counters or using policy-level mutexes), this struct allows us to only incur
 // that overhead when we want to analyze the hit ratio performance.
 type recorder struct {
-	data   store.Map
+	data   Map
 	policy Policy
 	log    *PolicyLog
 }
 
-func NewRecorder(policy Policy, data store.Map) Policy {
+func NewRecorder(policy Policy, data Map) Policy {
 	return &recorder{
 		data:   data,
 		policy: policy,
@@ -622,7 +618,7 @@ func (r *recorder) Has(key string) bool {
 	return r.policy.Has(key)
 }
 
-func (r *recorder) Push(keys []ring.Element) {
+func (r *recorder) Push(keys []Element) {
 	r.policy.Push(keys)
 }
 

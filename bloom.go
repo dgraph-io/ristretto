@@ -22,7 +22,7 @@
 // be better suited for certain data distributions.
 //
 // [1]: https://arxiv.org/abs/1512.00727
-package bloom
+package ristretto
 
 import (
 	"crypto/rand"

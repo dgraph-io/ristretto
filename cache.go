@@ -16,31 +16,26 @@
 
 package ristretto
 
-import (
-	"github.com/dgraph-io/ristretto/ring"
-	"github.com/dgraph-io/ristretto/store"
-)
-
 // Cache ties everything together. The three main components are:
 //
-//     1) The hash map: this is the store.Map interface.
+//     1) The hash map: this is the Map interface.
 //     2) The admission and eviction policy: this is the Policy interface.
-//     3) The bp-wrapper buffer: this is the ring.Buffer struct.
+//     3) The bp-wrapper buffer: this is the Buffer struct.
 //
 // All three of these components work together to try and keep the most valuable
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	data   store.Map
+	data   Map
 	policy Policy
-	buffer *ring.Buffer
+	buffer *Buffer
 	notify func(string)
 }
 
 type Config struct {
 	CacheSize  uint64
 	BufferSize uint64
-	Policy     func(uint64, store.Map) Policy
+	Policy     func(uint64, Map) Policy
 	OnEvict    func(string)
 	Log        bool
 }
@@ -49,7 +44,7 @@ func NewCache(config *Config) *Cache {
 	// data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
-	data := store.NewMap()
+	data := NewMap()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	var policy Policy = config.Policy(config.CacheSize, data)
 	if config.Log {
@@ -58,7 +53,7 @@ func NewCache(config *Config) *Cache {
 	return &Cache{
 		data:   data,
 		policy: policy,
-		buffer: ring.NewBuffer(ring.LOSSY, &ring.Config{
+		buffer: NewBuffer(LOSSY, &RingConfig{
 			Consumer: policy,
 			Capacity: config.BufferSize,
 		}),
@@ -67,7 +62,7 @@ func NewCache(config *Config) *Cache {
 }
 
 func (c *Cache) Get(key string) interface{} {
-	c.buffer.Push(ring.Element(key))
+	c.buffer.Push(Element(key))
 	return c.data.Get(key)
 }
 

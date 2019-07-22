@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package bloom
+package ristretto
 
 import (
 	"testing"
@@ -27,7 +27,7 @@ type TestSketch interface {
 	string() string
 }
 
-func GenerateTest(create func() TestSketch) func(t *testing.T) {
+func GenerateBloomTest(create func() TestSketch) func(t *testing.T) {
 	return func(t *testing.T) {
 		s := create()
 		s.increment(0)
@@ -56,10 +56,10 @@ func TestCBF(t *testing.T) {
 }
 
 func TestCM(t *testing.T) {
-	GenerateTest(func() TestSketch { return NewCM(16) })(t)
+	GenerateBloomTest(func() TestSketch { return NewCM(16) })(t)
 }
 
-func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
+func GenerateBloomBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
 		s := create()
 		b.Run("increment", func(b *testing.B) {
@@ -80,9 +80,9 @@ func GenerateBenchmark(create func() TestSketch) func(b *testing.B) {
 }
 
 func BenchmarkCBF(b *testing.B) {
-	GenerateBenchmark(func() TestSketch { return NewCBF(16) })(b)
+	GenerateBloomBenchmark(func() TestSketch { return NewCBF(16) })(b)
 }
 
 func BenchmarkCM(b *testing.B) {
-	GenerateBenchmark(func() TestSketch { return NewCM(16) })(b)
+	GenerateBloomBenchmark(func() TestSketch { return NewCM(16) })(b)
 }

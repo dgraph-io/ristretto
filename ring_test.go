@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ring
+package ristretto
 
 import (
 	"testing"
@@ -39,7 +39,7 @@ func (c *TestConsumer) Push(elements []Element) { c.push(elements) }
 
 func TestLossy(t *testing.T) {
 	drainCount := 0
-	buffer := NewBuffer(LOSSY, &Config{
+	buffer := NewBuffer(LOSSY, &RingConfig{
 		Consumer: &TestConsumer{
 			push: func(elements []Element) {
 				drainCount++
@@ -59,7 +59,7 @@ func TestLossy(t *testing.T) {
 }
 
 func BenchmarkLossy(b *testing.B) {
-	buffer := NewBuffer(LOSSY, &Config{
+	buffer := NewBuffer(LOSSY, &RingConfig{
 		Consumer: &BaseConsumer{},
 		Capacity: CAPACITY,
 	})
@@ -81,7 +81,7 @@ func BenchmarkLossy(b *testing.B) {
 }
 
 func BenchmarkLossless(b *testing.B) {
-	buffer := NewBuffer(LOSSLESS, &Config{
+	buffer := NewBuffer(LOSSLESS, &RingConfig{
 		Consumer: &BaseConsumer{},
 		Stripes:  STRIPES,
 		Capacity: CAPACITY,
