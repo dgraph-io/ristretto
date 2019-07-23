@@ -21,34 +21,50 @@ import (
 	"testing"
 )
 
-type PolicyCreator func(uint64, Map) Policy
+type PolicyCreator func(uint64, bool) Policy
 
 func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
-	iterations := uint64(4)
+	iterations := uint64(1024)
 	return func(t *testing.T) {
-		t.Run("push", func(t *testing.T) {
-			data := NewMap()
-			policy := create(iterations, data)
+		t.Run("uniform-push", func(t *testing.T) {
+			policy := create(iterations, false)
 			values := make([]Element, iterations)
 			for i := range values {
 				values[i] = Element(fmt.Sprintf("%d", i))
 			}
-			data.Set("0", 1)
-			policy.Add("0")
+			policy.Add("0", 1)
 			policy.Push(values)
 			if !policy.Has("0") || policy.Has("*") {
 				t.Fatal("add/push error")
 			}
 		})
-		t.Run("add", func(t *testing.T) {
-			data := NewMap()
-			policy := create(iterations, data)
+		t.Run("uniform-add", func(t *testing.T) {
+			policy := create(iterations, false)
 			for i := uint64(0); i < iterations; i++ {
-				data.Set(fmt.Sprintf("%d", i), i)
-				policy.Add(fmt.Sprintf("%d", i))
+				policy.Add(fmt.Sprintf("%d", i), 1)
 			}
-			if victim, added := policy.Add("*"); victim == "" || !added {
-				fmt.Println(victim, added)
+			if victims, added := policy.Add("*", 1); victims == nil || !added {
+				t.Fatal("add/eviction error")
+			}
+		})
+		t.Run("variable-push", func(t *testing.T) {
+			policy := create(iterations, true)
+			values := make([]Element, iterations)
+			for i := range values {
+				values[i] = Element(fmt.Sprintf("%d", i))
+			}
+			policy.Add("0", 1)
+			policy.Push(values)
+			if !policy.Has("0") || policy.Has("*") {
+				t.Fatal("add/push error")
+			}
+		})
+		t.Run("variable-add", func(t *testing.T) {
+			policy := create(iterations, true)
+			for i := uint64(0); i < iterations; i++ {
+				policy.Add(fmt.Sprintf("%d", i), i)
+			}
+			if victims, added := policy.Add("*", 1); victims == nil || !added {
 				t.Fatal("add/eviction error")
 			}
 		})
@@ -56,7 +72,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 }
 
 func TestPolicy(t *testing.T) {
-	policies := []PolicyCreator{NewLFU, NewLRU, NewTinyLFU}
+	policies := []PolicyCreator{NewPolicy}
 	for _, policy := range policies {
 		GeneratePolicyTest(policy)(t)
 	}

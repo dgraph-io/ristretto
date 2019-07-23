@@ -35,7 +35,8 @@ type Cache struct {
 type Config struct {
 	CacheSize  uint64
 	BufferSize uint64
-	Policy     func(uint64, Map) Policy
+	CostAware  bool
+	Policy     func(uint64, bool) Policy
 	OnEvict    func(string)
 	Log        bool
 }
@@ -46,9 +47,9 @@ func NewCache(config *Config) *Cache {
 	// policy in some cases
 	data := NewMap()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
-	var policy Policy = config.Policy(config.CacheSize, data)
+	var policy Policy = config.Policy(config.CacheSize, config.CostAware)
 	if config.Log {
-		policy = NewRecorder(config.Policy(config.CacheSize, data), data)
+		policy = NewRecorder(policy, data)
 	}
 	return &Cache{
 		data:   data,
@@ -66,22 +67,19 @@ func (c *Cache) Get(key string) interface{} {
 	return c.data.Get(key)
 }
 
-func (c *Cache) Set(key string, value interface{}) string {
-	// attempt to add the key to the admission/eviction policy
-	if victim, added := c.policy.Add(key); added {
-		// delete the victim if there was an eviction
-		if victim != "" {
-			c.data.Del(victim)
-			// run eviction callback function if provided
-			if c.notify != nil {
-				c.notify(victim)
-			}
-		}
-		// since the key was added to the policy, add it to the data store too
-		c.data.Set(key, value)
-		return victim
+func (c *Cache) Set(key string, val interface{}, cost uint64) ([]string, bool) {
+	victims, added := c.policy.Add(key, cost)
+	if !added {
+		return nil, false
 	}
-	return ""
+	for _, victim := range victims {
+		c.data.Del(victim)
+		if c.notify != nil {
+			c.notify(victim)
+		}
+	}
+	c.data.Set(key, val)
+	return victims, true
 }
 
 func (c *Cache) Del(key string) {

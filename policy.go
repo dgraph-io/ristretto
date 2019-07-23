@@ -17,7 +17,6 @@
 package ristretto
 
 import (
-	"container/list"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -32,24 +31,166 @@ const (
 // Policy is the interface encapsulating eviction/admission behavior.
 type Policy interface {
 	Consumer
-	// Add is the most important function of a Policy. It determines what keys
-	// are added and what keys are evicted. An important distinction is that
-	// Add is an *attempt* to add a key to the policy (and later the cache as
-	// a whole), but the return values indicate whether or not the attempt was
-	// successful.
-	//
-	// For example, Add("1") may return false because the Policy determined that
-	// "1" isn't valuable enough to be added. Or, it will return true with a
-	// victim key because it determined that "1" was more valuable than the
-	// victim and thus added it to the Policy. The caller of Add would then
-	// delete the victim and store the key-value pair.
-	Add(string) (string, bool)
-	// Has is just an existence check (whether the key exists in the Policy).
+	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
+	// of evicted keys and a bool denoting whether or not the key-cost pair
+	// was added.
+	Add(string, uint64) ([]string, bool)
+	// Has returns true if the key exists in the Policy.
 	Has(string) bool
-	// Del deletes the key from the Policy (in some Policies this does nothing
-	// because they don't store keys, but it's useful otherwise).
+	// Del deletes the key from the Policy.
 	Del(string)
 	Log() *PolicyLog
+}
+
+func NewPolicy(size uint64, cost bool) Policy {
+	return &policy{
+		admi: newTinyLFU(size),
+		evic: newSampledLFU(size),
+		cost: cost,
+	}
+}
+
+// policy is the default policy, which is currently TinyLFU admission with
+// sampledLFU eviction.
+type policy struct {
+	sync.Mutex
+	admi *tinyLFU
+	evic *sampledLFU
+	cost bool
+}
+
+type policyPair struct {
+	key  string
+	cost uint64
+}
+
+func (p *policy) Push(keys []Element) {
+	p.Lock()
+	defer p.Unlock()
+	p.admi.Push(keys)
+}
+
+func (p *policy) Add(key string, cost uint64) ([]string, bool) {
+	p.Lock()
+	defer p.Unlock()
+	if cost > p.evic.size {
+		return nil, false
+	}
+	over := p.evic.over(cost)
+	if over <= 0 {
+		// there's room in the cache
+		p.evic.add(key, cost)
+		return nil, true
+	}
+	victims := make([]string, 0)
+	// delete victims until there's enough space
+	for ; over > 0; over = p.evic.over(cost) {
+		sample := p.evic.sample(lfuSample)
+		// find minimally used item in sample
+		minKey, minHits := "", uint64(math.MaxUint64)
+		for _, pair := range sample {
+			if hits := p.admi.Estimate(pair.key); hits < minHits {
+				minKey, minHits = pair.key, hits
+			}
+		}
+		// evic updates the over
+		p.evic.del(minKey)
+		victims = append(victims, minKey)
+		// only run this loop once if ignoring cost
+		if p.cost {
+			break
+		}
+	}
+	p.evic.add(key, cost)
+	return victims, true
+}
+
+func (p *policy) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	_, exists := p.evic.data[key]
+	return exists
+}
+
+func (p *policy) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	p.evic.del(key)
+}
+
+func (p *policy) Log() *PolicyLog {
+	return nil
+}
+
+// sampledLFU is an eviction helper storing key-cost pairs.
+type sampledLFU struct {
+	data map[string]uint64
+	size uint64
+	used uint64
+}
+
+func newSampledLFU(size uint64) *sampledLFU {
+	return &sampledLFU{
+		data: make(map[string]uint64, 0),
+		size: size,
+	}
+}
+
+func (p *sampledLFU) over(cost uint64) int64 {
+	return int64((p.used + cost) - p.size)
+}
+
+func (p *sampledLFU) sample(n uint64) []*policyPair {
+	pairs := make([]*policyPair, 0, n)
+	for key, cost := range p.data {
+		pairs = append(pairs, &policyPair{key, cost})
+		if len(pairs) == cap(pairs) {
+			break
+		}
+	}
+	return pairs
+}
+
+func (p *sampledLFU) del(key string) {
+	p.used -= p.data[key]
+	delete(p.data, key)
+}
+
+func (p *sampledLFU) add(key string, cost uint64) {
+	p.data[key] = cost
+	p.used += cost
+}
+
+// tinyLFU is an admission helper that keeps track of access frequency using
+// tiny (4-bit) counters in the form of a count-min sketch.
+type tinyLFU struct {
+	freq Sketch
+	door *Filter
+}
+
+func newTinyLFU(size uint64) *tinyLFU {
+	return &tinyLFU{
+		freq: NewCM(size),
+		door: NewFilter(size, 0.01),
+	}
+}
+
+func (p *tinyLFU) Push(keys []Element) {
+	for _, key := range keys {
+		k := string(key)
+		// doorkeeper
+		p.door.Set(k)
+		// count-min
+		p.freq.Increment(k)
+	}
+}
+
+func (p *tinyLFU) Estimate(key string) uint64 {
+	hits := p.freq.Estimate(key)
+	if p.door.Has(key) {
+		hits += 1
+	}
+	return hits
 }
 
 // Clairvoyant is a Policy meant to be theoretically optimal (see [1]). Normal
@@ -69,15 +210,15 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(capacity uint64, data Map) Policy {
-	return newClairvoyant(capacity, data)
+func NewClairvoyant(size uint64, cost bool) Policy {
+	return newClairvoyant(size, cost)
 }
 
-func newClairvoyant(capacity uint64, data Map) *Clairvoyant {
+func newClairvoyant(size uint64, cost bool) *Clairvoyant {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
-		capacity: capacity,
-		access:   make(map[string][]uint64, capacity),
+		capacity: size,
+		access:   make(map[string][]uint64, size),
 	}
 }
 
@@ -105,21 +246,6 @@ func (p *Clairvoyant) record(key string) {
 	p.future = append(p.future, key)
 }
 
-func (p *Clairvoyant) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	delete(p.access, key)
-}
-
-func (p *Clairvoyant) Has(key string) bool {
-	p.Lock()
-	defer p.Unlock()
-	if _, exists := p.access[key]; exists {
-		return true
-	}
-	return false
-}
-
 func (p *Clairvoyant) Push(keys []Element) {
 	p.Lock()
 	defer p.Unlock()
@@ -128,12 +254,24 @@ func (p *Clairvoyant) Push(keys []Element) {
 	}
 }
 
-func (p *Clairvoyant) Add(key string) (victim string, added bool) {
+func (p *Clairvoyant) Add(key string, cost uint64) ([]string, bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.record(key)
-	added = true
-	return
+	return nil, true
+}
+
+func (p *Clairvoyant) Has(key string) bool {
+	p.Lock()
+	defer p.Unlock()
+	_, exists := p.access[key]
+	return exists
+}
+
+func (p *Clairvoyant) Del(key string) {
+	p.Lock()
+	defer p.Unlock()
+	delete(p.access, key)
 }
 
 func (p *Clairvoyant) Log() *PolicyLog {
@@ -190,408 +328,6 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	return p.log
 }
 
-type seg struct {
-	data map[string]uint8
-	size uint64
-}
-
-func newSeg(size uint64) *seg {
-	return &seg{
-		data: make(map[string]uint8, size),
-		size: size,
-	}
-}
-
-func (s *seg) add(key string) (string, uint8) {
-	victimKey, victimCount := s.candidate()
-	if victimKey != "" {
-		delete(s.data, victimKey)
-	}
-	s.data[key]++
-	return victimKey, victimCount
-}
-
-func (s *seg) candidate() (string, uint8) {
-	// check if eviction is needed
-	if uint64(len(s.data)) != s.size {
-		return "", 0
-	}
-	// sample items and find the minimally used
-	i, minKey, minCount := 0, "", uint8(math.MaxUint8)
-	for key, count := range s.data {
-		if count < minCount {
-			minKey, minCount = key, count
-		}
-		if i++; i == lfuSample {
-			break
-		}
-	}
-	return minKey, minCount
-}
-
-// LFU is a Policy with no admission policy and a sampled LFU eviction policy.
-type LFU struct {
-	sync.Mutex
-	freq *seg
-}
-
-func NewLFU(size uint64, data Map) Policy {
-	return newLFU(size, data)
-}
-
-func newLFU(size uint64, data Map) *LFU {
-	return &LFU{
-		freq: newSeg(size),
-	}
-}
-
-func (p *LFU) Push(keys []Element) {
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		k := string(key)
-		if _, exists := p.freq.data[k]; exists {
-			p.freq.data[k]++
-		}
-	}
-}
-
-func (p *LFU) Add(key string) (victim string, added bool) {
-	p.Lock()
-	defer p.Unlock()
-	if _, exists := p.freq.data[key]; exists {
-		return
-	}
-	victim, _ = p.freq.add(key)
-	added = true
-	return
-}
-
-func (p *LFU) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	delete(p.freq.data, key)
-	return
-}
-
-func (p *LFU) Has(key string) bool {
-	p.Lock()
-	defer p.Unlock()
-	_, exists := p.freq.data[key]
-	return exists
-}
-
-func (p *LFU) Log() *PolicyLog {
-	return nil
-}
-
-type WLFU struct {
-	sync.Mutex
-	segs [2]*seg
-}
-
-func NewWLFU(size uint64, data Map) Policy {
-	return newWLFU(size)
-}
-
-func newWLFU(size uint64) *WLFU {
-	return &WLFU{
-		segs: [2]*seg{
-			// window segment (1% of total size as per TinyLFU paper)
-			newSeg(uint64(math.Ceil(float64(size) * 0.01))),
-			// main  segment (99% of total size as per TinyLFU paper)
-			newSeg(uint64(math.Floor(float64(size) * 0.99))),
-		},
-	}
-}
-
-func (p *WLFU) Push(keys []Element) {
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		k := string(key)
-		s := p.seg(k)
-		if s == -1 {
-			continue
-		}
-		if _, exists := p.segs[s].data[k]; exists {
-			p.segs[s].data[k]++
-		}
-	}
-}
-
-func (p *WLFU) Add(key string) (victim string, added bool) {
-	p.Lock()
-	defer p.Unlock()
-	// do nothing if the item is already in the policy
-	if p.seg(key) != -1 {
-		return
-	}
-	// get the window victim and count if the window is full
-	windowKey, windowCount := p.segs[0].add(key)
-	if windowKey == "" {
-		// window has room, so nothing else needs to be done
-		added = true
-		return
-	}
-	// get the main eviction candidate key and count if the main segment is full
-	mainKey, mainCount := p.segs[1].candidate()
-	if mainKey == "" {
-		// main has room, so just move the window victim to there
-		goto move
-	}
-	// compare the window victim with the main candidate, also note that window
-	// victims are preferred (>=) over main candidates, as we can assume that
-	// window victims have been used more recently than the main candidate
-	if windowCount >= mainCount {
-		// main candidate lost to the window victim, so actually evict the main
-		// candidate
-		victim = mainKey
-		delete(p.segs[1].data, mainKey)
-		// main now has room for one more, so move the window victim to there
-		goto move
-	} else {
-		// window victim lost to the main candidate, and the window victim has
-		// already been evicted from the window, so nothing else needs to be
-		// done
-		victim = windowKey
-		added = true
-	}
-	return
-move:
-	// move places the window key-count pair in the main segment
-	p.segs[1].data[windowKey] = windowCount
-	added = true
-	return
-}
-
-func (p *WLFU) Has(key string) bool {
-	return p.seg(key) != -1
-}
-
-func (p *WLFU) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	if seg := p.seg(key); seg != -1 {
-		delete(p.segs[seg].data, key)
-	}
-	return
-}
-
-func (p *WLFU) Log() *PolicyLog {
-	return nil
-}
-
-func (p *WLFU) seg(key string) int {
-	if p.segs[0].data[key] != 0 {
-		return 0
-	} else if p.segs[1].data[key] != 0 {
-		return 1
-	}
-	return -1
-}
-
-// TinyLFU keeps track of frequency using tiny (4-bit) counters in the form of a
-// counting bloom filter. For eviction, sampled LFU is done.
-type TinyLFU struct {
-	sync.Mutex
-	data Map
-	size uint64
-	used uint64
-	freq Sketch
-}
-
-func NewTinyLFU(size uint64, data Map) Policy {
-	return newTinyLFU(size, data)
-}
-
-func newTinyLFU(size uint64, data Map) *TinyLFU {
-	return &TinyLFU{
-		data: data,
-		size: size,
-		freq: NewCM(size),
-	}
-}
-
-func (p *TinyLFU) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	p.used--
-}
-
-func (p *TinyLFU) Has(key string) bool {
-	p.Lock()
-	defer p.Unlock()
-	return p.data.Get(key) != nil
-}
-
-func (p *TinyLFU) Push(keys []Element) {
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		p.freq.Increment(string(key))
-	}
-}
-
-func (p *TinyLFU) Add(key string) (victim string, added bool) {
-	p.Lock()
-	defer p.Unlock()
-	if p.used == p.size {
-		victim = p.candidate()
-		p.used--
-	}
-	p.freq.Increment(key)
-	added = true
-	p.used++
-	return
-}
-
-func (p *TinyLFU) Log() *PolicyLog {
-	return nil
-}
-
-func (p *TinyLFU) candidate() string {
-	keys := p.sample()
-	minKey, minHits := "", uint64(math.MaxUint64)
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		if hits := p.freq.Estimate(key); hits < minHits {
-			minKey, minHits = key, hits
-		}
-	}
-	return minKey
-}
-
-func (p *TinyLFU) sample() []string {
-	keys, i := make([]string, 0, lfuSample), 0
-	p.data.Run(func(key, value interface{}) bool {
-		keys = append(keys, key.(string))
-		i++
-		return !(i == lfuSample)
-	})
-	return keys
-}
-
-// LRU is a Policy with no admission policy and a LRU eviction policy (using
-// doubly linked list).
-type LRU struct {
-	sync.Mutex
-	list     *list.List
-	look     map[string]*list.Element
-	capacity uint64
-	size     uint64
-}
-
-func NewLRU(capacity uint64, data Map) Policy {
-	return newLRU(capacity, data)
-}
-
-func newLRU(capacity uint64, data Map) *LRU {
-	return &LRU{
-		list:     list.New(),
-		look:     make(map[string]*list.Element, capacity),
-		capacity: capacity,
-	}
-}
-
-func (p *LRU) Del(key string) {
-	p.Lock()
-	defer p.Unlock()
-	delete(p.look, key)
-	p.size--
-}
-
-func (p *LRU) Has(key string) bool {
-	p.Lock()
-	defer p.Unlock()
-	if _, exists := p.look[key]; exists {
-		return true
-	}
-	return false
-}
-
-func (p *LRU) Push(keys []Element) {
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		if element, exists := p.look[string(key)]; exists {
-			p.list.MoveToFront(element)
-		}
-	}
-}
-
-func (p *LRU) Add(key string) (victim string, added bool) {
-	p.Lock()
-	defer p.Unlock()
-	// check if the element already exists in the policy
-	if element, exists := p.look[key]; exists {
-		p.list.MoveToFront(element)
-		return
-	}
-	// check if eviction is needed
-	if p.size >= p.capacity {
-		// get the victim key
-		victim = p.list.Back().Value.(string)
-		// delete the victim from the list
-		p.list.Remove(p.list.Back())
-		// delete the victim from the lookup map
-		delete(p.look, victim)
-		p.size--
-	}
-	// add the new key to the list
-	p.look[key] = p.list.PushFront(key)
-	added = true
-	p.size++
-	return
-}
-
-func (p *LRU) Log() *PolicyLog {
-	return nil
-}
-
-func (p *LRU) String() string {
-	out := "["
-	for element := p.list.Front(); element != nil; element = element.Next() {
-		out += element.Value.(string) + ", "
-	}
-	return out[:len(out)-2] + "]"
-}
-
-// None is a policy that does nothing.
-type None struct {
-	log *PolicyLog
-}
-
-func NewNone(capacity uint64, data Map) Policy {
-	return newNone(capacity, data)
-}
-
-func newNone(capacity uint64, data Map) *None {
-	return &None{
-		log: &PolicyLog{},
-	}
-}
-
-func (p *None) Del(key string) {
-}
-
-func (p *None) Has(key string) bool {
-	return false
-}
-
-func (p *None) Push(keys []Element) {
-}
-
-func (p *None) Add(key string) (victim string, added bool) {
-	return
-}
-
-func (p *None) Log() *PolicyLog {
-	return p.log
-}
-
 // recorder is a wrapper type useful for logging policy performance. Because hit
 // ratio tracking adds substantial overhead (either by atomically incrementing
 // counters or using policy-level mutexes), this struct allows us to only incur
@@ -610,29 +346,29 @@ func NewRecorder(policy Policy, data Map) Policy {
 	}
 }
 
-func (r *recorder) Del(key string) {
-	r.policy.Del(key)
+func (r *recorder) Push(keys []Element) {
+	r.policy.Push(keys)
+}
+
+func (r *recorder) Add(key string, cost uint64) ([]string, bool) {
+	if r.data.Get(key) != nil {
+		r.log.Hit()
+	} else {
+		r.log.Miss()
+	}
+	victims, added := r.policy.Add(key, cost)
+	if victims != nil {
+		r.log.Evict()
+	}
+	return victims, added
 }
 
 func (r *recorder) Has(key string) bool {
 	return r.policy.Has(key)
 }
 
-func (r *recorder) Push(keys []Element) {
-	r.policy.Push(keys)
-}
-
-func (r *recorder) Add(key string) (string, bool) {
-	if r.data.Get(key) != nil {
-		r.log.Hit()
-	} else {
-		r.log.Miss()
-	}
-	victim, added := r.policy.Add(key)
-	if victim != "" {
-		r.log.Evict()
-	}
-	return victim, added
+func (r *recorder) Del(key string) {
+	r.policy.Del(key)
 }
 
 func (r *recorder) Log() *PolicyLog {
