@@ -49,7 +49,7 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 				panic(err)
 			}
 			// must be a set operation for hit ratio logging
-			cache.Set(fmt.Sprintf("%d", key), i)
+			cache.Set(fmt.Sprintf("%d", key), i, 1)
 		}
 		// stats is the hit ratio stats for the cache instance
 		stats := cache.Log()
@@ -73,10 +73,7 @@ func TestCache(t *testing.T) {
 	// policies is a slice of all policies to test (see policy.go)
 	policies := []policyTest{
 		{"clairvoyant", NewClairvoyant},
-		{"        lfu", NewLFU},
-		{"        lru", NewLRU},
-		{"    tinylfu", NewTinyLFU},
-		{"       wlfu", NewWLFU},
+		{"    default", NewPolicy},
 	}
 	// accesses is a slice of all access distributions to test (see sim package)
 	accesses := []accessTest{
@@ -95,17 +92,17 @@ func TestSetGet(t *testing.T) {
 	c := NewCache(&Config{
 		CacheSize:  4,
 		BufferSize: 4,
-		Policy:     NewLFU,
+		Policy:     NewPolicy,
 		Log:        false,
 	})
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
-		vic := c.Set(key, i)
+		vic, _ := c.Set(key, i, 1)
 		val := c.Get(key)
 		if val == nil || val.(int) != i {
 			t.Fatal("set/get error")
 		}
-		if i > 4 && vic == "" {
+		if i > 4 && vic == nil {
 			t.Fatal("no eviction")
 		}
 	}
