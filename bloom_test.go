@@ -50,11 +50,6 @@ func GenerateBloomTest(create func() TestSketch) func(t *testing.T) {
 	}
 }
 
-func TestCBF(t *testing.T) {
-	// TODO: fix neighbor corruption
-	//GenerateTest(func() TestSketch { return NewCBF(16) })(t)
-}
-
 func TestCM(t *testing.T) {
 	GenerateBloomTest(func() TestSketch { return NewCM(16) })(t)
 }
@@ -77,10 +72,6 @@ func GenerateBloomBenchmark(create func() TestSketch) func(b *testing.B) {
 			}
 		})
 	}
-}
-
-func BenchmarkCBF(b *testing.B) {
-	GenerateBloomBenchmark(func() TestSketch { return NewCBF(16) })(b)
 }
 
 func BenchmarkCM(b *testing.B) {

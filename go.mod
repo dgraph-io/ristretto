@@ -9,4 +9,5 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/goburrow/cache v0.1.0
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
+	github.com/karlmcguire/experiments-cache v0.0.0-20190528101825-85f56d601d02
 )

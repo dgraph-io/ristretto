@@ -39,14 +39,19 @@ type Policy interface {
 	Has(string) bool
 	// Del deletes the key from the Policy.
 	Del(string)
+	// Res is a reset operation and maintains metadata freshness.
+	Res()
+	// Cap returns the available capacity.
+	Cap() int64
 	Log() *PolicyLog
 }
 
-func NewPolicy(size uint64, cost bool) Policy {
+func NewPolicy(maxBytes, maxItems uint64, cost bool) Policy {
 	return &policy{
-		admi: newTinyLFU(size),
-		evic: newSampledLFU(size),
+		admi: newTinyLFU(maxItems),
+		evic: newSampledLFU(maxBytes, maxItems),
 		cost: cost,
+		mean: maxBytes / maxItems,
 	}
 }
 
@@ -57,6 +62,7 @@ type policy struct {
 	admi *tinyLFU
 	evic *sampledLFU
 	cost bool
+	mean uint64
 }
 
 type policyPair struct {
@@ -73,8 +79,13 @@ func (p *policy) Push(keys []Element) {
 func (p *policy) Add(key string, cost uint64) ([]string, bool) {
 	p.Lock()
 	defer p.Unlock()
+	// can't add an item bigger than entire cache
 	if cost > p.evic.size {
 		return nil, false
+	}
+	if _, exists := p.evic.data[key]; exists {
+		p.admi.Increment(key)
+		return nil, true
 	}
 	over := p.evic.over(cost)
 	if over <= 0 {
@@ -118,6 +129,18 @@ func (p *policy) Del(key string) {
 	p.evic.del(key)
 }
 
+func (p *policy) Res() {
+	p.Lock()
+	defer p.Unlock()
+	p.admi.Reset()
+}
+
+func (p *policy) Cap() int64 {
+	p.Lock()
+	defer p.Unlock()
+	return int64(p.evic.size - p.evic.used)
+}
+
 func (p *policy) Log() *PolicyLog {
 	return nil
 }
@@ -129,10 +152,10 @@ type sampledLFU struct {
 	used uint64
 }
 
-func newSampledLFU(size uint64) *sampledLFU {
+func newSampledLFU(maxBytes, maxItems uint64) *sampledLFU {
 	return &sampledLFU{
-		data: make(map[string]uint64, 0),
-		size: size,
+		data: make(map[string]uint64, maxItems),
+		size: maxBytes,
 	}
 }
 
@@ -168,20 +191,16 @@ type tinyLFU struct {
 	door *Filter
 }
 
-func newTinyLFU(size uint64) *tinyLFU {
+func newTinyLFU(maxItems uint64) *tinyLFU {
 	return &tinyLFU{
-		freq: NewCM(size),
-		door: NewFilter(size, 0.01),
+		freq: NewCM(maxItems),
+		door: NewFilter(maxItems, 0.01),
 	}
 }
 
 func (p *tinyLFU) Push(keys []Element) {
 	for _, key := range keys {
-		k := string(key)
-		// doorkeeper
-		p.door.Set(k)
-		// count-min
-		p.freq.Increment(k)
+		p.Increment(string(key))
 	}
 }
 
@@ -191,6 +210,18 @@ func (p *tinyLFU) Estimate(key string) uint64 {
 		hits += 1
 	}
 	return hits
+}
+
+func (p *tinyLFU) Increment(key string) {
+	// doorkeeper (set if not already set)
+	p.door.Set(key)
+	// count-min
+	p.freq.Increment(key)
+}
+
+func (p *tinyLFU) Reset() {
+	p.door.Reset()
+	p.freq.Reset()
 }
 
 // Clairvoyant is a Policy meant to be theoretically optimal (see [1]). Normal
@@ -210,15 +241,15 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(size uint64, cost bool) Policy {
-	return newClairvoyant(size, cost)
+func NewClairvoyant(maxBytes, maxItems uint64, cost bool) Policy {
+	return newClairvoyant(maxItems, cost)
 }
 
-func newClairvoyant(size uint64, cost bool) *Clairvoyant {
+func newClairvoyant(maxItems uint64, cost bool) *Clairvoyant {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
-		capacity: size,
-		access:   make(map[string][]uint64, size),
+		capacity: maxItems,
+		access:   make(map[string][]uint64, maxItems),
 	}
 }
 
@@ -272,6 +303,13 @@ func (p *Clairvoyant) Del(key string) {
 	p.Lock()
 	defer p.Unlock()
 	delete(p.access, key)
+}
+
+func (p *Clairvoyant) Res() {
+}
+
+func (p *Clairvoyant) Cap() int64 {
+	return 0
 }
 
 func (p *Clairvoyant) Log() *PolicyLog {
@@ -369,6 +407,14 @@ func (r *recorder) Has(key string) bool {
 
 func (r *recorder) Del(key string) {
 	r.policy.Del(key)
+}
+
+func (r *recorder) Res() {
+	r.policy.Res()
+}
+
+func (r *recorder) Cap() int64 {
+	return r.policy.Cap()
 }
 
 func (r *recorder) Log() *PolicyLog {

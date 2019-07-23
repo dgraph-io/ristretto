@@ -16,6 +16,10 @@
 
 package ristretto
 
+import (
+	"sync/atomic"
+)
+
 // Cache ties everything together. The three main components are:
 //
 //     1) The hash map: this is the Map interface.
@@ -30,24 +34,43 @@ type Cache struct {
 	policy Policy
 	buffer *Buffer
 	notify func(string)
+	used   uint64
+	size   uint64
 }
 
 type Config struct {
-	CacheSize  uint64
-	BufferSize uint64
-	CostAware  bool
-	Policy     func(uint64, bool) Policy
-	OnEvict    func(string)
-	Log        bool
+	// MaxItems is the max number of items expected to be in the Cache.
+	MaxItems uint64
+	// MaxBytes is the Cache memory usage limit. If CostAware == false, this
+	// field is ignored and MaxItems is used instead.
+	MaxBytes uint64
+	// BufferItems is max number of items in access batches (BP-Wrapper).
+	BufferItems uint64
+	// CostAware is true if item costs are non-uniform, and false if they're
+	// uniform (won't be considered during evicion process).
+	CostAware bool
+	// Policy is the admission / eviction Policy creator.
+	Policy func(uint64, uint64, bool) Policy
+	// OnEvict is ran for each key evicted.
+	OnEvict func(string)
+	// Log is whether or not to Log hit ratio statistics (with some overhead).
+	Log bool
 }
 
 func NewCache(config *Config) *Cache {
+	if !config.CostAware {
+		config.MaxBytes = config.MaxItems
+	}
 	// data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
 	data := NewMap()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
-	var policy Policy = config.Policy(config.CacheSize, config.CostAware)
+	policy := config.Policy(
+		config.MaxItems,
+		config.MaxBytes,
+		config.CostAware,
+	)
 	if config.Log {
 		policy = NewRecorder(policy, data)
 	}
@@ -56,9 +79,10 @@ func NewCache(config *Config) *Cache {
 		policy: policy,
 		buffer: NewBuffer(LOSSY, &RingConfig{
 			Consumer: policy,
-			Capacity: config.BufferSize,
+			Capacity: config.BufferItems,
 		}),
 		notify: config.OnEvict,
+		size:   config.MaxItems,
 	}
 }
 
@@ -74,11 +98,16 @@ func (c *Cache) Set(key string, val interface{}, cost uint64) ([]string, bool) {
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
+		atomic.AddUint64(&c.used, ^uint64(0))
 		if c.notify != nil {
 			c.notify(victim)
 		}
 	}
 	c.data.Set(key, val)
+	if atomic.AddUint64(&c.used, 1) == c.size {
+		atomic.StoreUint64(&c.used, c.size/2)
+		c.policy.Res()
+	}
 	return victims, true
 }
 
