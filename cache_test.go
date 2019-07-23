@@ -24,25 +24,25 @@ import (
 )
 
 const (
-	CACHE_SIZE  = 256
-	BUFFER_SIZE = CACHE_SIZE / 4
-	SAMPLE_SIZE = CACHE_SIZE * 8
-	ZIPF_V      = 1.01
-	ZIPF_S      = 2
+	MAX_ITEMS    = 256
+	BUFFER_ITEMS = MAX_ITEMS / 4
+	SAMPLE_ITEMS = MAX_ITEMS * 8
+	ZIPF_V       = 1.01
+	ZIPF_S       = 2
 )
 
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 	return func(t *testing.T) {
 		// create the cache with the provided policy and constant params
 		cache := NewCache(&Config{
-			CacheSize:  CACHE_SIZE,
-			BufferSize: BUFFER_SIZE,
-			Policy:     p,
-			Log:        true,
+			MaxItems:    MAX_ITEMS,
+			BufferItems: BUFFER_ITEMS,
+			Policy:      p,
+			Log:         true,
 		})
-		// must iterate through SAMPLE_SIZE because it's fixed and should be
-		// much larger than the CACHE_SIZE
-		for i := 0; i < SAMPLE_SIZE; i++ {
+		// must iterate through SAMPLE_ITEMS because it's fixed and should be
+		// much larger than the MAX_ITEMS
+		for i := 0; i < SAMPLE_ITEMS; i++ {
 			// generate a key from the simulator
 			key, err := k()
 			if err != nil {
@@ -77,8 +77,8 @@ func TestCache(t *testing.T) {
 	}
 	// accesses is a slice of all access distributions to test (see sim package)
 	accesses := []accessTest{
-		{"uniform    ", sim.NewUniform(SAMPLE_SIZE)},
-		{"zipfian    ", sim.NewZipfian(ZIPF_V, ZIPF_S, SAMPLE_SIZE)},
+		{"uniform    ", sim.NewUniform(SAMPLE_ITEMS)},
+		{"zipfian    ", sim.NewZipfian(ZIPF_V, ZIPF_S, SAMPLE_ITEMS)},
 	}
 	for _, access := range accesses {
 		for _, policy := range policies {
@@ -88,12 +88,11 @@ func TestCache(t *testing.T) {
 	}
 }
 
-func TestSetGet(t *testing.T) {
+func TestCacheSetGet(t *testing.T) {
 	c := NewCache(&Config{
-		CacheSize:  4,
-		BufferSize: 4,
-		Policy:     NewPolicy,
-		Log:        false,
+		MaxItems:    4,
+		BufferItems: 4,
+		Policy:      NewPolicy,
 	})
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
@@ -104,6 +103,39 @@ func TestSetGet(t *testing.T) {
 		}
 		if i > 4 && vic == nil {
 			t.Fatal("no eviction")
+		}
+	}
+}
+
+func TestCacheOnEvict(t *testing.T) {
+	v := make([]string, 0)
+	c := NewCache(&Config{
+		MaxItems:    4,
+		BufferItems: 1,
+		Policy:      NewPolicy,
+		OnEvict: func(key string) {
+			v = append(v, key)
+		},
+	})
+	for i := 0; i < 16; i++ {
+		c.Set(fmt.Sprintf("%d", i), i, 1)
+	}
+	if len(v) != 12 {
+		t.Fatal("onevict callback error")
+	}
+}
+
+func TestCacheSize(t *testing.T) {
+	c := NewCache(&Config{
+		MaxItems:    16,
+		MaxBytes:    16 * 4,
+		BufferItems: 1,
+		Policy:      NewPolicy,
+	})
+	for i := 0; i < 8; i++ {
+		c.Set(fmt.Sprintf("%d", i), i, 4)
+		if c.policy.Cap() < 0 {
+			t.Fatal("size overflow")
 		}
 	}
 }

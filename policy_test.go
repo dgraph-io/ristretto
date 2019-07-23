@@ -21,13 +21,13 @@ import (
 	"testing"
 )
 
-type PolicyCreator func(uint64, bool) Policy
+type PolicyCreator func(uint64, uint64, bool) Policy
 
 func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 	iterations := uint64(1024)
 	return func(t *testing.T) {
 		t.Run("uniform-push", func(t *testing.T) {
-			policy := create(iterations, false)
+			policy := create(iterations, iterations, false)
 			values := make([]Element, iterations)
 			for i := range values {
 				values[i] = Element(fmt.Sprintf("%d", i))
@@ -39,7 +39,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 			}
 		})
 		t.Run("uniform-add", func(t *testing.T) {
-			policy := create(iterations, false)
+			policy := create(iterations, iterations, false)
 			for i := uint64(0); i < iterations; i++ {
 				policy.Add(fmt.Sprintf("%d", i), 1)
 			}
@@ -48,7 +48,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 			}
 		})
 		t.Run("variable-push", func(t *testing.T) {
-			policy := create(iterations, true)
+			policy := create(iterations, iterations*4, true)
 			values := make([]Element, iterations)
 			for i := range values {
 				values[i] = Element(fmt.Sprintf("%d", i))
@@ -60,9 +60,9 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 			}
 		})
 		t.Run("variable-add", func(t *testing.T) {
-			policy := create(iterations, true)
+			policy := create(iterations, iterations*4, true)
 			for i := uint64(0); i < iterations; i++ {
-				policy.Add(fmt.Sprintf("%d", i), i)
+				policy.Add(fmt.Sprintf("%d", i), 4)
 			}
 			if victims, added := policy.Add("*", 1); victims == nil || !added {
 				t.Fatal("add/eviction error")
