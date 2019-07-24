@@ -28,9 +28,9 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Run("uniform-push", func(t *testing.T) {
 			policy := create(iterations, iterations)
-			values := make([]Element, iterations)
+			values := make([]ringItem, iterations)
 			for i := range values {
-				values[i] = Element(fmt.Sprintf("%d", i))
+				values[i] = ringItem(fmt.Sprintf("%d", i))
 			}
 			policy.Add("0", 1)
 			policy.Push(values)
@@ -49,9 +49,9 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 		})
 		t.Run("variable-push", func(t *testing.T) {
 			policy := create(iterations, iterations*4)
-			values := make([]Element, iterations)
+			values := make([]ringItem, iterations)
 			for i := range values {
-				values[i] = Element(fmt.Sprintf("%d", i))
+				values[i] = ringItem(fmt.Sprintf("%d", i))
 			}
 			policy.Add("0", 1)
 			policy.Push(values)

@@ -30,9 +30,9 @@ import (
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	data   Map
+	data   store
 	policy Policy
-	buffer *Buffer
+	buffer *ringBuffer
 	notify func(string)
 	used   uint64
 	size   uint64
@@ -60,7 +60,7 @@ func NewCache(config *Config) *Cache {
 	// data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
-	data := NewMap()
+	data := newStore()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	if config.Log {
@@ -69,7 +69,7 @@ func NewCache(config *Config) *Cache {
 	return &Cache{
 		data:   data,
 		policy: policy,
-		buffer: NewBuffer(LOSSY, &RingConfig{
+		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
@@ -79,7 +79,7 @@ func NewCache(config *Config) *Cache {
 }
 
 func (c *Cache) Get(key string) interface{} {
-	c.buffer.Push(Element(key))
+	c.buffer.Push(ringItem(key))
 	return c.data.Get(key)
 }
 

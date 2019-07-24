@@ -30,89 +30,94 @@ import (
 	"hash/fnv"
 )
 
-type Sketch interface {
+// sketch is a collection of approximate frequency counters.
+type sketch interface {
+	// Increment increments the count(ers) for the specified key.
 	Increment(string)
+	// Estimate returns the value of the specified key.
 	Estimate(string) uint64
+	// Reset halves all counter values.
 	Reset()
 }
 
-// CM is a Count-Min sketch implementation with 4-bit counters, heavily based
-// on Damian Gryski's CM4 [1].
+// cmSketch is a Count-Min sketch implementation with 4-bit counters, heavily
+// based on Damian Gryski's CM4 [1].
 //
 // [1]: https://github.com/dgryski/go-tinylfu/blob/master/cm4.go
-type CM struct {
-	alg  hash.Hash64
+type cmSketch struct {
+	algo hash.Hash64
 	rows [cmDepth]cmRow
 	mask uint64
 }
 
-// cmDepth is the number of counter copies to store (think of it as rows)
-const cmDepth = 1
+const (
+	// cmDepth is the number of counter copies to store (think of it as rows)
+	cmDepth = 1
+)
 
-func NewCM(w uint64) *CM {
-	if w == 0 {
-		panic("CM: bad width")
+func newCmSketch(numCounters uint64) *cmSketch {
+	if numCounters == 0 {
+		panic("cmSketch: bad numCounters")
 	}
 	// get the next power of 2 for better cache performance
-	w = next2Power(w)
+	numCounters = next2Power(numCounters)
 	// sketch with FNV-64a hashing algorithm
-	s := &CM{
-		alg:  fnv.New64a(),
-		mask: w - 1,
+	sketch := &cmSketch{
+		algo: fnv.New64a(),
+		mask: numCounters - 1,
 	}
 	// initialize rows of counters
 	for i := 0; i < cmDepth; i++ {
-		s.rows[i] = newCMRow(w)
+		sketch.rows[i] = newCmRow(numCounters)
 	}
-	return s
+	return sketch
 }
 
-func (c *CM) hash(key string) uint64 {
-	if _, err := c.alg.Write([]byte(key)); err != nil {
+func (s *cmSketch) hash(key string) uint64 {
+	defer s.algo.Reset()
+	if _, err := s.algo.Write([]byte(key)); err != nil {
 		panic(err)
 	}
-	hashed := c.alg.Sum64()
-	c.alg.Reset()
-	return hashed
+	return s.algo.Sum64()
 }
 
-func (c *CM) Increment(key string) {
-	c.increment(c.hash(key))
+func (s *cmSketch) Increment(key string) {
+	s.increment(s.hash(key))
 }
 
-func (c *CM) increment(hashed uint64) {
-	for i := range c.rows {
+func (s *cmSketch) increment(hashed uint64) {
+	for i := range s.rows {
 		// increment the counter on each row
-		c.rows[i].inc(hashed & c.mask)
+		s.rows[i].increment(hashed & s.mask)
 	}
 }
 
-func (c *CM) Estimate(key string) uint64 {
-	return c.estimate(c.hash(key))
+func (s *cmSketch) Estimate(key string) uint64 {
+	return s.estimate(s.hash(key))
 }
 
-func (c *CM) estimate(hashed uint64) uint64 {
+func (s *cmSketch) estimate(hashed uint64) uint64 {
 	min := byte(255)
-	for i := range c.rows {
+	for i := range s.rows {
 		// find the smallest counter value from all the rows
-		if v := c.rows[i].get(hashed & c.mask); v < min {
+		if v := s.rows[i].get(hashed & s.mask); v < min {
 			min = v
 		}
 	}
 	return uint64(min)
 }
 
-func (c *CM) Reset() {
-	for _, r := range c.rows {
+func (s *cmSketch) Reset() {
+	for _, r := range s.rows {
 		r.reset()
 	}
 }
 
-func (c *CM) string() string {
+func (s *cmSketch) string() string {
 	var state string
-	for i := range c.rows {
+	for i := range s.rows {
 		state += "  [ "
-		state += c.rows[i].string()
+		state += s.rows[i].string()
 		state += " ]\n"
 	}
 	return state
@@ -121,15 +126,15 @@ func (c *CM) string() string {
 // cmRow is a row of bytes, with each byte holding two counters
 type cmRow []byte
 
-func newCMRow(w uint64) cmRow {
-	return make(cmRow, w/2)
+func newCmRow(numCounters uint64) cmRow {
+	return make(cmRow, numCounters/2)
 }
 
 func (r cmRow) get(n uint64) byte {
 	return byte(r[n/2]>>((n&1)*4)) & 0x0f
 }
 
-func (r cmRow) inc(n uint64) {
+func (r cmRow) increment(n uint64) {
 	// index of the counter
 	i := n / 2
 	// shift distance (even 0, odd 4)

@@ -30,7 +30,7 @@ const (
 
 // Policy is the interface encapsulating eviction/admission behavior.
 type Policy interface {
-	Consumer
+	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added.
@@ -66,7 +66,7 @@ type policyPair struct {
 	cost uint64
 }
 
-func (p *policy) Push(keys []Element) {
+func (p *policy) Push(keys []ringItem) {
 	p.Lock()
 	defer p.Unlock()
 	p.admi.Push(keys)
@@ -195,18 +195,18 @@ func (p *sampledLFU) add(key string, cost uint64) {
 // tinyLFU is an admission helper that keeps track of access frequency using
 // tiny (4-bit) counters in the form of a count-min sketch.
 type tinyLFU struct {
-	freq Sketch
-	door *Doorkeeper
+	freq sketch
+	door *doorkeeper
 }
 
 func newTinyLFU(numCounters uint64) *tinyLFU {
 	return &tinyLFU{
-		freq: NewCM(numCounters),
-		door: NewDoorkeeper(numCounters, 0.01),
+		freq: newCmSketch(numCounters),
+		door: newDoorkeeper(numCounters, 0.01),
 	}
 }
 
-func (p *tinyLFU) Push(keys []Element) {
+func (p *tinyLFU) Push(keys []ringItem) {
 	for _, key := range keys {
 		p.Increment(string(key))
 	}
@@ -284,7 +284,7 @@ func (p *Clairvoyant) record(key string) {
 	p.future = append(p.future, key)
 }
 
-func (p *Clairvoyant) Push(keys []Element) {
+func (p *Clairvoyant) Push(keys []ringItem) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -378,12 +378,12 @@ func (p *Clairvoyant) Log() *PolicyLog {
 // counters or using policy-level mutexes), this struct allows us to only incur
 // that overhead when we want to analyze the hit ratio performance.
 type recorder struct {
-	data   Map
+	data   store
 	policy Policy
 	log    *PolicyLog
 }
 
-func NewRecorder(policy Policy, data Map) Policy {
+func NewRecorder(policy Policy, data store) Policy {
 	return &recorder{
 		data:   data,
 		policy: policy,
@@ -391,7 +391,7 @@ func NewRecorder(policy Policy, data Map) Policy {
 	}
 }
 
-func (r *recorder) Push(keys []Element) {
+func (r *recorder) Push(keys []ringItem) {
 	r.policy.Push(keys)
 }
 

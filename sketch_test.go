@@ -21,7 +21,7 @@ import (
 )
 
 type TestSketch interface {
-	Sketch
+	sketch
 	increment(uint64)
 	estimate(uint64) uint64
 	string() string
@@ -51,7 +51,7 @@ func GenerateBloomTest(create func() TestSketch) func(t *testing.T) {
 }
 
 func TestCM(t *testing.T) {
-	GenerateBloomTest(func() TestSketch { return NewCM(16) })(t)
+	GenerateBloomTest(func() TestSketch { return newCmSketch(16) })(t)
 }
 
 func GenerateBloomBenchmark(create func() TestSketch) func(b *testing.B) {
@@ -75,5 +75,5 @@ func GenerateBloomBenchmark(create func() TestSketch) func(b *testing.B) {
 }
 
 func BenchmarkCM(b *testing.B) {
-	GenerateBloomBenchmark(func() TestSketch { return NewCM(16) })(b)
+	GenerateBloomBenchmark(func() TestSketch { return newCmSketch(16) })(b)
 }

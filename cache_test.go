@@ -35,7 +35,7 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	if config.MaxCost == 0 && config.NumCounters != 0 {
 		config.MaxCost = config.NumCounters
 	}
-	data := NewMap()
+	data := newStore()
 	policy := p(config.NumCounters, config.MaxCost)
 	if config.Log {
 		policy = NewRecorder(policy, data)
@@ -43,7 +43,7 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	return &Cache{
 		data:   data,
 		policy: policy,
-		buffer: NewBuffer(LOSSY, &RingConfig{
+		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
