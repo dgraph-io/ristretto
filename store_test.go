@@ -21,19 +21,15 @@ import (
 	"testing"
 )
 
-func BenchmarkSyncMap(b *testing.B) {
-	GenerateBench(func() Map { return NewSyncMap() })(b)
+func BenchmarkStoreSyncMap(b *testing.B) {
+	GenerateBench(func() store { return newSyncMap() })(b)
 }
 
-func BenchmarkLockedMap(b *testing.B) {
-	GenerateBench(func() Map { return NewLockedMap() })(b)
+func BenchmarkStoreLockedMap(b *testing.B) {
+	GenerateBench(func() store { return newLockedMap() })(b)
 }
 
-func BenchmarkCustomMap(b *testing.B) {
-	GenerateBench(func() Map { return NewCustomMap() })(b)
-}
-
-func GenerateBench(create func() Map) func(*testing.B) {
+func GenerateBench(create func() store) func(*testing.B) {
 	return func(b *testing.B) {
 		b.Run("get  ", func(b *testing.B) {
 			m := create()
@@ -49,19 +45,19 @@ func GenerateBench(create func() Map) func(*testing.B) {
 	}
 }
 
-func TestMap(t *testing.T) {
-	GenerateTest(func() Map { return NewMap() })(t)
+func TestStore(t *testing.T) {
+	GenerateTest(func() store { return newStore() })(t)
 }
 
-func TestSyncMap(t *testing.T) {
-	GenerateTest(func() Map { return NewSyncMap() })(t)
+func TestStoreSyncMap(t *testing.T) {
+	GenerateTest(func() store { return newSyncMap() })(t)
 }
 
-func TestLockedMap(t *testing.T) {
-	GenerateTest(func() Map { return NewLockedMap() })(t)
+func TestStoreLockedMap(t *testing.T) {
+	GenerateTest(func() store { return newLockedMap() })(t)
 }
 
-func GenerateTest(create func() Map) func(*testing.T) {
+func GenerateTest(create func() store) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Run("set/get", func(t *testing.T) {
 			m := create()

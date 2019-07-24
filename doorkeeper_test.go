@@ -21,7 +21,7 @@ import (
 )
 
 func TestDoorkeeper(t *testing.T) {
-	d := NewDoorkeeper(1374, 0.01)
+	d := newDoorkeeper(1374, 0.01)
 	if d.keys != 7 || len(d.data)*8 < 13170 {
 		t.Fatal("bad initialization based on size and false positive rate")
 	}

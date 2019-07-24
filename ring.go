@@ -22,99 +22,96 @@ import (
 	"time"
 )
 
-type BufferType byte
+type ringItem string
 
 const (
-	LOSSY BufferType = iota
-	LOSSLESS
+	ringLossy byte = iota
+	ringLossless
 )
 
-type Element string
-
-// Consumer is the user-defined object responsible for receiving and processing
-// elements in batches when buffers are drained.
-type Consumer interface {
-	Push([]Element)
+// ringConsumer is the user-defined object responsible for receiving and
+// processing items in batches when buffers are drained.
+type ringConsumer interface {
+	Push([]ringItem)
 }
 
-// Stripe is a singular ring buffer that is not concurrent safe by itself.
-type Stripe struct {
-	Consumer Consumer
-	data     []Element
+// ringStripe is a singular ring buffer that is not concurrent safe.
+type ringStripe struct {
+	consumer ringConsumer
+	data     []ringItem
 	head     int
 	capacity int
 	busy     int32
 }
 
-func NewStripe(config *RingConfig) *Stripe {
-	return &Stripe{
-		Consumer: config.Consumer,
-		data:     make([]Element, config.Capacity),
+func newRingStripe(config *ringConfig) *ringStripe {
+	return &ringStripe{
+		consumer: config.Consumer,
+		data:     make([]ringItem, config.Capacity),
 		capacity: int(config.Capacity),
 	}
 }
 
-// Push appends an element in the ring buffer and drains (copies elements and
+// Push appends an item in the ring buffer and drains (copies items and
 // sends to Consumer) if full.
-func (s *Stripe) Push(element Element) {
-	s.data[s.head] = element
+func (s *ringStripe) Push(item ringItem) {
+	s.data[s.head] = item
 	s.head++
-
-	// check if we should drain
+	// if we should drain
 	if s.head >= s.capacity {
 		// copy elements and send to consumer
-		s.Consumer.Push(append(s.data[:0:0], s.data...))
+		s.consumer.Push(append(s.data[:0:0], s.data...))
 		s.head = 0
 	}
 }
 
-type RingConfig struct {
-	Consumer Consumer
+// ringConfig is passed to newRingBuffer with parameters.
+type ringConfig struct {
+	Consumer ringConsumer
 	Stripes  uint64
 	Capacity uint64
 }
 
-// Buffer stores multiple buffers (stripes) and distributes Pushed elements
+// ringBuffer stores multiple buffers (stripes) and distributes Pushed items
 // between them to lower contention.
 //
 // This implements the "batching" process described in the BP-Wrapper paper
 // (section III part A).
-type Buffer struct {
-	stripes []*Stripe
+type ringBuffer struct {
+	stripes []*ringStripe
 	pool    *sync.Pool
-	push    func(*Buffer, Element)
+	push    func(*ringBuffer, ringItem)
 	rand    int
 	mask    int
 }
 
-// NewBuffer returns a striped ring buffer. The Type can be either LOSSY or
-// LOSSLESS. LOSSY should provide better performance. The Consumer in Config
+// newRingBuffer returns a striped ring buffer. The Type can be either LOSSY or
+// LOSSLESS. LOSSY should provide better performance. The Consumer in ringConfig
 // will be called when individual stripes are full and need to drain their
 // elements.
-func NewBuffer(Type BufferType, config *RingConfig) *Buffer {
-	if Type == LOSSY {
+func newRingBuffer(ringType byte, config *ringConfig) *ringBuffer {
+	if ringType == ringLossy {
 		// LOSSY buffers use a very simple sync.Pool for concurrently reusing
 		// stripes. We do lose some stripes due to GC (unheld items in sync.Pool
 		// are cleared), but the performance gains generally outweigh the small
 		// percentage of elements lost. The performance primarily comes from
 		// low-level runtime functions used in the standard library that aren't
 		// available to us (such as runtime_procPin()).
-		return &Buffer{
+		return &ringBuffer{
 			pool: &sync.Pool{
-				New: func() interface{} { return NewStripe(config) },
+				New: func() interface{} { return newRingStripe(config) },
 			},
 			push: pushLossy,
 		}
 	}
-
 	// begin LOSSLESS buffer handling
 	//
 	// unlike lossy, lossless manually handles all stripes
-	stripes := make([]*Stripe, config.Stripes)
+	stripes := make([]*ringStripe, config.Stripes)
 	for i := range stripes {
-		stripes[i] = NewStripe(config)
+		stripes[i] = newRingStripe(config)
 	}
-	return &Buffer{
+	return &ringBuffer{
 		stripes: stripes,
 		mask:    int(config.Stripes - 1),
 		rand:    int(time.Now().UnixNano()), // random seed for picking stripes
@@ -124,21 +121,21 @@ func NewBuffer(Type BufferType, config *RingConfig) *Buffer {
 
 // Push adds an element to one of the internal stripes and possibly drains if
 // the stripe becomes full.
-func (b *Buffer) Push(element Element) { b.push(b, element) }
+func (b *ringBuffer) Push(item ringItem) { b.push(b, item) }
 
-func pushLossy(b *Buffer, element Element) {
+func pushLossy(b *ringBuffer, item ringItem) {
 	// reuse or create a new stripe
-	stripe := b.pool.Get().(*Stripe)
-	stripe.Push(element)
+	stripe := b.pool.Get().(*ringStripe)
+	stripe.Push(item)
 	b.pool.Put(stripe)
 }
 
-func pushLossless(b *Buffer, element Element) {
+func pushLossless(b *ringBuffer, item ringItem) {
 	// try to find an available stripe
 	for i := 0; ; i = (i + 1) & b.mask {
 		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {
 			// try to get exclusive lock on the stripe
-			b.stripes[i].Push(element)
+			b.stripes[i].Push(item)
 			// unlock
 			atomic.StoreInt32(&b.stripes[i].busy, 0)
 			return

@@ -22,82 +22,80 @@ import (
 
 const (
 	// LOSSLESS number of stripes to test with
-	STRIPES = 16
+	RING_STRIPES = 16
 	// LOSSY/LOSSLESS size of individual stripes
-	CAPACITY = 128
+	RING_CAPACITY = 128
 )
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Push(elements []Element) {}
+func (c *BaseConsumer) Push(items []ringItem) {}
 
 type TestConsumer struct {
-	push func([]Element)
+	push func([]ringItem)
 }
 
-func (c *TestConsumer) Push(elements []Element) { c.push(elements) }
+func (c *TestConsumer) Push(items []ringItem) { c.push(items) }
 
-func TestLossy(t *testing.T) {
+func TestRingLossy(t *testing.T) {
 	drainCount := 0
-	buffer := NewBuffer(LOSSY, &RingConfig{
+	buffer := newRingBuffer(ringLossy, &ringConfig{
 		Consumer: &TestConsumer{
-			push: func(elements []Element) {
+			push: func(items []ringItem) {
 				drainCount++
 			},
 		},
 		Capacity: 4,
 	})
-
-	buffer.Push(Element("1"))
-	buffer.Push(Element("2"))
-	buffer.Push(Element("3"))
-	buffer.Push(Element("4"))
-
+	buffer.Push(ringItem("1"))
+	buffer.Push(ringItem("2"))
+	buffer.Push(ringItem("3"))
+	buffer.Push(ringItem("4"))
 	if drainCount != 1 {
 		t.Fatal("drain error")
 	}
 }
 
-func BenchmarkLossy(b *testing.B) {
-	buffer := NewBuffer(LOSSY, &RingConfig{
+func BenchmarkRingLossy(b *testing.B) {
+	buffer := newRingBuffer(ringLossy, &ringConfig{
 		Consumer: &BaseConsumer{},
-		Capacity: CAPACITY,
+		Capacity: RING_CAPACITY,
 	})
-	elem := Element("1")
-	b.Run("Singular", func(b *testing.B) {
+	item := ringItem("1")
+	b.Run("single", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {
-			buffer.Push(elem)
+			buffer.Push(item)
 		}
 	})
-	b.Run("Parallel", func(b *testing.B) {
+	b.Run("multiple", func(b *testing.B) {
 		b.SetBytes(1)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				buffer.Push(elem)
+				buffer.Push(item)
 			}
 		})
 	})
 }
 
-func BenchmarkLossless(b *testing.B) {
-	buffer := NewBuffer(LOSSLESS, &RingConfig{
+func BenchmarkRingLossless(b *testing.B) {
+	buffer := newRingBuffer(ringLossless, &ringConfig{
 		Consumer: &BaseConsumer{},
-		Stripes:  STRIPES,
-		Capacity: CAPACITY,
+		Stripes:  RING_STRIPES,
+		Capacity: RING_CAPACITY,
 	})
-	elem := Element("1")
-	b.Run("Singular", func(b *testing.B) {
+	item := ringItem("1")
+	b.Run("single", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {
-			buffer.Push(elem)
+			buffer.Push(item)
 		}
 	})
-	b.Run("Parallel", func(b *testing.B) {
+	b.Run("multiple", func(b *testing.B) {
 		b.SetBytes(1)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				buffer.Push(elem)
+				buffer.Push(item)
 			}
 		})
 	})
