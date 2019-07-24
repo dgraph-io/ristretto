@@ -20,25 +20,25 @@ import (
 	"testing"
 )
 
-func TestFilter(t *testing.T) {
-	f := NewFilter(1374, 0.01)
-	if f.keys != 7 || len(f.data)*8 < 13170 {
+func TestDoorkeeper(t *testing.T) {
+	d := NewDoorkeeper(1374, 0.01)
+	if d.keys != 7 || len(d.data)*8 < 13170 {
 		t.Fatal("bad initialization based on size and false positive rate")
 	}
-	if f.Has("*") {
+	if d.Has("*") {
 		t.Fatal("item exists but was never added")
 	}
-	if f.Set("*") != true {
+	if d.Set("*") != true {
 		t.Fatal("item didn't exist so Set() should return true")
 	}
-	if f.Set("*") != false {
+	if d.Set("*") != false {
 		t.Fatal("item did exist so Set() should return false")
 	}
-	if !f.Has("*") {
+	if !d.Has("*") {
 		t.Fatal("item was added but Has() is false")
 	}
-	f.Reset()
-	if f.Has("*") {
-		t.Fatal("filter was reset but Has() returns true")
+	d.Reset()
+	if d.Has("*") {
+		t.Fatal("doorkeeper was reset but Has() returns true")
 	}
 }

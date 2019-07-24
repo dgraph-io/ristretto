@@ -46,12 +46,10 @@ type Policy interface {
 	Log() *PolicyLog
 }
 
-func NewPolicy(maxBytes, maxItems uint64, cost bool) Policy {
+func newPolicy(numCounters, maxCost uint64) Policy {
 	return &policy{
-		admi: newTinyLFU(maxItems),
-		evic: newSampledLFU(maxBytes, maxItems),
-		cost: cost,
-		mean: maxBytes / maxItems,
+		admi: newTinyLFU(numCounters),
+		evic: newSampledLFU(maxCost, numCounters),
 	}
 }
 
@@ -61,8 +59,6 @@ type policy struct {
 	sync.Mutex
 	admi *tinyLFU
 	evic *sampledLFU
-	cost bool
-	mean uint64
 }
 
 type policyPair struct {
@@ -87,30 +83,39 @@ func (p *policy) Add(key string, cost uint64) ([]string, bool) {
 		p.admi.Increment(key)
 		return nil, true
 	}
-	over := p.evic.over(cost)
-	if over <= 0 {
+	// calculate byte overflow if the incoming item was added
+	overflow := p.evic.getOverflow(cost)
+	if overflow <= 0 {
 		// there's room in the cache
 		p.evic.add(key, cost)
 		return nil, true
 	}
+	// incHits is the hit count for the incoming item
+	incHits := p.admi.Estimate(key)
+	// sample is the eviction candidate pool to be filled via random sampling
+	sample := make([]*policyPair, 0, lfuSample)
+	// victims contains keys that have already been evicted
 	victims := make([]string, 0)
-	// delete victims until there's enough space
-	for ; over > 0; over = p.evic.over(cost) {
-		sample := p.evic.sample(lfuSample)
+	// delete victims until there's enough space or a minKey is found that has
+	// more hits than incoming item
+	for ; overflow > 0; overflow = p.evic.getOverflow(cost) {
+		// fill up empty slots in sample
+		sample = p.evic.getSample(lfuSample - uint64(len(sample)))
 		// find minimally used item in sample
 		minKey, minHits := "", uint64(math.MaxUint64)
 		for _, pair := range sample {
+			// look up hit count for sample key
 			if hits := p.admi.Estimate(pair.key); hits < minHits {
 				minKey, minHits = pair.key, hits
 			}
 		}
-		// evic updates the over
+		// if the incoming item isn't worth keeping in the policy, stop
+		if incHits < minHits {
+			return victims, false
+		}
+		// evic updates the overflow count
 		p.evic.del(minKey)
 		victims = append(victims, minKey)
-		// only run this loop once if ignoring cost
-		if p.cost {
-			break
-		}
 	}
 	p.evic.add(key, cost)
 	return victims, true
@@ -152,18 +157,21 @@ type sampledLFU struct {
 	used uint64
 }
 
-func newSampledLFU(maxBytes, maxItems uint64) *sampledLFU {
+func newSampledLFU(numCounters, maxCost uint64) *sampledLFU {
 	return &sampledLFU{
-		data: make(map[string]uint64, maxItems),
-		size: maxBytes,
+		data: make(map[string]uint64, numCounters),
+		size: maxCost,
 	}
 }
 
-func (p *sampledLFU) over(cost uint64) int64 {
+func (p *sampledLFU) getOverflow(cost uint64) int64 {
 	return int64((p.used + cost) - p.size)
 }
 
-func (p *sampledLFU) sample(n uint64) []*policyPair {
+func (p *sampledLFU) getSample(n uint64) []*policyPair {
+	if n == 0 {
+		return nil
+	}
 	pairs := make([]*policyPair, 0, n)
 	for key, cost := range p.data {
 		pairs = append(pairs, &policyPair{key, cost})
@@ -188,13 +196,13 @@ func (p *sampledLFU) add(key string, cost uint64) {
 // tiny (4-bit) counters in the form of a count-min sketch.
 type tinyLFU struct {
 	freq Sketch
-	door *Filter
+	door *Doorkeeper
 }
 
-func newTinyLFU(maxItems uint64) *tinyLFU {
+func newTinyLFU(numCounters uint64) *tinyLFU {
 	return &tinyLFU{
-		freq: NewCM(maxItems),
-		door: NewFilter(maxItems, 0.01),
+		freq: NewCM(numCounters),
+		door: NewDoorkeeper(numCounters, 0.01),
 	}
 }
 
@@ -213,14 +221,17 @@ func (p *tinyLFU) Estimate(key string) uint64 {
 }
 
 func (p *tinyLFU) Increment(key string) {
-	// doorkeeper (set if not already set)
-	p.door.Set(key)
-	// count-min
-	p.freq.Increment(key)
+	// flip doorkeeper bit if not already
+	if !p.door.Set(key) {
+		// increment count-min counter if doorkeeper bit is already set
+		p.freq.Increment(key)
+	}
 }
 
 func (p *tinyLFU) Reset() {
+	// clears doorkeeper bits
 	p.door.Reset()
+	// halves count-min counters
 	p.freq.Reset()
 }
 
@@ -241,15 +252,11 @@ type Clairvoyant struct {
 	future   []string
 }
 
-func NewClairvoyant(maxBytes, maxItems uint64, cost bool) Policy {
-	return newClairvoyant(maxItems, cost)
-}
-
-func newClairvoyant(maxItems uint64, cost bool) *Clairvoyant {
+func newClairvoyant(numCounters, maxCost uint64) Policy {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
-		capacity: maxItems,
-		access:   make(map[string][]uint64, maxItems),
+		capacity: numCounters,
+		access:   make(map[string][]uint64, numCounters),
 	}
 }
 

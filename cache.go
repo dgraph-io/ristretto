@@ -39,18 +39,14 @@ type Cache struct {
 }
 
 type Config struct {
-	// MaxItems is the max number of items expected to be in the Cache.
-	MaxItems uint64
-	// MaxBytes is the Cache memory usage limit. If CostAware == false, this
-	// field is ignored and MaxItems is used instead.
-	MaxBytes uint64
+	// NumCounters is the number of counters to preallocate space for. This
+	// should correspond to the expected number of items in the Cache when it
+	// is full (when MaxCost is reached).
+	NumCounters uint64
+	// MaxCost is the cost capacity of the Cache.
+	MaxCost uint64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems uint64
-	// CostAware is true if item costs are non-uniform, and false if they're
-	// uniform (won't be considered during evicion process).
-	CostAware bool
-	// Policy is the admission / eviction Policy creator.
-	Policy func(uint64, uint64, bool) Policy
 	// OnEvict is ran for each key evicted.
 	OnEvict func(string)
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
@@ -58,19 +54,15 @@ type Config struct {
 }
 
 func NewCache(config *Config) *Cache {
-	if !config.CostAware {
-		config.MaxBytes = config.MaxItems
+	if config.MaxCost == 0 && config.NumCounters != 0 {
+		config.MaxCost = config.NumCounters
 	}
 	// data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
 	data := NewMap()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
-	policy := config.Policy(
-		config.MaxItems,
-		config.MaxBytes,
-		config.CostAware,
-	)
+	policy := newPolicy(config.NumCounters, config.MaxCost)
 	if config.Log {
 		policy = NewRecorder(policy, data)
 	}
@@ -82,7 +74,7 @@ func NewCache(config *Config) *Cache {
 			Capacity: config.BufferItems,
 		}),
 		notify: config.OnEvict,
-		size:   config.MaxItems,
+		size:   config.NumCounters,
 	}
 }
 
