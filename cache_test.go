@@ -24,22 +24,42 @@ import (
 )
 
 const (
-	MAX_ITEMS    = 256
-	BUFFER_ITEMS = MAX_ITEMS / 4
-	SAMPLE_ITEMS = MAX_ITEMS * 8
+	NUM_COUNTERS = 256
+	BUFFER_ITEMS = NUM_COUNTERS / 4
+	SAMPLE_ITEMS = NUM_COUNTERS * 8
 	ZIPF_V       = 1.01
 	ZIPF_S       = 2
 )
 
+func newCache(config *Config, p PolicyCreator) *Cache {
+	if config.MaxCost == 0 && config.NumCounters != 0 {
+		config.MaxCost = config.NumCounters
+	}
+	data := NewMap()
+	policy := p(config.NumCounters, config.MaxCost)
+	if config.Log {
+		policy = NewRecorder(policy, data)
+	}
+	return &Cache{
+		data:   data,
+		policy: policy,
+		buffer: NewBuffer(LOSSY, &RingConfig{
+			Consumer: policy,
+			Capacity: config.BufferItems,
+		}),
+		notify: config.OnEvict,
+		size:   config.NumCounters,
+	}
+}
+
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 	return func(t *testing.T) {
 		// create the cache with the provided policy and constant params
-		cache := NewCache(&Config{
-			MaxItems:    MAX_ITEMS,
+		cache := newCache(&Config{
+			NumCounters: NUM_COUNTERS,
 			BufferItems: BUFFER_ITEMS,
-			Policy:      p,
 			Log:         true,
-		})
+		}, p)
 		// must iterate through SAMPLE_ITEMS because it's fixed and should be
 		// much larger than the MAX_ITEMS
 		for i := 0; i < SAMPLE_ITEMS; i++ {
@@ -72,8 +92,8 @@ type (
 func TestCache(t *testing.T) {
 	// policies is a slice of all policies to test (see policy.go)
 	policies := []policyTest{
-		{"clairvoyant", NewClairvoyant},
-		{"    default", NewPolicy},
+		{"clairvoyant", newClairvoyant},
+		{"    default", newPolicy},
 	}
 	// accesses is a slice of all access distributions to test (see sim package)
 	accesses := []accessTest{
@@ -88,21 +108,34 @@ func TestCache(t *testing.T) {
 	}
 }
 
+func TestCacheBasic(t *testing.T) {
+	c := NewCache(&Config{
+		NumCounters: 4,
+		BufferItems: 1,
+	})
+	if _, added := c.Set("1", 1, 1); !added {
+		t.Fatal("set error")
+	}
+	if value := c.Get("1"); value.(int) != 1 {
+		t.Fatal("get error")
+	}
+}
+
 func TestCacheSetGet(t *testing.T) {
 	c := NewCache(&Config{
-		MaxItems:    4,
+		NumCounters: 4,
 		BufferItems: 4,
-		Policy:      NewPolicy,
 	})
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
-		vic, _ := c.Set(key, i, 1)
-		val := c.Get(key)
-		if val == nil || val.(int) != i {
-			t.Fatal("set/get error")
-		}
-		if i > 4 && vic == nil {
-			t.Fatal("no eviction")
+		if victims, added := c.Set(key, i, 1); added {
+			if i > 4 && victims == nil {
+				t.Fatal("no eviction")
+			}
+			value := c.Get(key)
+			if value == nil || value.(int) != i {
+				t.Fatal("set/get error")
+			}
 		}
 	}
 }
@@ -110,9 +143,8 @@ func TestCacheSetGet(t *testing.T) {
 func TestCacheOnEvict(t *testing.T) {
 	v := make([]string, 0)
 	c := NewCache(&Config{
-		MaxItems:    4,
+		NumCounters: 4,
 		BufferItems: 1,
-		Policy:      NewPolicy,
 		OnEvict: func(key string) {
 			v = append(v, key)
 		},
@@ -127,10 +159,9 @@ func TestCacheOnEvict(t *testing.T) {
 
 func TestCacheSize(t *testing.T) {
 	c := NewCache(&Config{
-		MaxItems:    16,
-		MaxBytes:    16 * 4,
+		NumCounters: 16,
+		MaxCost:     16 * 4,
 		BufferItems: 1,
-		Policy:      NewPolicy,
 	})
 	for i := 0; i < 8; i++ {
 		c.Set(fmt.Sprintf("%d", i), i, 4)
