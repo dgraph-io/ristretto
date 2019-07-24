@@ -100,21 +100,25 @@ func (p *policy) Add(key string, cost uint64) ([]string, bool) {
 	// more hits than incoming item
 	for ; overflow > 0; overflow = p.evic.getOverflow(cost) {
 		// fill up empty slots in sample
-		sample = p.evic.getSample(lfuSample - uint64(len(sample)))
+		sample = append(sample, p.evic.getSample(lfuSample-uint64(len(sample)))...)
 		// find minimally used item in sample
-		minKey, minHits := "", uint64(math.MaxUint64)
-		for _, pair := range sample {
+		minKey, minHits, minId := "", uint64(math.MaxUint64), 0
+		for i, pair := range sample {
 			// look up hit count for sample key
 			if hits := p.admi.Estimate(pair.key); hits < minHits {
-				minKey, minHits = pair.key, hits
+				minKey, minHits, minId = pair.key, hits, i
 			}
 		}
 		// if the incoming item isn't worth keeping in the policy, stop
 		if incHits < minHits {
 			return victims, false
 		}
-		// evic updates the overflow count
+		// delete the victim from metadata
 		p.evic.del(minKey)
+		// delete the victim from sample
+		sample[minId] = sample[len(sample)-1]
+		sample = sample[:len(sample)-1]
+		// store victim in evicted victims slice
 		victims = append(victims, minKey)
 	}
 	p.evic.add(key, cost)
