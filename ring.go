@@ -37,7 +37,6 @@ type ringConsumer interface {
 type ringStripe struct {
 	consumer ringConsumer
 	data     []string
-	head     int
 	capacity int
 	busy     int32
 }
@@ -45,7 +44,7 @@ type ringStripe struct {
 func newRingStripe(config *ringConfig) *ringStripe {
 	return &ringStripe{
 		consumer: config.Consumer,
-		data:     make([]string, config.Capacity),
+		data:     make([]string, 0, config.Capacity),
 		capacity: int(config.Capacity),
 	}
 }
@@ -53,13 +52,12 @@ func newRingStripe(config *ringConfig) *ringStripe {
 // Push appends an item in the ring buffer and drains (copies items and
 // sends to Consumer) if full.
 func (s *ringStripe) Push(item string) {
-	s.data[s.head] = item
-	s.head++
+	s.data = append(s.data, item)
 	// if we should drain
-	if s.head >= s.capacity {
+	if len(s.data) >= s.capacity {
 		// copy elements and send to consumer
 		s.consumer.Push(append(s.data[:0:0], s.data...))
-		s.head = 0
+		s.data = s.data[:0]
 	}
 }
 
