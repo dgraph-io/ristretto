@@ -66,8 +66,8 @@ func (s *ringStripe) Push(item string) {
 // ringConfig is passed to newRingBuffer with parameters.
 type ringConfig struct {
 	Consumer ringConsumer
-	Stripes  uint64
-	Capacity uint64
+	Stripes  int64
+	Capacity int64
 }
 
 // ringBuffer stores multiple buffers (stripes) and distributes Pushed items

@@ -36,19 +36,19 @@ type Policy interface {
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added. If it returns true, the key should be stored in cache.
-	Add(string, uint64) ([]string, bool)
+	Add(string, int64) ([]string, bool)
 	// Has returns true if the key exists in the Policy.
 	Has(string) bool
 	// Del deletes the key from the Policy.
 	Del(string)
 	// Res is a reset operation and maintains metadata freshness.
-	Res()
+	Reset()
 	// Cap returns the available capacity.
 	Cap() int64
 	Log() *PolicyLog
 }
 
-func newPolicy(numCounters, maxCost uint64) Policy {
+func newPolicy(numCounters, maxCost int64) Policy {
 	return &defaultPolicy{
 		admit: newTinyLFU(numCounters),
 		evict: newSampledLFU(maxCost, numCounters),
@@ -65,7 +65,7 @@ type defaultPolicy struct {
 
 type policyPair struct {
 	key  string
-	cost uint64
+	cost int64
 }
 
 func (p *defaultPolicy) Push(keys []string) {
@@ -74,7 +74,7 @@ func (p *defaultPolicy) Push(keys []string) {
 	p.admit.Push(keys)
 }
 
-func (p *defaultPolicy) Add(key string, cost uint64) ([]string, bool) {
+func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
 	p.Lock()
 	defer p.Unlock()
 
@@ -107,7 +107,7 @@ func (p *defaultPolicy) Add(key string, cost uint64) ([]string, bool) {
 		// fill up empty slots in sample
 		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
-		minKey, minHits, minId := "", uint64(math.MaxUint64), 0
+		minKey, minHits, minId := "", int64(math.MaxInt64), 0
 		for i, pair := range sample {
 			// look up hit count for sample key
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
@@ -143,7 +143,7 @@ func (p *defaultPolicy) Del(key string) {
 	p.evict.del(key)
 }
 
-func (p *defaultPolicy) Res() {
+func (p *defaultPolicy) Reset() {
 	p.Lock()
 	defer p.Unlock()
 	p.admit.Reset()
@@ -161,19 +161,19 @@ func (p *defaultPolicy) Log() *PolicyLog {
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	keyCosts map[string]uint64
-	size     uint64
-	used     uint64
+	keyCosts map[string]int64
+	size     int64
+	used     int64
 }
 
-func newSampledLFU(numCounters, maxCost uint64) *sampledLFU {
+func newSampledLFU(numCounters, maxCost int64) *sampledLFU {
 	return &sampledLFU{
-		keyCosts: make(map[string]uint64, numCounters),
+		keyCosts: make(map[string]int64, numCounters),
 		size:     maxCost,
 	}
 }
 
-func (p *sampledLFU) roomLeft(cost uint64) int64 {
+func (p *sampledLFU) roomLeft(cost int64) int64 {
 	return int64((p.used + cost) - p.size)
 }
 
@@ -195,7 +195,7 @@ func (p *sampledLFU) del(key string) {
 	delete(p.keyCosts, key)
 }
 
-func (p *sampledLFU) add(key string, cost uint64) {
+func (p *sampledLFU) add(key string, cost int64) {
 	p.keyCosts[key] = cost
 	p.used += cost
 }
@@ -207,7 +207,7 @@ type tinyLFU struct {
 	door *z.Bloom
 }
 
-func newTinyLFU(numCounters uint64) *tinyLFU {
+func newTinyLFU(numCounters int64) *tinyLFU {
 	return &tinyLFU{
 		freq: newCmSketch(numCounters),
 		door: z.NewBloomFilter(float64(numCounters), 0.01),
@@ -220,7 +220,7 @@ func (p *tinyLFU) Push(keys []string) {
 	}
 }
 
-func (p *tinyLFU) Estimate(key string) uint64 {
+func (p *tinyLFU) Estimate(key string) int64 {
 	hash := z.AESHashString(key)
 	hits := p.freq.Estimate(hash)
 	if p.door.Has(hash) {
@@ -255,25 +255,25 @@ func (p *tinyLFU) Reset() {
 // This Policy is primarily for benchmarking purposes (as a baseline).
 type Clairvoyant struct {
 	sync.Mutex
-	time     uint64
+	time     int64
 	log      *PolicyLog
-	access   map[string][]uint64
-	capacity uint64
+	access   map[string][]int64
+	capacity int64
 	future   []string
 }
 
-func newClairvoyant(numCounters, maxCost uint64) Policy {
+func newClairvoyant(numCounters, maxCost int64) Policy {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
 		capacity: numCounters,
-		access:   make(map[string][]uint64, numCounters),
+		access:   make(map[string][]int64, numCounters),
 	}
 }
 
 // distance finds the "time distance" from the start position to the minimum
 // time value - this is used to judge eviction candidates.
-func (p *Clairvoyant) distance(start uint64, times []uint64) (uint64, bool) {
-	good, min := false, uint64(0)
+func (p *Clairvoyant) distance(start int64, times []int64) (int64, bool) {
+	good, min := false, int64(0)
 	for i := range times {
 		if times[i] > start {
 			good = true
@@ -288,7 +288,7 @@ func (p *Clairvoyant) distance(start uint64, times []uint64) (uint64, bool) {
 func (p *Clairvoyant) record(key string) {
 	p.time++
 	if p.access[key] == nil {
-		p.access[key] = make([]uint64, 0)
+		p.access[key] = make([]int64, 0)
 	}
 	p.access[key] = append(p.access[key], p.time)
 	p.future = append(p.future, key)
@@ -302,7 +302,7 @@ func (p *Clairvoyant) Push(keys []string) {
 	}
 }
 
-func (p *Clairvoyant) Add(key string, cost uint64) ([]string, bool) {
+func (p *Clairvoyant) Add(key string, cost int64) ([]string, bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.record(key)
@@ -322,7 +322,7 @@ func (p *Clairvoyant) Del(key string) {
 	delete(p.access, key)
 }
 
-func (p *Clairvoyant) Res() {
+func (p *Clairvoyant) Reset() {
 }
 
 func (p *Clairvoyant) Cap() int64 {
@@ -334,7 +334,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
 	data := make(map[string]struct{}, p.capacity)
-	size := uint64(0)
+	size := int64(0)
 	for i, key := range p.future {
 		// check if already exists
 		if _, exists := data[key]; exists {
@@ -348,9 +348,9 @@ func (p *Clairvoyant) Log() *PolicyLog {
 			//
 			// collect item distances
 			good := false
-			distance := make(map[string]uint64, p.capacity)
+			distance := make(map[string]int64, p.capacity)
 			for k := range data {
-				distance[k], good = p.distance(uint64(i), p.access[k])
+				distance[k], good = p.distance(int64(i), p.access[k])
 				if !good {
 					// there's no good distances because the key isn't used
 					// again in the future, so we can just stop here and delete
@@ -362,7 +362,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 				}
 			}
 			// find the largest distance
-			maxDistance, maxKey, c := uint64(0), "", 0
+			maxDistance, maxKey, c := int64(0), "", 0
 			for k, d := range distance {
 				if c == 0 || d > maxDistance {
 					maxKey = k
@@ -405,7 +405,7 @@ func (r *recorder) Push(keys []string) {
 	r.policy.Push(keys)
 }
 
-func (r *recorder) Add(key string, cost uint64) ([]string, bool) {
+func (r *recorder) Add(key string, cost int64) ([]string, bool) {
 	if r.data.Get(key) != nil {
 		r.log.Hit()
 	} else {
@@ -426,8 +426,8 @@ func (r *recorder) Del(key string) {
 	r.policy.Del(key)
 }
 
-func (r *recorder) Res() {
-	r.policy.Res()
+func (r *recorder) Reset() {
+	r.policy.Reset()
 }
 
 func (r *recorder) Cap() int64 {
@@ -442,36 +442,36 @@ func (r *recorder) Log() *PolicyLog {
 // cost to maintaining the counters, so it's best to wrap Policies via the
 // Recorder type when hit ratio analysis is needed.
 type PolicyLog struct {
-	hits      uint64
-	miss      uint64
-	evictions uint64
+	hits      int64
+	miss      int64
+	evictions int64
 }
 
 func (p *PolicyLog) Hit() {
-	atomic.AddUint64(&p.hits, 1)
+	atomic.AddInt64(&p.hits, 1)
 }
 
 func (p *PolicyLog) Miss() {
-	atomic.AddUint64(&p.miss, 1)
+	atomic.AddInt64(&p.miss, 1)
 }
 
 func (p *PolicyLog) Evict() {
-	atomic.AddUint64(&p.evictions, 1)
+	atomic.AddInt64(&p.evictions, 1)
 }
 
-func (p *PolicyLog) GetHits() uint64 {
-	return atomic.LoadUint64(&p.hits)
+func (p *PolicyLog) GetHits() int64 {
+	return atomic.LoadInt64(&p.hits)
 }
 
-func (p *PolicyLog) GetMisses() uint64 {
-	return atomic.LoadUint64(&p.miss)
+func (p *PolicyLog) GetMisses() int64 {
+	return atomic.LoadInt64(&p.miss)
 }
 
-func (p *PolicyLog) GetEvictions() uint64 {
-	return atomic.LoadUint64(&p.evictions)
+func (p *PolicyLog) GetEvictions() int64 {
+	return atomic.LoadInt64(&p.evictions)
 }
 
 func (p *PolicyLog) Ratio() float64 {
-	hits, misses := atomic.LoadUint64(&p.hits), atomic.LoadUint64(&p.miss)
+	hits, misses := atomic.LoadInt64(&p.hits), atomic.LoadInt64(&p.miss)
 	return float64(hits) / float64(hits+misses)
 }

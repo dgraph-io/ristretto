@@ -42,7 +42,7 @@ const (
 	cmDepth = 1
 )
 
-func newCmSketch(numCounters uint64) *cmSketch {
+func newCmSketch(numCounters int64) *cmSketch {
 	if numCounters == 0 {
 		panic("cmSketch: bad numCounters")
 	}
@@ -50,7 +50,7 @@ func newCmSketch(numCounters uint64) *cmSketch {
 	numCounters = next2Power(numCounters)
 	// sketch with FNV-64a hashing algorithm
 	sketch := &cmSketch{
-		mask: numCounters - 1,
+		mask: uint64(numCounters - 1),
 	}
 	// initialize rows of counters
 	for i := 0; i < cmDepth; i++ {
@@ -68,7 +68,7 @@ func (s *cmSketch) Increment(hashed uint64) {
 }
 
 // Estimate returns the value of the specified key.
-func (s *cmSketch) Estimate(hashed uint64) uint64 {
+func (s *cmSketch) Estimate(hashed uint64) int64 {
 	min := byte(255)
 	for i := range s.rows {
 		// find the smallest counter value from all the rows
@@ -76,7 +76,7 @@ func (s *cmSketch) Estimate(hashed uint64) uint64 {
 			min = v
 		}
 	}
-	return uint64(min)
+	return int64(min)
 }
 
 // Reset halves all counter values.
@@ -99,7 +99,7 @@ func (s *cmSketch) string() string {
 // cmRow is a row of bytes, with each byte holding two counters
 type cmRow []byte
 
-func newCmRow(numCounters uint64) cmRow {
+func newCmRow(numCounters int64) cmRow {
 	return make(cmRow, numCounters/2)
 }
 
@@ -137,7 +137,7 @@ func (r cmRow) string() string {
 }
 
 // next2Power rounds x up to the next power of 2, if it's not already one.
-func next2Power(x uint64) uint64 {
+func next2Power(x int64) int64 {
 	x--
 	x |= x >> 1
 	x |= x >> 2
@@ -160,7 +160,7 @@ type FPCBF struct {
 }
 
 func (c *FPCBF) Push(keys []ring.Element)      {}
-func (c *FPCBF) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *FPCBF) Estimate(hashed int64) int64 { return 0 }
 
 // TODO
 //
@@ -172,7 +172,7 @@ type DLCBF struct {
 }
 
 func (c *DLCBF) Push(keys []ring.Element)      {}
-func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *DLCBF) Estimate(hashed int64) int64 { return 0 }
 
 // TODO
 //
@@ -183,5 +183,5 @@ func (c *DLCBF) Estimtae(hashed uint64) uint64 { return 0 }
 type BC struct{}
 
 func (c *BC) Push(keys []ring.Element)      {}
-func (c *BC) Estimtae(hashed uint64) uint64 { return 0 }
+func (c *BC) Estimate(hashed int64) int64 { return 0 }
 */

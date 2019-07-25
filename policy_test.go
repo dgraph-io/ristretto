@@ -21,10 +21,10 @@ import (
 	"testing"
 )
 
-type PolicyCreator func(uint64, uint64) Policy
+type PolicyCreator func(int64, int64) Policy
 
 func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
-	iterations := uint64(1024)
+	iterations := int64(1024)
 	return func(t *testing.T) {
 		t.Run("uniform-push", func(t *testing.T) {
 			policy := create(iterations, iterations)
@@ -40,7 +40,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 		})
 		t.Run("uniform-add", func(t *testing.T) {
 			policy := create(iterations, iterations)
-			for i := uint64(0); i < iterations; i++ {
+			for i := int64(0); i < iterations; i++ {
 				policy.Add(fmt.Sprintf("%d", i), 1)
 			}
 			if victims, added := policy.Add("*", 1); victims == nil || !added {
@@ -61,7 +61,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 		})
 		t.Run("variable-add", func(t *testing.T) {
 			policy := create(iterations, iterations*4)
-			for i := uint64(0); i < iterations; i++ {
+			for i := int64(0); i < iterations; i++ {
 				policy.Add(fmt.Sprintf("%d", i), 4)
 			}
 			if victims, added := policy.Add("*", 1); victims == nil || !added {

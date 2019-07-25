@@ -34,19 +34,19 @@ type Cache struct {
 	policy Policy
 	buffer *ringBuffer
 	notify func(string)
-	used   uint64
-	size   uint64
+	used   int64
+	size   int64
 }
 
 type Config struct {
 	// NumCounters is the number of counters to preallocate space for. This
 	// should correspond to the expected number of items in the Cache when it
 	// is full (when MaxCost is reached).
-	NumCounters uint64
+	NumCounters int64
 	// MaxCost is the cost capacity of the Cache.
-	MaxCost uint64
+	MaxCost int64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
-	BufferItems uint64
+	BufferItems int64
 	// OnEvict is ran for each key evicted.
 	OnEvict func(string)
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
@@ -83,22 +83,22 @@ func (c *Cache) Get(key string) interface{} {
 	return c.data.Get(key)
 }
 
-func (c *Cache) Set(key string, val interface{}, cost uint64) ([]string, bool) {
+func (c *Cache) Set(key string, val interface{}, cost int64) ([]string, bool) {
 	victims, added := c.policy.Add(key, cost)
 	if !added {
 		return nil, false
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
-		atomic.AddUint64(&c.used, ^uint64(0))
+		atomic.AddInt64(&c.used, -1)
 		if c.notify != nil {
 			c.notify(victim)
 		}
 	}
 	c.data.Set(key, val)
-	if atomic.AddUint64(&c.used, 1) == c.size {
-		atomic.StoreUint64(&c.used, c.size/2)
-		c.policy.Res()
+	if atomic.AddInt64(&c.used, 1) == c.size {
+		atomic.StoreInt64(&c.used, c.size/2)
+		c.policy.Reset()
 	}
 	return victims, true
 }

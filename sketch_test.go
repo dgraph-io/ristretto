@@ -25,7 +25,7 @@ type sketch interface {
 	// Increment increments the count(ers) for the specified key.
 	Increment(uint64)
 	// Estimate returns the value of the specified key.
-	Estimate(uint64) uint64
+	Estimate(uint64) int64
 	// Reset halves all counter values.
 	Reset()
 }
