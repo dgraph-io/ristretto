@@ -18,27 +18,27 @@ package ristretto
 
 import (
 	"testing"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
 func TestDoorkeeper(t *testing.T) {
-	d := newDoorkeeper(1374, 0.01)
-	if d.keys != 7 || len(d.data)*8 < 13170 {
-		t.Fatal("bad initialization based on size and false positive rate")
-	}
-	if d.Has("*") {
+	d := z.NewBloomFilter(float64(1374), 0.01)
+	hash := z.AESHashString("*")
+	if d.Has(hash) {
 		t.Fatal("item exists but was never added")
 	}
-	if d.Set("*") != true {
+	if d.AddIfNotHas(hash) != true {
 		t.Fatal("item didn't exist so Set() should return true")
 	}
-	if d.Set("*") != false {
+	if d.AddIfNotHas(hash) != false {
 		t.Fatal("item did exist so Set() should return false")
 	}
-	if !d.Has("*") {
+	if !d.Has(hash) {
 		t.Fatal("item was added but Has() is false")
 	}
-	d.Reset()
-	if d.Has("*") {
+	d.Clear()
+	if d.Has(hash) {
 		t.Fatal("doorkeeper was reset but Has() returns true")
 	}
 }

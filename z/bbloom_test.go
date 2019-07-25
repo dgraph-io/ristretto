@@ -9,7 +9,7 @@ import (
 var (
 	wordlist1 [][]byte
 	n         = 1 << 16
-	bf        Bloom
+	bf        *Bloom
 )
 
 func TestMain(m *testing.M) {
@@ -27,11 +27,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestM_NumberOfWrongs(t *testing.T) {
-	bf = New(float64(n*10), float64(7))
+	bf = NewBloomFilter(float64(n*10), float64(7))
 
 	cnt := 0
 	for i := range wordlist1 {
-		if !bf.AddIfNotHas(wordlist1[i]) {
+		hash := AESHash(wordlist1[i])
+		if !bf.AddIfNotHas(hash) {
 			cnt++
 		}
 	}
@@ -42,11 +43,12 @@ func TestM_NumberOfWrongs(t *testing.T) {
 func TestM_JSON(t *testing.T) {
 	const shallBe = int(1 << 16)
 
-	bf = New(float64(n*10), float64(7))
+	bf = NewBloomFilter(float64(n*10), float64(7))
 
 	cnt := 0
 	for i := range wordlist1 {
-		if !bf.AddIfNotHas(wordlist1[i]) {
+		hash := AESHash(wordlist1[i])
+		if !bf.AddIfNotHas(hash) {
 			cnt++
 		}
 	}
@@ -58,90 +60,27 @@ func TestM_JSON(t *testing.T) {
 
 	cnt2 := 0
 	for i := range wordlist1 {
-		if !bf2.AddIfNotHas(wordlist1[i]) {
+		if !bf2.AddIfNotHasBytes(wordlist1[i]) {
 			cnt2++
 		}
 	}
 
 	if cnt2 != shallBe {
-		t.Errorf("FAILED !AddIfNotHas = %v; want %v", cnt2, shallBe)
+		t.Errorf("FAILED !AddIfNotHasBytes = %v; want %v", cnt2, shallBe)
 	}
 
-}
-
-func TestM_Binary(t *testing.T) {
-	const shallBe = int(1 << 16)
-
-	bf = New(float64(n*10), float64(7))
-
-	cnt := 0
-	for i := range wordlist1 {
-		if !bf.AddIfNotHas(wordlist1[i]) {
-			cnt++
-		}
-	}
-
-	bin := bf.BinaryMarshal()
-
-	// create new bloomfilter from bloomfilter's JSON representation
-	var bf2 Bloom
-	bf2.BinaryUnmarshal(bin)
-
-	cnt2 := 0
-	for i := range wordlist1 {
-		if !bf2.AddIfNotHas(wordlist1[i]) {
-			cnt2++
-		}
-	}
-
-	if cnt2 != shallBe {
-		t.Errorf("FAILED !AddIfNotHas = %v; want %v", cnt2, shallBe)
-	}
-
-}
-
-func ExampleM_NewAddHasAddIfNotHas() {
-	bf := New(float64(512), float64(1))
-
-	fmt.Printf("%v %v %v %v\n", bf.sizeExp, bf.size, bf.setLocs, bf.shift)
-
-	bf.Add([]byte("Manfred"))
-	fmt.Println("bf.Add([]byte(\"Manfred\"))")
-	fmt.Printf("bf.Has([]byte(\"Manfred\")) -> %v - should be true\n", bf.Has([]byte("Manfred")))
-	fmt.Printf("bf.Add([]byte(\"manfred\")) -> %v - should be false\n", bf.Has([]byte("manfred")))
-	fmt.Printf("bf.AddIfNotHas([]byte(\"Manfred\")) -> %v - should be false\n", bf.AddIfNotHas([]byte("Manfred")))
-	fmt.Printf("bf.AddIfNotHas([]byte(\"manfred\")) -> %v - should be true\n", bf.AddIfNotHas([]byte("manfred")))
-
-	bf.AddTS([]byte("Hans"))
-	fmt.Println("bf.AddTS([]byte(\"Hans\")")
-	fmt.Printf("bf.HasTS([]byte(\"Hans\")) -> %v - should be true\n", bf.HasTS([]byte("Hans")))
-	fmt.Printf("bf.AddTS([]byte(\"hans\")) -> %v - should be false\n", bf.HasTS([]byte("hans")))
-	fmt.Printf("bf.AddIfNotHasTS([]byte(\"Hans\")) -> %v - should be false\n", bf.AddIfNotHasTS([]byte("Hans")))
-	fmt.Printf("bf.AddIfNotHasTS([]byte(\"hans\")) -> %v - should be true\n", bf.AddIfNotHasTS([]byte("hans")))
-
-	// Output: 9 511 1 55
-	// bf.Add([]byte("Manfred"))
-	// bf.Has([]byte("Manfred")) -> true - should be true
-	// bf.Add([]byte("manfred")) -> false - should be false
-	// bf.AddIfNotHas([]byte("Manfred")) -> false - should be false
-	// bf.AddIfNotHas([]byte("manfred")) -> true - should be true
-	// bf.AddTS([]byte("Hans")
-	// bf.HasTS([]byte("Hans")) -> true - should be true
-	// bf.AddTS([]byte("hans")) -> false - should be false
-	// bf.AddIfNotHasTS([]byte("Hans")) -> false - should be false
-	// bf.AddIfNotHasTS([]byte("hans")) -> true - should be true
 }
 
 func BenchmarkM_New(b *testing.B) {
 	for r := 0; r < b.N; r++ {
-		_ = New(float64(n*10), float64(7))
+		_ = NewBloomFilter(float64(n*10), float64(7))
 	}
 }
 
 func BenchmarkM_Clear(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
+	bf = NewBloomFilter(float64(n*10), float64(7))
 	for i := range wordlist1 {
-		bf.Add(wordlist1[i])
+		bf.AddBytes(wordlist1[i])
 	}
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
@@ -150,11 +89,11 @@ func BenchmarkM_Clear(b *testing.B) {
 }
 
 func BenchmarkM_Add(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
+	bf = NewBloomFilter(float64(n*10), float64(7))
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.Add(wordlist1[i])
+			bf.AddBytes(wordlist1[i])
 		}
 	}
 
@@ -164,81 +103,33 @@ func BenchmarkM_Has(b *testing.B) {
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.Has(wordlist1[i])
+			bf.HasBytes(wordlist1[i])
 		}
 	}
 
 }
 
-func BenchmarkM_AddIfNotHasFALSE(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
+func BenchmarkM_AddIfNotHasBytesFALSE(b *testing.B) {
+	bf = NewBloomFilter(float64(n*10), float64(7))
 	for i := range wordlist1 {
-		bf.Has(wordlist1[i])
+		bf.HasBytes(wordlist1[i])
 	}
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.AddIfNotHas(wordlist1[i])
+			bf.AddIfNotHasBytes(wordlist1[i])
 		}
 	}
 }
 
-func BenchmarkM_AddIfNotHasClearTRUE(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
+func BenchmarkM_AddIfNotHasBytesClearTRUE(b *testing.B) {
+	bf = NewBloomFilter(float64(n*10), float64(7))
 
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.AddIfNotHas(wordlist1[i])
+			bf.AddIfNotHasBytes(wordlist1[i])
 		}
 		bf.Clear()
 	}
-}
-
-func BenchmarkM_AddTS(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
-
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.AddTS(wordlist1[i])
-		}
-	}
-
-}
-
-func BenchmarkM_HasTS(b *testing.B) {
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.HasTS(wordlist1[i])
-		}
-	}
-
-}
-
-func BenchmarkM_AddIfNotHasTSFALSE(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
-	for i := range wordlist1 {
-		bf.Has(wordlist1[i])
-	}
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.AddIfNotHasTS(wordlist1[i])
-		}
-	}
-}
-
-func BenchmarkM_AddIfNotHasTSClearTRUE(b *testing.B) {
-	bf = New(float64(n*10), float64(7))
-
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.AddIfNotHasTS(wordlist1[i])
-		}
-		bf.Clear()
-	}
-
 }

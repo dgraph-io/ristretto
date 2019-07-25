@@ -25,10 +25,7 @@ import (
 	"encoding/json"
 	"log"
 	"math"
-	"reflect"
 	"unsafe"
-
-	"github.com/coocood/rtutil"
 )
 
 // helper
@@ -54,7 +51,7 @@ func calcSizeByWrongPositives(numEntries, wrongs float64) (uint64, uint64) {
 
 // New
 // returns a new bloomfilter
-func New(params ...float64) (bloomfilter Bloom) {
+func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 	var entries, locs uint64
 	if len(params) == 2 {
 		if params[1] < 1 {
@@ -66,7 +63,7 @@ func New(params ...float64) (bloomfilter Bloom) {
 		log.Fatal("usage: New(float64(number_of_entries), float64(number_of_hashlocations)) i.e. New(float64(1000), float64(3)) or New(float64(number_of_entries), float64(number_of_hashlocations)) i.e. New(float64(1000), float64(0.03))")
 	}
 	size, exponent := getSize(uint64(entries))
-	bloomfilter = Bloom{
+	bloomfilter = &Bloom{
 		sizeExp: exponent,
 		size:    size - 1,
 		setLocs: locs,
@@ -74,38 +71,6 @@ func New(params ...float64) (bloomfilter Bloom) {
 	}
 	bloomfilter.Size(size)
 	return bloomfilter
-}
-
-// NewWithBoolset
-// takes a []byte slice and number of locs per entry
-// returns the bloomfilter with a bitset populated according to the input []byte
-func NewWithBoolset(bs *[]byte, locs uint64) (bloomfilter Bloom) {
-	bloomfilter = New(float64(len(*bs)<<3), float64(locs))
-	ptr := uintptr(unsafe.Pointer(&bloomfilter.bitset[0]))
-	for _, b := range *bs {
-		*(*uint8)(unsafe.Pointer(ptr)) = b
-		ptr++
-	}
-	return bloomfilter
-}
-
-// bloomJSONImExport
-// Im/Export structure used by JSONMarshal / JSONUnmarshal
-type bloomJSONImExport struct {
-	FilterSet []byte
-	SetLocs   uint64
-}
-
-// JSONUnmarshal
-// takes JSON-Object (type bloomJSONImExport) as []bytes
-// returns bloom32 / bloom64 object
-func JSONUnmarshal(dbData []byte) Bloom {
-	bloomImEx := bloomJSONImExport{}
-	json.Unmarshal(dbData, &bloomImEx)
-	buf := bytes.NewBuffer(bloomImEx.FilterSet)
-	bs := buf.Bytes()
-	bf := NewWithBoolset(&bs, bloomImEx.SetLocs)
-	return bf
 }
 
 //
@@ -134,13 +99,18 @@ type Bloom struct {
 
 // Add
 // set the bit(s) for entry; Adds an entry to the Bloom filter
-func (bl *Bloom) Add(entry []byte) {
+func (bl *Bloom) AddBytes(entry []byte) {
 	hash := AESHash(entry)
-	bl.AddHash(hash)
+	bl.Add(hash)
+}
+
+func (bl *Bloom) AddString(entry string) {
+	hash := AESHashString(entry)
+	bl.Add(hash)
 }
 
 // AddAESHash accepts an AES hash of the entry calculated by the caller.
-func (bl *Bloom) AddAESHash(hash uint64) {
+func (bl *Bloom) Add(hash uint64) {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
 	for i := uint64(0); i < (*bl).setLocs; i++ {
@@ -152,8 +122,17 @@ func (bl *Bloom) AddAESHash(hash uint64) {
 // Has
 // check if bit(s) for entry is/are set
 // returns true if the entry was added to the Bloom Filter
-func (bl Bloom) Has(entry []byte) bool {
-	hash := rtutil.AESHash(entry)
+func (bl Bloom) HasBytes(entry []byte) bool {
+	hash := AESHash(entry)
+	return bl.Has(hash)
+}
+
+func (bl Bloom) HasString(entry string) bool {
+	hash := AESHashString(entry)
+	return bl.Has(hash)
+}
+
+func (bl Bloom) Has(hash uint64) bool {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
 	for i := uint64(0); i < bl.setLocs; i++ {
@@ -169,12 +148,17 @@ func (bl Bloom) Has(entry []byte) bool {
 // Only Add entry if it's not present in the bloomfilter
 // returns true if entry was added
 // returns false if entry was allready registered in the bloomfilter
-func (bl Bloom) AddIfNotHas(entry []byte) (added bool) {
-	if bl.Has(entry[:]) {
-		return added
+func (bl Bloom) AddIfNotHas(entry uint64) bool {
+	if bl.Has(entry) {
+		return false
 	}
-	bl.Add(entry[:])
+	bl.Add(entry)
 	return true
+}
+
+func (bl Bloom) AddIfNotHasBytes(entry []byte) bool {
+	hash := AESHash(entry)
+	return bl.AddIfNotHas(hash)
 }
 
 // Size
@@ -207,51 +191,52 @@ func (bl *Bloom) IsSet(idx uint64) bool {
 	return r == 1
 }
 
-func (bl Bloom) BinaryMarshal() []byte {
-	data := make([]byte, 8*5+len(bl.bitset)*8)
-	unsafeMarshal(data, uintptr(unsafe.Pointer(&bl.ElemNum)), 40)
-	copy(data[40:], sliceU64ToU8(bl.bitset))
+// bloomJSONImExport
+// Im/Export structure used by JSONMarshal / JSONUnmarshal
+type bloomJSONImExport struct {
+	FilterSet []byte
+	SetLocs   uint64
+}
+
+// NewWithBoolset
+// takes a []byte slice and number of locs per entry
+// returns the bloomfilter with a bitset populated according to the input []byte
+func newWithBoolset(bs *[]byte, locs uint64) *Bloom {
+	bloomfilter := NewBloomFilter(float64(len(*bs)<<3), float64(locs))
+	ptr := uintptr(unsafe.Pointer(&bloomfilter.bitset[0]))
+	for _, b := range *bs {
+		*(*uint8)(unsafe.Pointer(ptr)) = b
+		ptr++
+	}
+	return bloomfilter
+}
+
+// JSONUnmarshal
+// takes JSON-Object (type bloomJSONImExport) as []bytes
+// returns bloom32 / bloom64 object
+func JSONUnmarshal(dbData []byte) *Bloom {
+	bloomImEx := bloomJSONImExport{}
+	json.Unmarshal(dbData, &bloomImEx)
+	buf := bytes.NewBuffer(bloomImEx.FilterSet)
+	bs := buf.Bytes()
+	bf := newWithBoolset(&bs, bloomImEx.SetLocs)
+	return bf
+}
+
+// JSONMarshal
+// returns JSON-object (type bloomJSONImExport) as []byte
+func (bl Bloom) JSONMarshal() []byte {
+	bloomImEx := bloomJSONImExport{}
+	bloomImEx.SetLocs = uint64(bl.setLocs)
+	bloomImEx.FilterSet = make([]byte, len(bl.bitset)<<3)
+	ptr := uintptr(unsafe.Pointer(&bl.bitset[0]))
+	for i := range bloomImEx.FilterSet {
+		bloomImEx.FilterSet[i] = *(*byte)(unsafe.Pointer(ptr))
+		ptr++
+	}
+	data, err := json.Marshal(bloomImEx)
+	if err != nil {
+		log.Fatal("json.Marshal failed: ", err)
+	}
 	return data
-}
-
-func (bl *Bloom) BinaryUnmarshal(data []byte) {
-	unsafeUnmarshal(uintptr(unsafe.Pointer(&bl.ElemNum)), 40, data)
-	bl.bitset = sliceU8ToU64(data[40:])
-	return
-}
-
-func sliceU64ToU8(u64Slice []uint64) []byte {
-	var u8s []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u8s))
-	hdr.Len = len(u64Slice) * 8
-	hdr.Cap = len(u64Slice) * 8
-	hdr.Data = uintptr(unsafe.Pointer(&u64Slice[0]))
-	return u8s
-}
-
-func sliceU8ToU64(u8s []byte) []uint64 {
-	var u64s []uint64
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
-	hdr.Len = len(u8s) / 8
-	hdr.Cap = len(u8s) / 8
-	hdr.Data = uintptr(unsafe.Pointer(&u8s[0]))
-	return u64s
-}
-
-func unsafeMarshal(dest []byte, ptr uintptr, n int) {
-	var u8s []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u8s))
-	hdr.Len = n
-	hdr.Cap = n
-	hdr.Data = ptr
-	copy(dest, u8s)
-}
-
-func unsafeUnmarshal(ptr uintptr, n int, src []byte) {
-	var u8s []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u8s))
-	hdr.Len = n
-	hdr.Cap = n
-	hdr.Data = ptr
-	copy(u8s, src)
 }

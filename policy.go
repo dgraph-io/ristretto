@@ -20,6 +20,8 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
 const (
@@ -200,13 +202,13 @@ func (p *sampledLFU) add(key string, cost uint64) {
 // tiny (4-bit) counters in the form of a count-min sketch.
 type tinyLFU struct {
 	freq sketch
-	door *doorkeeper
+	door *z.Bloom
 }
 
 func newTinyLFU(numCounters uint64) *tinyLFU {
 	return &tinyLFU{
 		freq: newCmSketch(numCounters),
-		door: newDoorkeeper(numCounters, 0.01),
+		door: z.NewBloomFilter(float64(numCounters), 0.01),
 	}
 }
 
@@ -218,7 +220,7 @@ func (p *tinyLFU) Push(keys []ringItem) {
 
 func (p *tinyLFU) Estimate(key string) uint64 {
 	hits := p.freq.Estimate(key)
-	if p.door.Has(key) {
+	if p.door.HasString(key) {
 		hits += 1
 	}
 	return hits
@@ -226,7 +228,8 @@ func (p *tinyLFU) Estimate(key string) uint64 {
 
 func (p *tinyLFU) Increment(key string) {
 	// flip doorkeeper bit if not already
-	if !p.door.Set(key) {
+	hash := z.AESHashString(key)
+	if !p.door.AddIfNotHas(hash) {
 		// increment count-min counter if doorkeeper bit is already set
 		p.freq.Increment(key)
 	}
@@ -234,7 +237,7 @@ func (p *tinyLFU) Increment(key string) {
 
 func (p *tinyLFU) Reset() {
 	// clears doorkeeper bits
-	p.door.Reset()
+	p.door.Clear()
 	// halves count-min counters
 	p.freq.Reset()
 }
