@@ -272,8 +272,8 @@ type Result struct {
 	// Procs is the value of runtime.GOMAXPROCS(0) at the time result was
 	// recorded.
 	Procs  int
-	Hits   uint64
-	Misses uint64
+	Hits   int64
+	Misses int64
 }
 
 // NewResult extracts the data we're interested in from a BenchmarkResult.
@@ -313,20 +313,20 @@ func (c *LogCollection) Append(plog *ristretto.PolicyLog) {
 	c.Logs = append(c.Logs, plog)
 }
 
-func (c *LogCollection) Hits() uint64 {
+func (c *LogCollection) Hits() int64 {
 	c.Lock()
 	defer c.Unlock()
-	var sum uint64
+	var sum int64
 	for i := range c.Logs {
 		sum += c.Logs[i].GetHits()
 	}
 	return sum
 }
 
-func (c *LogCollection) Misses() uint64 {
+func (c *LogCollection) Misses() int64 {
 	c.Lock()
 	defer c.Unlock()
-	var sum uint64
+	var sum int64
 	for i := range c.Logs {
 		sum += c.Logs[i].GetMisses()
 	}

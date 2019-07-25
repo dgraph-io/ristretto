@@ -41,8 +41,6 @@ type Policy interface {
 	Has(string) bool
 	// Del deletes the key from the Policy.
 	Del(string)
-	// Res is a reset operation and maintains metadata freshness.
-	Reset()
 	// Cap returns the available capacity.
 	Cap() int64
 	Log() *PolicyLog
@@ -86,9 +84,8 @@ func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
 		return nil, true
 	}
 	// Calculate how much room do we have in the cache.
-	// TODO: Work here to change all costs to int64.
 	room := p.evict.roomLeft(cost)
-	if room <= 0 {
+	if room >= 0 {
 		// There's room in the cache.
 		p.evict.add(key, cost)
 		return nil, true
@@ -99,11 +96,12 @@ func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
 	// TODO: perhaps we should use a min heap here. Right now our time complexity is N for finding
 	// the min. Min heap should bring it down to O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
-	// victims contains keys that have already been evicted
+
+	// Victims contains keys that have already been evicted
 	var victims []string
-	// delete victims until there's enough space or a minKey is found that has
-	// more hits than incoming item
-	for ; room > 0; room = p.evict.roomLeft(cost) {
+	// Delete victims until there's enough space or a minKey is found that has
+	// more hits than incoming item.
+	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
 		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
@@ -143,12 +141,6 @@ func (p *defaultPolicy) Del(key string) {
 	p.evict.del(key)
 }
 
-func (p *defaultPolicy) Reset() {
-	p.Lock()
-	defer p.Unlock()
-	p.admit.Reset()
-}
-
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
 	defer p.Unlock()
@@ -174,7 +166,7 @@ func newSampledLFU(numCounters, maxCost int64) *sampledLFU {
 }
 
 func (p *sampledLFU) roomLeft(cost int64) int64 {
-	return int64((p.used + cost) - p.size)
+	return p.size - (p.used + cost)
 }
 
 func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
@@ -202,9 +194,12 @@ func (p *sampledLFU) add(key string, cost int64) {
 
 // tinyLFU is an admission helper that keeps track of access frequency using
 // tiny (4-bit) counters in the form of a count-min sketch.
+// tinyLFU is NOT thread safe.
 type tinyLFU struct {
-	freq *cmSketch
-	door *z.Bloom
+	freq    *cmSketch
+	door    *z.Bloom
+	incrs   int64
+	resetAt int64
 }
 
 func newTinyLFU(numCounters int64) *tinyLFU {
@@ -236,9 +231,14 @@ func (p *tinyLFU) Increment(key string) {
 		// increment count-min counter if doorkeeper bit is already set.
 		p.freq.Increment(hash)
 	}
+	p.incrs++
+	if p.incrs >= p.resetAt {
+		p.incrs = p.resetAt / 2
+		p.reset()
+	}
 }
 
-func (p *tinyLFU) Reset() {
+func (p *tinyLFU) reset() {
 	// clears doorkeeper bits
 	p.door.Clear()
 	// halves count-min counters
@@ -320,9 +320,6 @@ func (p *Clairvoyant) Del(key string) {
 	p.Lock()
 	defer p.Unlock()
 	delete(p.access, key)
-}
-
-func (p *Clairvoyant) Reset() {
 }
 
 func (p *Clairvoyant) Cap() int64 {
@@ -424,10 +421,6 @@ func (r *recorder) Has(key string) bool {
 
 func (r *recorder) Del(key string) {
 	r.policy.Del(key)
-}
-
-func (r *recorder) Reset() {
-	r.policy.Reset()
 }
 
 func (r *recorder) Cap() int64 {

@@ -43,10 +43,9 @@ type BenchRistretto struct {
 func NewBenchRistretto(capacity int, track bool) Cache {
 	return &BenchRistretto{
 		cache: ristretto.NewCache(&ristretto.Config{
-			CacheSize:  uint64(capacity),
-			BufferSize: uint64(capacity) / 16,
-			Policy:     ristretto.NewTinyLFU,
-			Log:        track,
+			NumCounters: int64(10 * capacity),
+			MaxCost:     int64(capacity),
+			Log:         track,
 		}),
 	}
 }
@@ -56,7 +55,7 @@ func (c *BenchRistretto) Get(key string) interface{} {
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
-	c.cache.Set(key, value)
+	c.cache.Set(key, value, 1)
 }
 
 func (c *BenchRistretto) Del(key string) {

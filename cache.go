@@ -16,10 +16,6 @@
 
 package ristretto
 
-import (
-	"sync/atomic"
-)
-
 // Cache ties everything together. The three main components are:
 //
 //     1) The hash map: this is the Map interface.
@@ -30,12 +26,12 @@ import (
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	data   store
-	policy Policy
-	buffer *ringBuffer
-	notify func(string)
-	used   int64
-	size   int64
+	data    store
+	policy  Policy
+	buffer  *ringBuffer
+	notify  func(string)
+	gets    int64
+	resetAt int64
 }
 
 type Config struct {
@@ -73,8 +69,8 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		notify: config.OnEvict,
-		size:   config.NumCounters,
+		notify:  config.OnEvict,
+		resetAt: config.NumCounters,
 	}
 }
 
@@ -90,16 +86,11 @@ func (c *Cache) Set(key string, val interface{}, cost int64) ([]string, bool) {
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
-		atomic.AddInt64(&c.used, -1)
 		if c.notify != nil {
 			c.notify(victim)
 		}
 	}
 	c.data.Set(key, val)
-	if atomic.AddInt64(&c.used, 1) == c.size {
-		atomic.StoreInt64(&c.used, c.size/2)
-		c.policy.Reset()
-	}
 	return victims, true
 }
 

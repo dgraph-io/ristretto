@@ -47,8 +47,8 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		notify: config.OnEvict,
-		size:   config.NumCounters,
+		notify:  config.OnEvict,
+		resetAt: config.NumCounters,
 	}
 }
 
