@@ -22,8 +22,6 @@ import (
 	"time"
 )
 
-type ringItem string
-
 const (
 	ringLossy byte = iota
 	ringLossless
@@ -32,13 +30,13 @@ const (
 // ringConsumer is the user-defined object responsible for receiving and
 // processing items in batches when buffers are drained.
 type ringConsumer interface {
-	Push([]ringItem)
+	Push([]string)
 }
 
 // ringStripe is a singular ring buffer that is not concurrent safe.
 type ringStripe struct {
 	consumer ringConsumer
-	data     []ringItem
+	data     []string
 	head     int
 	capacity int
 	busy     int32
@@ -47,14 +45,14 @@ type ringStripe struct {
 func newRingStripe(config *ringConfig) *ringStripe {
 	return &ringStripe{
 		consumer: config.Consumer,
-		data:     make([]ringItem, config.Capacity),
+		data:     make([]string, config.Capacity),
 		capacity: int(config.Capacity),
 	}
 }
 
 // Push appends an item in the ring buffer and drains (copies items and
 // sends to Consumer) if full.
-func (s *ringStripe) Push(item ringItem) {
+func (s *ringStripe) Push(item string) {
 	s.data[s.head] = item
 	s.head++
 	// if we should drain
@@ -80,7 +78,7 @@ type ringConfig struct {
 type ringBuffer struct {
 	stripes []*ringStripe
 	pool    *sync.Pool
-	push    func(*ringBuffer, ringItem)
+	push    func(*ringBuffer, string)
 	rand    int
 	mask    int
 }
@@ -121,16 +119,16 @@ func newRingBuffer(ringType byte, config *ringConfig) *ringBuffer {
 
 // Push adds an element to one of the internal stripes and possibly drains if
 // the stripe becomes full.
-func (b *ringBuffer) Push(item ringItem) { b.push(b, item) }
+func (b *ringBuffer) Push(item string) { b.push(b, item) }
 
-func pushLossy(b *ringBuffer, item ringItem) {
+func pushLossy(b *ringBuffer, item string) {
 	// reuse or create a new stripe
 	stripe := b.pool.Get().(*ringStripe)
 	stripe.Push(item)
 	b.pool.Put(stripe)
 }
 
-func pushLossless(b *ringBuffer, item ringItem) {
+func pushLossless(b *ringBuffer, item string) {
 	// try to find an available stripe
 	for i := 0; ; i = (i + 1) & b.mask {
 		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {

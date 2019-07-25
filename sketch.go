@@ -26,26 +26,13 @@ package ristretto
 
 import (
 	"fmt"
-	"hash"
-	"hash/fnv"
 )
-
-// sketch is a collection of approximate frequency counters.
-type sketch interface {
-	// Increment increments the count(ers) for the specified key.
-	Increment(string)
-	// Estimate returns the value of the specified key.
-	Estimate(string) uint64
-	// Reset halves all counter values.
-	Reset()
-}
 
 // cmSketch is a Count-Min sketch implementation with 4-bit counters, heavily
 // based on Damian Gryski's CM4 [1].
 //
 // [1]: https://github.com/dgryski/go-tinylfu/blob/master/cm4.go
 type cmSketch struct {
-	algo hash.Hash64
 	rows [cmDepth]cmRow
 	mask uint64
 }
@@ -63,7 +50,6 @@ func newCmSketch(numCounters uint64) *cmSketch {
 	numCounters = next2Power(numCounters)
 	// sketch with FNV-64a hashing algorithm
 	sketch := &cmSketch{
-		algo: fnv.New64a(),
 		mask: numCounters - 1,
 	}
 	// initialize rows of counters
@@ -73,30 +59,16 @@ func newCmSketch(numCounters uint64) *cmSketch {
 	return sketch
 }
 
-func (s *cmSketch) hash(key string) uint64 {
-	defer s.algo.Reset()
-	if _, err := s.algo.Write([]byte(key)); err != nil {
-		panic(err)
-	}
-	return s.algo.Sum64()
-}
-
-func (s *cmSketch) Increment(key string) {
-	s.increment(s.hash(key))
-}
-
-func (s *cmSketch) increment(hashed uint64) {
+// Increment increments the count(ers) for the specified key.
+func (s *cmSketch) Increment(hashed uint64) {
 	for i := range s.rows {
 		// increment the counter on each row
 		s.rows[i].increment(hashed & s.mask)
 	}
 }
 
-func (s *cmSketch) Estimate(key string) uint64 {
-	return s.estimate(s.hash(key))
-}
-
-func (s *cmSketch) estimate(hashed uint64) uint64 {
+// Estimate returns the value of the specified key.
+func (s *cmSketch) Estimate(hashed uint64) uint64 {
 	min := byte(255)
 	for i := range s.rows {
 		// find the smallest counter value from all the rows
@@ -107,6 +79,7 @@ func (s *cmSketch) estimate(hashed uint64) uint64 {
 	return uint64(min)
 }
 
+// Reset halves all counter values.
 func (s *cmSketch) Reset() {
 	for _, r := range s.rows {
 		r.reset()

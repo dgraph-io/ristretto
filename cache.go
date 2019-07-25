@@ -79,7 +79,7 @@ func NewCache(config *Config) *Cache {
 }
 
 func (c *Cache) Get(key string) interface{} {
-	c.buffer.Push(ringItem(key))
+	c.buffer.Push(key)
 	return c.data.Get(key)
 }
 

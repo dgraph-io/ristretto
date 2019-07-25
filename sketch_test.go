@@ -20,60 +20,68 @@ import (
 	"testing"
 )
 
+// sketch is a collection of approximate frequency counters.
+type sketch interface {
+	// Increment increments the count(ers) for the specified key.
+	Increment(uint64)
+	// Estimate returns the value of the specified key.
+	Estimate(uint64) uint64
+	// Reset halves all counter values.
+	Reset()
+}
+
 type TestSketch interface {
 	sketch
-	increment(uint64)
-	estimate(uint64) uint64
 	string() string
 }
 
-func GenerateBloomTest(create func() TestSketch) func(t *testing.T) {
+func GenerateSketchTest(create func() TestSketch) func(t *testing.T) {
 	return func(t *testing.T) {
 		s := create()
-		s.increment(0)
-		s.increment(0)
-		s.increment(0)
-		s.increment(0)
-		if s.estimate(0) != 4 {
+		s.Increment(0)
+		s.Increment(0)
+		s.Increment(0)
+		s.Increment(0)
+		if s.Estimate(0) != 4 {
 			t.Fatal("increment/estimate error")
 		}
-		if s.Estimate("*") != 0 {
+		if s.Estimate(1) != 0 {
 			t.Fatal("neighbor corruption")
 		}
 		s.Reset()
-		if s.estimate(0) != 2 {
+		if s.Estimate(0) != 2 {
 			t.Fatal("reset error")
 		}
-		if s.estimate(9) != 0 {
+		if s.Estimate(9) != 0 {
 			t.Fatal("neighbor corruption")
 		}
 	}
 }
 
 func TestCM(t *testing.T) {
-	GenerateBloomTest(func() TestSketch { return newCmSketch(16) })(t)
+	GenerateSketchTest(func() TestSketch { return newCmSketch(16) })(t)
 }
 
-func GenerateBloomBenchmark(create func() TestSketch) func(b *testing.B) {
+func GenerateSketchBenchmark(create func() TestSketch) func(b *testing.B) {
 	return func(b *testing.B) {
 		s := create()
 		b.Run("increment", func(b *testing.B) {
 			b.SetBytes(1)
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				s.increment(1)
+				s.Increment(1)
 			}
 		})
 		b.Run("estimate", func(b *testing.B) {
 			b.SetBytes(1)
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				s.estimate(1)
+				s.Estimate(1)
 			}
 		})
 	}
 }
 
 func BenchmarkCM(b *testing.B) {
-	GenerateBloomBenchmark(func() TestSketch { return newCmSketch(16) })(b)
+	GenerateSketchBenchmark(func() TestSketch { return newCmSketch(16) })(b)
 }

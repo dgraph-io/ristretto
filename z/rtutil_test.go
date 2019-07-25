@@ -2,6 +2,7 @@ package z
 
 import (
 	"crypto/rand"
+	"hash/fnv"
 	"testing"
 
 	"github.com/dgryski/go-farm"
@@ -28,6 +29,17 @@ func BenchmarkFarm(b *testing.B) {
 	rand.Read(buf)
 	for i := 0; i < b.N; i++ {
 		farm.Fingerprint64(buf)
+	}
+}
+
+func BenchmarkFnv(b *testing.B) {
+	buf := make([]byte, 64)
+	rand.Read(buf)
+	f := fnv.New64a()
+	for i := 0; i < b.N; i++ {
+		f.Write(buf)
+		f.Sum64()
+		f.Reset()
 	}
 }
 

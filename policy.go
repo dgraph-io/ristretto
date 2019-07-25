@@ -68,7 +68,7 @@ type policyPair struct {
 	cost uint64
 }
 
-func (p *policy) Push(keys []ringItem) {
+func (p *policy) Push(keys []string) {
 	p.Lock()
 	defer p.Unlock()
 	p.admi.Push(keys)
@@ -201,7 +201,7 @@ func (p *sampledLFU) add(key string, cost uint64) {
 // tinyLFU is an admission helper that keeps track of access frequency using
 // tiny (4-bit) counters in the form of a count-min sketch.
 type tinyLFU struct {
-	freq sketch
+	freq *cmSketch
 	door *z.Bloom
 }
 
@@ -212,15 +212,16 @@ func newTinyLFU(numCounters uint64) *tinyLFU {
 	}
 }
 
-func (p *tinyLFU) Push(keys []ringItem) {
+func (p *tinyLFU) Push(keys []string) {
 	for _, key := range keys {
-		p.Increment(string(key))
+		p.Increment(key)
 	}
 }
 
 func (p *tinyLFU) Estimate(key string) uint64 {
-	hits := p.freq.Estimate(key)
-	if p.door.HasString(key) {
+	hash := z.AESHashString(key)
+	hits := p.freq.Estimate(hash)
+	if p.door.Has(hash) {
 		hits += 1
 	}
 	return hits
@@ -231,7 +232,7 @@ func (p *tinyLFU) Increment(key string) {
 	hash := z.AESHashString(key)
 	if !p.door.AddIfNotHas(hash) {
 		// increment count-min counter if doorkeeper bit is already set
-		p.freq.Increment(key)
+		p.freq.Increment(hash)
 	}
 }
 
@@ -291,7 +292,7 @@ func (p *Clairvoyant) record(key string) {
 	p.future = append(p.future, key)
 }
 
-func (p *Clairvoyant) Push(keys []ringItem) {
+func (p *Clairvoyant) Push(keys []string) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
@@ -398,7 +399,7 @@ func NewRecorder(policy Policy, data store) Policy {
 	}
 }
 
-func (r *recorder) Push(keys []ringItem) {
+func (r *recorder) Push(keys []string) {
 	r.policy.Push(keys)
 }
 
