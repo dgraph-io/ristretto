@@ -35,7 +35,7 @@ type Policy interface {
 	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
-	// was added.
+	// was added. If it returns true, the key should be stored in cache.
 	Add(string, uint64) ([]string, bool)
 	// Has returns true if the key exists in the Policy.
 	Has(string) bool
@@ -49,18 +49,18 @@ type Policy interface {
 }
 
 func newPolicy(numCounters, maxCost uint64) Policy {
-	return &policy{
-		admi: newTinyLFU(numCounters),
-		evic: newSampledLFU(maxCost, numCounters),
+	return &defaultPolicy{
+		admit: newTinyLFU(numCounters),
+		evict: newSampledLFU(maxCost, numCounters),
 	}
 }
 
-// policy is the default policy, which is currently TinyLFU admission with
+// defaultPolicy is the default defaultPolicy, which is currently TinyLFU admission with
 // sampledLFU eviction.
-type policy struct {
+type defaultPolicy struct {
 	sync.Mutex
-	admi *tinyLFU
-	evic *sampledLFU
+	admit *tinyLFU
+	evict *sampledLFU
 }
 
 type policyPair struct {
@@ -68,46 +68,49 @@ type policyPair struct {
 	cost uint64
 }
 
-func (p *policy) Push(keys []string) {
+func (p *defaultPolicy) Push(keys []string) {
 	p.Lock()
 	defer p.Unlock()
-	p.admi.Push(keys)
+	p.admit.Push(keys)
 }
 
-func (p *policy) Add(key string, cost uint64) ([]string, bool) {
+func (p *defaultPolicy) Add(key string, cost uint64) ([]string, bool) {
 	p.Lock()
 	defer p.Unlock()
+
 	// can't add an item bigger than entire cache
-	if cost > p.evic.size {
+	if cost > p.evict.size {
 		return nil, false
 	}
-	if _, exists := p.evic.data[key]; exists {
-		p.admi.Increment(key)
+	if _, exists := p.evict.keyCosts[key]; exists {
 		return nil, true
 	}
-	// calculate byte overflow if the incoming item was added
-	overflow := p.evic.getOverflow(cost)
-	if overflow <= 0 {
-		// there's room in the cache
-		p.evic.add(key, cost)
+	// Calculate how much room do we have in the cache.
+	// TODO: Work here to change all costs to int64.
+	room := p.evict.roomLeft(cost)
+	if room <= 0 {
+		// There's room in the cache.
+		p.evict.add(key, cost)
 		return nil, true
 	}
 	// incHits is the hit count for the incoming item
-	incHits := p.admi.Estimate(key)
+	incHits := p.admit.Estimate(key)
 	// sample is the eviction candidate pool to be filled via random sampling
+	// TODO: perhaps we should use a min heap here. Right now our time complexity is N for finding
+	// the min. Min heap should bring it down to O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
 	// victims contains keys that have already been evicted
-	victims := make([]string, 0)
+	var victims []string
 	// delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item
-	for ; overflow > 0; overflow = p.evic.getOverflow(cost) {
+	for ; room > 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
-		sample = append(sample, p.evic.getSample(lfuSample-uint64(len(sample)))...)
+		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
 		minKey, minHits, minId := "", uint64(math.MaxUint64), 0
 		for i, pair := range sample {
 			// look up hit count for sample key
-			if hits := p.admi.Estimate(pair.key); hits < minHits {
+			if hits := p.admit.Estimate(pair.key); hits < minHits {
 				minKey, minHits, minId = pair.key, hits, i
 			}
 		}
@@ -116,85 +119,84 @@ func (p *policy) Add(key string, cost uint64) ([]string, bool) {
 			return victims, false
 		}
 		// delete the victim from metadata
-		p.evic.del(minKey)
+		p.evict.del(minKey)
 		// delete the victim from sample
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
 		victims = append(victims, minKey)
 	}
-	p.evic.add(key, cost)
+	p.evict.add(key, cost)
 	return victims, true
 }
 
-func (p *policy) Has(key string) bool {
+func (p *defaultPolicy) Has(key string) bool {
 	p.Lock()
 	defer p.Unlock()
-	_, exists := p.evic.data[key]
+	_, exists := p.evict.keyCosts[key]
 	return exists
 }
 
-func (p *policy) Del(key string) {
+func (p *defaultPolicy) Del(key string) {
 	p.Lock()
 	defer p.Unlock()
-	p.evic.del(key)
+	p.evict.del(key)
 }
 
-func (p *policy) Res() {
+func (p *defaultPolicy) Res() {
 	p.Lock()
 	defer p.Unlock()
-	p.admi.Reset()
+	p.admit.Reset()
 }
 
-func (p *policy) Cap() int64 {
+func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
 	defer p.Unlock()
-	return int64(p.evic.size - p.evic.used)
+	return int64(p.evict.size - p.evict.used)
 }
 
-func (p *policy) Log() *PolicyLog {
+func (p *defaultPolicy) Log() *PolicyLog {
 	return nil
 }
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	data map[string]uint64
-	size uint64
-	used uint64
+	keyCosts map[string]uint64
+	size     uint64
+	used     uint64
 }
 
 func newSampledLFU(numCounters, maxCost uint64) *sampledLFU {
 	return &sampledLFU{
-		data: make(map[string]uint64, numCounters),
-		size: maxCost,
+		keyCosts: make(map[string]uint64, numCounters),
+		size:     maxCost,
 	}
 }
 
-func (p *sampledLFU) getOverflow(cost uint64) int64 {
+func (p *sampledLFU) roomLeft(cost uint64) int64 {
 	return int64((p.used + cost) - p.size)
 }
 
-func (p *sampledLFU) getSample(n uint64) []*policyPair {
-	if n == 0 {
-		return nil
+func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
+	if len(in) >= lfuSample {
+		return in
 	}
-	pairs := make([]*policyPair, 0, n)
-	for key, cost := range p.data {
-		pairs = append(pairs, &policyPair{key, cost})
-		if len(pairs) == cap(pairs) {
-			break
+	for key, cost := range p.keyCosts {
+		in = append(in, &policyPair{key, cost})
+		if len(in) >= lfuSample {
+			return in
 		}
 	}
-	return pairs
+	return in
 }
 
 func (p *sampledLFU) del(key string) {
-	p.used -= p.data[key]
-	delete(p.data, key)
+	p.used -= p.keyCosts[key]
+	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key string, cost uint64) {
-	p.data[key] = cost
+	p.keyCosts[key] = cost
 	p.used += cost
 }
 
@@ -230,8 +232,8 @@ func (p *tinyLFU) Estimate(key string) uint64 {
 func (p *tinyLFU) Increment(key string) {
 	// flip doorkeeper bit if not already
 	hash := z.AESHashString(key)
-	if !p.door.AddIfNotHas(hash) {
-		// increment count-min counter if doorkeeper bit is already set
+	if added := p.door.AddIfNotHas(hash); !added {
+		// increment count-min counter if doorkeeper bit is already set.
 		p.freq.Increment(hash)
 	}
 }
