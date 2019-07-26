@@ -36,11 +36,11 @@ type Policy interface {
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added. If it returns true, the key should be stored in cache.
-	Add(string, int64) ([]string, bool)
+	Add(uint64, int64) ([]uint64, bool)
 	// Has returns true if the key exists in the Policy.
-	Has(string) bool
+	Has(uint64) bool
 	// Del deletes the key from the Policy.
-	Del(string)
+	Del(uint64)
 	// Cap returns the available capacity.
 	Cap() int64
 	Log() *PolicyLog
@@ -53,8 +53,8 @@ func newPolicy(numCounters, maxCost int64) Policy {
 	}
 }
 
-// defaultPolicy is the default defaultPolicy, which is currently TinyLFU admission with
-// sampledLFU eviction.
+// defaultPolicy is the default defaultPolicy, which is currently TinyLFU
+// admission with sampledLFU eviction.
 type defaultPolicy struct {
 	sync.Mutex
 	admit *tinyLFU
@@ -62,17 +62,17 @@ type defaultPolicy struct {
 }
 
 type policyPair struct {
-	key  string
+	key  uint64
 	cost int64
 }
 
-func (p *defaultPolicy) Push(keys []string) {
+func (p *defaultPolicy) Push(keys []uint64) {
 	p.Lock()
 	defer p.Unlock()
 	p.admit.Push(keys)
 }
 
-func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
+func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	p.Lock()
 	defer p.Unlock()
 
@@ -93,19 +93,21 @@ func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
 	// incHits is the hit count for the incoming item
 	incHits := p.admit.Estimate(key)
 	// sample is the eviction candidate pool to be filled via random sampling
-	// TODO: perhaps we should use a min heap here. Right now our time complexity is N for finding
-	// the min. Min heap should bring it down to O(lg N).
+	//
+	// TODO: perhaps we should use a min heap here. Right now our time
+	// complexity is N for finding the min. Min heap should bring it down to
+	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
 
 	// Victims contains keys that have already been evicted
-	var victims []string
+	var victims []uint64
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
 		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
-		minKey, minHits, minId := "", int64(math.MaxInt64), 0
+		minKey, minHits, minId := uint64(0), int64(math.MaxInt64), 0
 		for i, pair := range sample {
 			// look up hit count for sample key
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
@@ -128,14 +130,14 @@ func (p *defaultPolicy) Add(key string, cost int64) ([]string, bool) {
 	return victims, true
 }
 
-func (p *defaultPolicy) Has(key string) bool {
+func (p *defaultPolicy) Has(key uint64) bool {
 	p.Lock()
 	defer p.Unlock()
 	_, exists := p.evict.keyCosts[key]
 	return exists
 }
 
-func (p *defaultPolicy) Del(key string) {
+func (p *defaultPolicy) Del(key uint64) {
 	p.Lock()
 	defer p.Unlock()
 	p.evict.del(key)
@@ -153,14 +155,14 @@ func (p *defaultPolicy) Log() *PolicyLog {
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	keyCosts map[string]int64
+	keyCosts map[uint64]int64
 	size     int64
 	used     int64
 }
 
 func newSampledLFU(numCounters, maxCost int64) *sampledLFU {
 	return &sampledLFU{
-		keyCosts: make(map[string]int64, numCounters),
+		keyCosts: make(map[uint64]int64, numCounters),
 		size:     maxCost,
 	}
 }
@@ -182,12 +184,12 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 	return in
 }
 
-func (p *sampledLFU) del(key string) {
+func (p *sampledLFU) del(key uint64) {
 	p.used -= p.keyCosts[key]
 	delete(p.keyCosts, key)
 }
 
-func (p *sampledLFU) add(key string, cost int64) {
+func (p *sampledLFU) add(key uint64, cost int64) {
 	p.keyCosts[key] = cost
 	p.used += cost
 }
@@ -210,27 +212,25 @@ func newTinyLFU(numCounters int64) *tinyLFU {
 	}
 }
 
-func (p *tinyLFU) Push(keys []string) {
+func (p *tinyLFU) Push(keys []uint64) {
 	for _, key := range keys {
 		p.Increment(key)
 	}
 }
 
-func (p *tinyLFU) Estimate(key string) int64 {
-	hash := z.AESHashString(key)
-	hits := p.freq.Estimate(hash)
-	if p.door.Has(hash) {
+func (p *tinyLFU) Estimate(key uint64) int64 {
+	hits := p.freq.Estimate(key)
+	if p.door.Has(key) {
 		hits += 1
 	}
 	return hits
 }
 
-func (p *tinyLFU) Increment(key string) {
+func (p *tinyLFU) Increment(key uint64) {
 	// flip doorkeeper bit if not already
-	hash := z.AESHashString(key)
-	if added := p.door.AddIfNotHas(hash); !added {
+	if added := p.door.AddIfNotHas(key); !added {
 		// increment count-min counter if doorkeeper bit is already set.
-		p.freq.Increment(hash)
+		p.freq.Increment(key)
 	}
 	p.incrs++
 	if p.incrs >= p.resetAt {
@@ -259,16 +259,16 @@ type Clairvoyant struct {
 	sync.Mutex
 	time     int64
 	log      *PolicyLog
-	access   map[string][]int64
+	access   map[uint64][]int64
 	capacity int64
-	future   []string
+	future   []uint64
 }
 
 func newClairvoyant(numCounters, maxCost int64) Policy {
 	return &Clairvoyant{
 		log:      &PolicyLog{},
 		capacity: numCounters,
-		access:   make(map[string][]int64, numCounters),
+		access:   make(map[uint64][]int64, numCounters),
 	}
 }
 
@@ -287,7 +287,7 @@ func (p *Clairvoyant) distance(start int64, times []int64) (int64, bool) {
 	return min, good
 }
 
-func (p *Clairvoyant) record(key string) {
+func (p *Clairvoyant) record(key uint64) {
 	p.time++
 	if p.access[key] == nil {
 		p.access[key] = make([]int64, 0)
@@ -296,29 +296,29 @@ func (p *Clairvoyant) record(key string) {
 	p.future = append(p.future, key)
 }
 
-func (p *Clairvoyant) Push(keys []string) {
+func (p *Clairvoyant) Push(keys []uint64) {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
-		p.record(string(key))
+		p.record(key)
 	}
 }
 
-func (p *Clairvoyant) Add(key string, cost int64) ([]string, bool) {
+func (p *Clairvoyant) Add(key uint64, cost int64) ([]uint64, bool) {
 	p.Lock()
 	defer p.Unlock()
 	p.record(key)
 	return nil, true
 }
 
-func (p *Clairvoyant) Has(key string) bool {
+func (p *Clairvoyant) Has(key uint64) bool {
 	p.Lock()
 	defer p.Unlock()
 	_, exists := p.access[key]
 	return exists
 }
 
-func (p *Clairvoyant) Del(key string) {
+func (p *Clairvoyant) Del(key uint64) {
 	p.Lock()
 	defer p.Unlock()
 	delete(p.access, key)
@@ -332,7 +332,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	p.Lock()
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
-	data := make(map[string]struct{}, p.capacity)
+	data := make(map[uint64]struct{}, p.capacity)
 	size := int64(0)
 	for i, key := range p.future {
 		// check if already exists
@@ -347,7 +347,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 			//
 			// collect item distances
 			good := false
-			distance := make(map[string]int64, p.capacity)
+			distance := make(map[uint64]int64, p.capacity)
 			for k := range data {
 				distance[k], good = p.distance(int64(i), p.access[k])
 				if !good {
@@ -361,7 +361,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 				}
 			}
 			// find the largest distance
-			maxDistance, maxKey, c := int64(0), "", 0
+			maxDistance, maxKey, c := int64(0), uint64(0), 0
 			for k, d := range distance {
 				if c == 0 || d > maxDistance {
 					maxKey = k
@@ -400,11 +400,11 @@ func NewRecorder(policy Policy, data store) Policy {
 	}
 }
 
-func (r *recorder) Push(keys []string) {
+func (r *recorder) Push(keys []uint64) {
 	r.policy.Push(keys)
 }
 
-func (r *recorder) Add(key string, cost int64) ([]string, bool) {
+func (r *recorder) Add(key uint64, cost int64) ([]uint64, bool) {
 	if r.data.Get(key) != nil {
 		r.log.Hit()
 	} else {
@@ -417,11 +417,11 @@ func (r *recorder) Add(key string, cost int64) ([]string, bool) {
 	return victims, added
 }
 
-func (r *recorder) Has(key string) bool {
+func (r *recorder) Has(key uint64) bool {
 	return r.policy.Has(key)
 }
 
-func (r *recorder) Del(key string) {
+func (r *recorder) Del(key uint64) {
 	r.policy.Del(key)
 }
 

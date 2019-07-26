@@ -30,13 +30,13 @@ const (
 // ringConsumer is the user-defined object responsible for receiving and
 // processing items in batches when buffers are drained.
 type ringConsumer interface {
-	Push([]string)
+	Push([]uint64)
 }
 
 // ringStripe is a singular ring buffer that is not concurrent safe.
 type ringStripe struct {
 	consumer ringConsumer
-	data     []string
+	data     []uint64
 	capacity int
 	busy     int32
 }
@@ -44,14 +44,14 @@ type ringStripe struct {
 func newRingStripe(config *ringConfig) *ringStripe {
 	return &ringStripe{
 		consumer: config.Consumer,
-		data:     make([]string, 0, config.Capacity),
+		data:     make([]uint64, 0, config.Capacity),
 		capacity: int(config.Capacity),
 	}
 }
 
 // Push appends an item in the ring buffer and drains (copies items and
 // sends to Consumer) if full.
-func (s *ringStripe) Push(item string) {
+func (s *ringStripe) Push(item uint64) {
 	s.data = append(s.data, item)
 	// if we should drain
 	if len(s.data) >= s.capacity {
@@ -76,7 +76,7 @@ type ringConfig struct {
 type ringBuffer struct {
 	stripes []*ringStripe
 	pool    *sync.Pool
-	push    func(*ringBuffer, string)
+	push    func(*ringBuffer, uint64)
 	rand    int
 	mask    int
 }
@@ -117,16 +117,18 @@ func newRingBuffer(ringType byte, config *ringConfig) *ringBuffer {
 
 // Push adds an element to one of the internal stripes and possibly drains if
 // the stripe becomes full.
-func (b *ringBuffer) Push(item string) { b.push(b, item) }
+func (b *ringBuffer) Push(item uint64) {
+	b.push(b, item)
+}
 
-func pushLossy(b *ringBuffer, item string) {
+func pushLossy(b *ringBuffer, item uint64) {
 	// reuse or create a new stripe
 	stripe := b.pool.Get().(*ringStripe)
 	stripe.Push(item)
 	b.pool.Put(stripe)
 }
 
-func pushLossless(b *ringBuffer, item string) {
+func pushLossless(b *ringBuffer, item uint64) {
 	// try to find an available stripe
 	for i := 0; ; i = (i + 1) & b.mask {
 		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {

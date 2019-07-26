@@ -29,28 +29,28 @@ const (
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Push(items []string) {}
+func (c *BaseConsumer) Push(items []uint64) {}
 
 type TestConsumer struct {
-	push func([]string)
+	push func([]uint64)
 }
 
-func (c *TestConsumer) Push(items []string) { c.push(items) }
+func (c *TestConsumer) Push(items []uint64) { c.push(items) }
 
 func TestRingLossy(t *testing.T) {
 	drainCount := 0
 	buffer := newRingBuffer(ringLossy, &ringConfig{
 		Consumer: &TestConsumer{
-			push: func(items []string) {
+			push: func(items []uint64) {
 				drainCount++
 			},
 		},
 		Capacity: 4,
 	})
-	buffer.Push(string("1"))
-	buffer.Push(string("2"))
-	buffer.Push(string("3"))
-	buffer.Push(string("4"))
+	buffer.Push(1)
+	buffer.Push(2)
+	buffer.Push(3)
+	buffer.Push(4)
 	if drainCount != 1 {
 		t.Fatal("drain error")
 	}
@@ -61,7 +61,7 @@ func BenchmarkRingLossy(b *testing.B) {
 		Consumer: &BaseConsumer{},
 		Capacity: RING_CAPACITY,
 	})
-	item := string("1")
+	item := uint64(1)
 	b.Run("single", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {
@@ -84,7 +84,7 @@ func BenchmarkRingLossless(b *testing.B) {
 		Stripes:  RING_STRIPES,
 		Capacity: RING_CAPACITY,
 	})
-	item := string("1")
+	item := uint64(1)
 	b.Run("single", func(b *testing.B) {
 		b.SetBytes(1)
 		for n := 0; n < b.N; n++ {

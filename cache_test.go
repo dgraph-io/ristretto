@@ -47,7 +47,6 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		notify: config.OnEvict,
 	}
 }
 
@@ -128,7 +127,7 @@ func TestCacheBasic(t *testing.T) {
 		NumCounters: 4,
 		BufferItems: 1,
 	})
-	if _, added := c.Set("1", 1, 1); !added {
+	if added := c.Set("1", 1, 1); !added {
 		t.Fatal("set error")
 	}
 	if value := c.Get("1"); value.(int) != 1 {
@@ -143,32 +142,12 @@ func TestCacheSetGet(t *testing.T) {
 	})
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
-		if victims, added := c.Set(key, i, 1); added {
-			if i > 4 && victims == nil {
-				t.Fatal("no eviction")
-			}
+		if added := c.Set(key, i, 1); added {
 			value := c.Get(key)
 			if value == nil || value.(int) != i {
 				t.Fatal("set/get error")
 			}
 		}
-	}
-}
-
-func TestCacheOnEvict(t *testing.T) {
-	v := make([]string, 0)
-	c := NewCache(&Config{
-		NumCounters: 4,
-		BufferItems: 1,
-		OnEvict: func(key string) {
-			v = append(v, key)
-		},
-	})
-	for i := 0; i < 16; i++ {
-		c.Set(fmt.Sprintf("%d", i), i, 1)
-	}
-	if len(v) != 12 {
-		t.Fatal("onevict callback error")
 	}
 }
 
