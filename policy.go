@@ -80,9 +80,11 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	if cost > p.evict.maxCost {
 		return nil, false
 	}
-	if _, exists := p.evict.keyCosts[key]; exists {
+	if has := p.evict.updateIfHas(key, cost); has {
 		return nil, true
 	}
+
+	// We do not have this key.
 	// Calculate how much room do we have in the cache.
 	room := p.evict.roomLeft(cost)
 	if room >= 0 {
@@ -192,6 +194,17 @@ func (p *sampledLFU) del(key uint64) {
 func (p *sampledLFU) add(key uint64, cost int64) {
 	p.keyCosts[key] = cost
 	p.used += cost
+}
+
+func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
+	if prev, exists := p.keyCosts[key]; exists {
+		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
+		// if the updated cost causes the size to grow beyond maxCost.
+		p.used += cost - prev
+		p.keyCosts[key] = cost
+		return true
+	}
+	return false
 }
 
 // tinyLFU is an admission helper that keeps track of access frequency using
