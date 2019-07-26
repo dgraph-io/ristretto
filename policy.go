@@ -234,12 +234,13 @@ func (p *tinyLFU) Increment(key string) {
 	}
 	p.incrs++
 	if p.incrs >= p.resetAt {
-		p.incrs = p.resetAt / 2
 		p.reset()
 	}
 }
 
 func (p *tinyLFU) reset() {
+	// Zero out incrs.
+	p.incrs = 0
 	// clears doorkeeper bits
 	p.door.Clear()
 	// halves count-min counters

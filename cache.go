@@ -26,12 +26,10 @@ package ristretto
 // key-value pairs in the hash map. Value is determined by the Policy, and
 // BP-Wrapper keeps the Policy fast (by batching metadata updates).
 type Cache struct {
-	data    store
-	policy  Policy
-	buffer  *ringBuffer
-	notify  func(string)
-	gets    int64
-	resetAt int64
+	data   store
+	policy Policy
+	buffer *ringBuffer
+	notify func(string)
 }
 
 type Config struct {
@@ -69,8 +67,7 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		notify:  config.OnEvict,
-		resetAt: config.NumCounters,
+		notify: config.OnEvict,
 	}
 }
 
