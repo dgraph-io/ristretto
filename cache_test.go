@@ -135,6 +135,23 @@ func TestCacheBasic(t *testing.T) {
 	}
 }
 
+func TestCacheOnEvict(t *testing.T) {
+	v := make([]uint64, 0)
+	c := NewCache(&Config{
+		NumCounters: 4,
+		BufferItems: 1,
+		OnEvict: func(key uint64) {
+			v = append(v, key)
+		},
+	})
+	for i := 0; i < 16; i++ {
+		c.Set(fmt.Sprintf("%d", i), i, 1)
+	}
+	if len(v) != 12 {
+		t.Fatal("onevict callback error")
+	}
+}
+
 func TestCacheSetGet(t *testing.T) {
 	c := NewCache(&Config{
 		NumCounters: 4,
