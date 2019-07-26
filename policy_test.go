@@ -17,7 +17,6 @@
 package ristretto
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -28,43 +27,43 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Run("uniform-push", func(t *testing.T) {
 			policy := create(iterations, iterations)
-			values := make([]string, iterations)
+			values := make([]uint64, iterations)
 			for i := range values {
-				values[i] = string(fmt.Sprintf("%d", i))
+				values[i] = uint64(i)
 			}
-			policy.Add("0", 1)
+			policy.Add(0, 1)
 			policy.Push(values)
-			if !policy.Has("0") || policy.Has("*") {
+			if !policy.Has(0) || policy.Has(999999) {
 				t.Fatal("add/push error")
 			}
 		})
 		t.Run("uniform-add", func(t *testing.T) {
 			policy := create(iterations, iterations)
 			for i := int64(0); i < iterations; i++ {
-				policy.Add(fmt.Sprintf("%d", i), 1)
+				policy.Add(uint64(i), 1)
 			}
-			if victims, added := policy.Add("*", 1); victims == nil || !added {
+			if victims, added := policy.Add(999999, 1); victims == nil || !added {
 				t.Fatal("add/eviction error")
 			}
 		})
 		t.Run("variable-push", func(t *testing.T) {
 			policy := create(iterations, iterations*4)
-			values := make([]string, iterations)
+			values := make([]uint64, iterations)
 			for i := range values {
-				values[i] = string(fmt.Sprintf("%d", i))
+				values[i] = uint64(i)
 			}
-			policy.Add("0", 1)
+			policy.Add(0, 1)
 			policy.Push(values)
-			if !policy.Has("0") || policy.Has("*") {
+			if !policy.Has(0) || policy.Has(999999) {
 				t.Fatal("add/push error")
 			}
 		})
 		t.Run("variable-add", func(t *testing.T) {
 			policy := create(iterations, iterations*4)
 			for i := int64(0); i < iterations; i++ {
-				policy.Add(fmt.Sprintf("%d", i), 4)
+				policy.Add(uint64(i), 4)
 			}
-			if victims, added := policy.Add("*", 1); victims == nil || !added {
+			if victims, added := policy.Add(999999, 1); victims == nil || !added {
 				t.Fatal("add/eviction error")
 			}
 		})

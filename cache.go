@@ -16,6 +16,8 @@
 
 package ristretto
 
+import "github.com/dgraph-io/ristretto/z"
+
 // Cache ties everything together. The three main components are:
 //
 //     1) The hash map: this is the Map interface.
@@ -29,7 +31,7 @@ type Cache struct {
 	data   store
 	policy Policy
 	buffer *ringBuffer
-	notify func(string)
+	notify func(uint64)
 }
 
 type Config struct {
@@ -41,8 +43,9 @@ type Config struct {
 	MaxCost int64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems int64
-	// OnEvict is ran for each key evicted.
-	OnEvict func(string)
+	// OnEvict is ran for each key evicted. We do not store key strings, so the
+	// param is the AESHash of the key.
+	OnEvict func(uint64)
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
 	Log bool
 }
@@ -72,14 +75,16 @@ func NewCache(config *Config) *Cache {
 }
 
 func (c *Cache) Get(key string) interface{} {
-	c.buffer.Push(key)
-	return c.data.Get(key)
+	hashed := z.AESHashString(key)
+	c.buffer.Push(hashed)
+	return c.data.Get(hashed)
 }
 
-func (c *Cache) Set(key string, val interface{}, cost int64) ([]string, bool) {
-	victims, added := c.policy.Add(key, cost)
+func (c *Cache) Set(key string, val interface{}, cost int64) bool {
+	hashed := z.AESHashString(key)
+	victims, added := c.policy.Add(hashed, cost)
 	if !added {
-		return nil, false
+		return false
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
@@ -87,13 +92,14 @@ func (c *Cache) Set(key string, val interface{}, cost int64) ([]string, bool) {
 			c.notify(victim)
 		}
 	}
-	c.data.Set(key, val)
-	return victims, true
+	c.data.Set(hashed, val)
+	return true
 }
 
 func (c *Cache) Del(key string) {
-	c.policy.Del(key)
-	c.data.Del(key)
+	hashed := z.AESHashString(key)
+	c.policy.Del(hashed)
+	c.data.Del(hashed)
 }
 
 func (c *Cache) Log() *PolicyLog {

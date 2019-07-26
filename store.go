@@ -26,12 +26,12 @@ import "sync"
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get(string) interface{}
+	Get(uint64) interface{}
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
-	Set(string, interface{})
+	Set(uint64, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del(string)
+	Del(uint64)
 	// Run applies the function parameter to random key-value pairs. No key
 	// will be visited more than once. If the function returns false, the
 	// iteration stops. If the function returns true, the iteration will
@@ -52,16 +52,16 @@ func newSyncMap() store {
 	return &syncMap{&sync.Map{}}
 }
 
-func (m *syncMap) Get(key string) interface{} {
+func (m *syncMap) Get(key uint64) interface{} {
 	value, _ := m.Load(key)
 	return value
 }
 
-func (m *syncMap) Set(key string, value interface{}) {
+func (m *syncMap) Set(key uint64, value interface{}) {
 	m.Store(key, value)
 }
 
-func (m *syncMap) Del(key string) {
+func (m *syncMap) Del(key uint64) {
 	m.Delete(key)
 }
 
@@ -71,26 +71,26 @@ func (m *syncMap) Run(f func(key, value interface{}) bool) {
 
 type lockedMap struct {
 	sync.RWMutex
-	data map[string]interface{}
+	data map[uint64]interface{}
 }
 
 func newLockedMap() *lockedMap {
-	return &lockedMap{data: make(map[string]interface{})}
+	return &lockedMap{data: make(map[uint64]interface{})}
 }
 
-func (m *lockedMap) Get(key string) interface{} {
+func (m *lockedMap) Get(key uint64) interface{} {
 	m.RLock()
 	defer m.RUnlock()
 	return m.data[key]
 }
 
-func (m *lockedMap) Set(key string, value interface{}) {
+func (m *lockedMap) Set(key uint64, value interface{}) {
 	m.Lock()
 	defer m.Unlock()
 	m.data[key] = value
 }
 
-func (m *lockedMap) Del(key string) {
+func (m *lockedMap) Del(key uint64) {
 	m.Lock()
 	defer m.Unlock()
 	delete(m.data, key)
