@@ -31,7 +31,6 @@ type Cache struct {
 	data   store
 	policy Policy
 	buffer *ringBuffer
-	notify func(uint64)
 }
 
 type Config struct {
@@ -43,9 +42,6 @@ type Config struct {
 	MaxCost int64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems int64
-	// OnEvict is ran for each key evicted. We do not store key strings, so the
-	// param is the AESHash of the key.
-	OnEvict func(uint64)
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
 	Log bool
 }
@@ -70,7 +66,6 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		notify: config.OnEvict,
 	}
 }
 
@@ -88,9 +83,6 @@ func (c *Cache) Set(key string, val interface{}, cost int64) bool {
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
-		if c.notify != nil {
-			c.notify(victim)
-		}
 	}
 	c.data.Set(hashed, val)
 	return true
