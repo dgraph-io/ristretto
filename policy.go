@@ -204,8 +204,9 @@ type tinyLFU struct {
 
 func newTinyLFU(numCounters int64) *tinyLFU {
 	return &tinyLFU{
-		freq: newCmSketch(numCounters),
-		door: z.NewBloomFilter(float64(numCounters), 0.01),
+		freq:    newCmSketch(numCounters),
+		door:    z.NewBloomFilter(float64(numCounters), 0.01),
+		resetAt: numCounters,
 	}
 }
 
