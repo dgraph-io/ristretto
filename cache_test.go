@@ -52,6 +52,22 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	}
 }
 
+func BenchmarkCache(b *testing.B) {
+	c := newCache(&Config{
+		NumCounters: NUM_COUNTERS,
+		BufferItems: BUFFER_ITEMS,
+		Log:         false,
+	}, newPolicy)
+	c.Set("1", 1, 1)
+	b.SetBytes(1)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			c.Get("1")
+		}
+	})
+}
+
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 	return func(t *testing.T) {
 		// create the cache with the provided policy and constant params
