@@ -16,7 +16,11 @@
 
 package ristretto
 
-import "github.com/dgraph-io/ristretto/z"
+import (
+	"errors"
+
+	"github.com/dgraph-io/ristretto/z"
+)
 
 // Cache ties everything together. The three main components are:
 //
@@ -34,9 +38,8 @@ type Cache struct {
 }
 
 type Config struct {
-	// NumCounters is the number of counters to preallocate space for. This
-	// should correspond to the expected number of items in the Cache when it
-	// is full (when MaxCost is reached).
+	// NumCounters is the number of keys whose frequency of access should be tracked via TinyLFU.
+	// Each counter is worth 4-bits, so TinyLFU can store 2 counters per byte.
 	NumCounters int64
 	// MaxCost is the cost capacity of the Cache.
 	MaxCost int64
@@ -46,11 +49,17 @@ type Config struct {
 	Log bool
 }
 
-func NewCache(config *Config) *Cache {
-	if config.MaxCost == 0 && config.NumCounters != 0 {
-		config.MaxCost = config.NumCounters
+func NewCache(config *Config) (*Cache, error) {
+	switch {
+	case config.NumCounters == 0:
+		return nil, errors.New("NumCounters can't be zero.")
+	case config.MaxCost == 0:
+		return nil, errors.New("MaxCost can't be zero.")
+	case config.BufferItems == 0:
+		return nil, errors.New("BufferItems can't be zero.")
 	}
-	// data is the hash map for the entire cache, it's initialized outside of
+
+	// Data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
 	data := newStore()
@@ -66,7 +75,7 @@ func NewCache(config *Config) *Cache {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-	}
+	}, nil
 }
 
 func (c *Cache) Get(key string) interface{} {

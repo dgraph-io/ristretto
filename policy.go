@@ -49,7 +49,7 @@ type Policy interface {
 func newPolicy(numCounters, maxCost int64) Policy {
 	return &defaultPolicy{
 		admit: newTinyLFU(numCounters),
-		evict: newSampledLFU(maxCost, numCounters),
+		evict: newSampledLFU(maxCost),
 	}
 }
 
@@ -77,7 +77,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	defer p.Unlock()
 
 	// can't add an item bigger than entire cache
-	if cost > p.evict.size {
+	if cost > p.evict.maxCost {
 		return nil, false
 	}
 	if _, exists := p.evict.keyCosts[key]; exists {
@@ -146,7 +146,7 @@ func (p *defaultPolicy) Del(key uint64) {
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
 	defer p.Unlock()
-	return int64(p.evict.size - p.evict.used)
+	return int64(p.evict.maxCost - p.evict.used)
 }
 
 func (p *defaultPolicy) Log() *PolicyLog {
@@ -156,19 +156,19 @@ func (p *defaultPolicy) Log() *PolicyLog {
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
 	keyCosts map[uint64]int64
-	size     int64
+	maxCost  int64
 	used     int64
 }
 
-func newSampledLFU(numCounters, maxCost int64) *sampledLFU {
+func newSampledLFU(maxCost int64) *sampledLFU {
 	return &sampledLFU{
-		keyCosts: make(map[uint64]int64, numCounters),
-		size:     maxCost,
+		keyCosts: make(map[uint64]int64),
+		maxCost:  maxCost,
 	}
 }
 
 func (p *sampledLFU) roomLeft(cost int64) int64 {
-	return p.size - (p.used + cost)
+	return p.maxCost - (p.used + cost)
 }
 
 func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {

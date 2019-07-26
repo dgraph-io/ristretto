@@ -18,7 +18,9 @@ package ristretto
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/dgraph-io/ristretto/bench/sim"
 )
@@ -50,7 +52,7 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	}
 }
 
-func BenchmarkCache(b *testing.B) {
+func BenchmarkCacheOneGet(b *testing.B) {
 	c := newCache(&Config{
 		NumCounters: NUM_COUNTERS,
 		BufferItems: BUFFER_ITEMS,
@@ -64,6 +66,34 @@ func BenchmarkCache(b *testing.B) {
 			c.Get("1")
 		}
 	})
+}
+
+func BenchmarkCacheLong(b *testing.B) {
+	cache, err := NewCache(&Config{
+		NumCounters: 64 << 20,
+		BufferItems: 1000,
+		Log:         true,
+		MaxCost:     256 << 20,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			idx := r.Int31() % (512 << 20)
+			key := fmt.Sprintf("%d", idx)
+			if out := cache.Get(key); out != nil {
+				if out.(int32) != idx {
+					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
+				}
+			} else {
+				cache.Set(key, idx, int64(idx>>10)+1)
+			}
+		}
+	})
+	b.Logf("Got Hit Ratio: %.2f\n", cache.Log().Ratio())
 }
 
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
@@ -123,10 +153,15 @@ func TestCache(t *testing.T) {
 }
 
 func TestCacheBasic(t *testing.T) {
-	c := NewCache(&Config{
-		NumCounters: 4,
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
 		BufferItems: 1,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if added := c.Set("1", 1, 1); !added {
 		t.Fatal("set error")
 	}
@@ -136,10 +171,15 @@ func TestCacheBasic(t *testing.T) {
 }
 
 func TestCacheSetGet(t *testing.T) {
-	c := NewCache(&Config{
-		NumCounters: 4,
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     4,
 		BufferItems: 4,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
 		if added := c.Set(key, i, 1); added {
@@ -152,11 +192,15 @@ func TestCacheSetGet(t *testing.T) {
 }
 
 func TestCacheSize(t *testing.T) {
-	c := NewCache(&Config{
+	c, err := NewCache(&Config{
 		NumCounters: 16,
 		MaxCost:     16 * 4,
 		BufferItems: 1,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for i := 0; i < 8; i++ {
 		c.Set(fmt.Sprintf("%d", i), i, 4)
 		if c.policy.Cap() < 0 {
