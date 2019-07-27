@@ -83,13 +83,12 @@ func BenchmarkCacheLong(b *testing.B) {
 		for pb.Next() {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			idx := r.Int31() % (512 << 20)
-			key := fmt.Sprintf("%d", idx)
-			if out := cache.Get(key); out != nil {
+			if out := cache.Get(idx); out != nil {
 				if out.(int32) != idx {
 					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
 				}
 			} else {
-				cache.Set(key, idx, int64(idx>>10)+1)
+				cache.Set(idx, idx, int64(idx>>10)+1)
 			}
 		}
 	})

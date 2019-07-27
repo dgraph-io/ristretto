@@ -78,29 +78,29 @@ func NewCache(config *Config) (*Cache, error) {
 	}, nil
 }
 
-func (c *Cache) Get(key string) interface{} {
-	hashed := z.AESHashString(key)
-	c.buffer.Push(hashed)
-	return c.data.Get(hashed)
+func (c *Cache) Get(key interface{}) interface{} {
+	hash := z.KeyToHash(key)
+	c.buffer.Push(hash)
+	return c.data.Get(hash)
 }
 
-func (c *Cache) Set(key string, val interface{}, cost int64) bool {
-	hashed := z.AESHashString(key)
-	victims, added := c.policy.Add(hashed, cost)
+func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
+	hash := z.KeyToHash(key)
+	victims, added := c.policy.Add(hash, cost)
 	if !added {
 		return false
 	}
 	for _, victim := range victims {
 		c.data.Del(victim)
 	}
-	c.data.Set(hashed, val)
+	c.data.Set(hash, val)
 	return true
 }
 
-func (c *Cache) Del(key string) {
-	hashed := z.AESHashString(key)
-	c.policy.Del(hashed)
-	c.data.Del(hashed)
+func (c *Cache) Del(key interface{}) {
+	hash := z.KeyToHash(key)
+	c.policy.Del(hash)
+	c.data.Del(hash)
 }
 
 func (c *Cache) Log() *PolicyLog {
