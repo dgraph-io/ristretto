@@ -68,7 +68,7 @@ func BenchmarkCacheOneGet(b *testing.B) {
 	})
 }
 
-func BenchmarkCacheLong(b *testing.B) {
+func BenchmarkCacheGets(b *testing.B) {
 	cache, err := NewCache(&Config{
 		NumCounters: 64 << 20,
 		BufferItems: 1000,
@@ -79,19 +79,25 @@ func BenchmarkCacheLong(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	N := int32(512 << 10)
+	for idx := int32(0); idx < N; idx++ {
+		cache.Set(idx, idx, 1)
+	}
+	b.Logf("Set the cache\n")
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			idx := r.Int31() % (512 << 20)
+			idx := r.Int31() % N
 			if out, _ := cache.Get(idx); out != nil {
 				if out.(int32) != idx {
 					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
 				}
 			} else {
-				cache.Set(idx, idx, int64(idx>>10)+1)
+				// cache.Set(idx, idx, int64(idx>>10)+1)
 			}
 		}
 	})
+	// TODO: Hit ratio should be 100%.
 	b.Logf("Got Hit Ratio: %.2f\n", cache.Log().Ratio())
 }
 
