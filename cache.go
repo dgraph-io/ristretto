@@ -75,6 +75,7 @@ func NewCache(config *Config) (*Cache, error) {
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
+			Stripes:  0, // Don't care about the stripes in ringLossy.
 		}),
 	}, nil
 }
