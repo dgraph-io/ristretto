@@ -49,6 +49,7 @@ func AESHash(data []byte) uint64 {
 	return uint64(aeshash(ss.str, 0, uintptr(ss.len)))
 }
 
+// AESHashString returns AESHash for string str.
 func AESHashString(str string) uint64 {
 	ss := (*stringStruct)(unsafe.Pointer(&str))
 	return uint64(aeshash(ss.str, 0, uintptr(ss.len)))
