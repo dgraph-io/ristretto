@@ -60,7 +60,8 @@ func TestM_JSON(t *testing.T) {
 
 	cnt2 := 0
 	for i := range wordlist1 {
-		if !bf2.AddIfNotHasBytes(wordlist1[i]) {
+		hash := AESHash(wordlist1[i])
+		if !bf2.AddIfNotHas(hash) {
 			cnt2++
 		}
 	}
@@ -80,7 +81,8 @@ func BenchmarkM_New(b *testing.B) {
 func BenchmarkM_Clear(b *testing.B) {
 	bf = NewBloomFilter(float64(n*10), float64(7))
 	for i := range wordlist1 {
-		bf.AddBytes(wordlist1[i])
+		hash := AESHash(wordlist1[i])
+		bf.Add(hash)
 	}
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
@@ -93,7 +95,8 @@ func BenchmarkM_Add(b *testing.B) {
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.AddBytes(wordlist1[i])
+			hash := AESHash(wordlist1[i])
+			bf.Add(hash)
 		}
 	}
 
@@ -103,33 +106,9 @@ func BenchmarkM_Has(b *testing.B) {
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			bf.HasBytes(wordlist1[i])
+			hash := AESHash(wordlist1[i])
+			bf.Has(hash)
 		}
 	}
 
-}
-
-func BenchmarkM_AddIfNotHasBytesFALSE(b *testing.B) {
-	bf = NewBloomFilter(float64(n*10), float64(7))
-	for i := range wordlist1 {
-		bf.HasBytes(wordlist1[i])
-	}
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.AddIfNotHasBytes(wordlist1[i])
-		}
-	}
-}
-
-func BenchmarkM_AddIfNotHasBytesClearTRUE(b *testing.B) {
-	bf = NewBloomFilter(float64(n*10), float64(7))
-
-	b.ResetTimer()
-	for r := 0; r < b.N; r++ {
-		for i := range wordlist1 {
-			bf.AddIfNotHasBytes(wordlist1[i])
-		}
-		bf.Clear()
-	}
 }

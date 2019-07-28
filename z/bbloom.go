@@ -60,7 +60,9 @@ func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 			entries, locs = uint64(params[0]), uint64(params[1])
 		}
 	} else {
-		log.Fatal("usage: New(float64(number_of_entries), float64(number_of_hashlocations)) i.e. New(float64(1000), float64(3)) or New(float64(number_of_entries), float64(number_of_hashlocations)) i.e. New(float64(1000), float64(0.03))")
+		log.Fatal("usage: New(float64(number_of_entries), float64(number_of_hashlocations))" +
+			" i.e. New(float64(1000), float64(3)) or New(float64(number_of_entries)," +
+			" float64(number_of_hashlocations)) i.e. New(float64(1000), float64(0.03))")
 	}
 	size, exponent := getSize(uint64(entries))
 	bloomfilter = &Bloom{
@@ -97,41 +99,19 @@ type Bloom struct {
 // 	return l, h
 // }
 
-// Add
-// set the bit(s) for entry; Adds an entry to the Bloom filter
-func (bl *Bloom) AddBytes(entry []byte) {
-	hash := AESHash(entry)
-	bl.Add(hash)
-}
-
-func (bl *Bloom) AddString(entry string) {
-	hash := AESHashString(entry)
-	bl.Add(hash)
-}
-
 // AddAESHash accepts an AES hash of the entry calculated by the caller.
 func (bl *Bloom) Add(hash uint64) {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
-	for i := uint64(0); i < (*bl).setLocs; i++ {
-		(*bl).Set((h + i*l) & (*bl).size)
-		(*bl).ElemNum++
+	for i := uint64(0); i < bl.setLocs; i++ {
+		bl.Set((h + i*l) & bl.size)
+		bl.ElemNum++
 	}
 }
 
 // Has
 // check if bit(s) for entry is/are set
 // returns true if the entry was added to the Bloom Filter
-func (bl Bloom) HasBytes(entry []byte) bool {
-	hash := AESHash(entry)
-	return bl.Has(hash)
-}
-
-func (bl Bloom) HasString(entry string) bool {
-	hash := AESHashString(entry)
-	return bl.Has(hash)
-}
-
 func (bl Bloom) Has(hash uint64) bool {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
@@ -148,7 +128,7 @@ func (bl Bloom) Has(hash uint64) bool {
 // Only Add entry if it's not present in the bloomfilter
 // returns true if entry was added
 // returns false if entry was allready registered in the bloomfilter
-func (bl Bloom) AddIfNotHas(entry uint64) bool {
+func (bl *Bloom) AddIfNotHas(entry uint64) bool {
 	if bl.Has(entry) {
 		return false
 	}
@@ -156,22 +136,17 @@ func (bl Bloom) AddIfNotHas(entry uint64) bool {
 	return true
 }
 
-func (bl Bloom) AddIfNotHasBytes(entry []byte) bool {
-	hash := AESHash(entry)
-	return bl.AddIfNotHas(hash)
-}
-
 // Size
 // make Bloom filter with as bitset of size sz
 func (bl *Bloom) Size(sz uint64) {
-	(*bl).bitset = make([]uint64, sz>>6)
+	bl.bitset = make([]uint64, sz>>6)
 }
 
 // Clear
 // resets the Bloom filter
 func (bl *Bloom) Clear() {
-	for i, _ := range (*bl).bitset {
-		(*bl).bitset[i] = 0
+	for i, _ := range bl.bitset {
+		bl.bitset[i] = 0
 	}
 }
 
