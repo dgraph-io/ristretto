@@ -17,6 +17,7 @@
 package main
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/dgraph-io/ristretto/bench/sim"
@@ -133,6 +134,28 @@ func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
 				cache.Set(keys[i&(w-1)], vals)
+			}
+		})
+	}
+}
+
+func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+	return func(b *testing.B) {
+		cache := bench.Create()
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		vals := []byte("*")
+		b.SetParallelism(bench.Para)
+		b.SetBytes(1)
+		b.ResetTimer()
+		i := int32(0)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				ti := atomic.LoadInt32(&i)
+				_, ok := cache.Get(keys[ti&(w-1)])
+				if !ok {
+					cache.Set(keys[ti&(w-1)], vals)
+				}
+				atomic.AddInt32(&i, 1)
 			}
 		})
 	}

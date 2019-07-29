@@ -30,7 +30,7 @@ import (
 )
 
 type Cache interface {
-	Get(string) interface{}
+	Get(string) (interface{}, bool)
 	Set(string, interface{})
 	Del(string)
 	Log() *ristretto.PolicyLog
@@ -41,16 +41,21 @@ type BenchRistretto struct {
 }
 
 func NewBenchRistretto(capacity int, track bool) Cache {
+	c, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: int64(10 * capacity),
+		MaxCost:     int64(capacity),
+		Log:         track,
+		BufferItems: 5,
+	})
+	if err != nil {
+		panic(err)
+	}
 	return &BenchRistretto{
-		cache: ristretto.NewCache(&ristretto.Config{
-			NumCounters: int64(10 * capacity),
-			MaxCost:     int64(capacity),
-			Log:         track,
-		}),
+		cache: c,
 	}
 }
 
-func (c *BenchRistretto) Get(key string) interface{} {
+func (c *BenchRistretto) Get(key string) (interface{}, bool) {
 	return c.cache.Get(key)
 }
 
@@ -81,11 +86,10 @@ func NewBenchBaseMutex(capacity int, track bool) Cache {
 	}
 }
 
-func (c *BenchBaseMutex) Get(key string) interface{} {
+func (c *BenchBaseMutex) Get(key string) (interface{}, bool) {
 	c.Lock()
 	defer c.Unlock()
-	value, _ := c.cache.Get(key)
-	return value
+	return c.cache.Get(key)
 }
 
 func (c *BenchBaseMutex) Set(key string, value interface{}) {
@@ -144,9 +148,12 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 	}
 }
 
-func (c *BenchBigCache) Get(key string) interface{} {
-	value, _ := c.cache.Get(key)
-	return value
+func (c *BenchBigCache) Get(key string) (interface{}, bool) {
+	value, err := c.cache.Get(key)
+	if err != nil {
+		return nil, false
+	}
+	return value, true
 }
 
 func (c *BenchBigCache) Set(key string, value interface{}) {
@@ -204,9 +211,12 @@ func NewBenchFastCache(capacity int, track bool) Cache {
 	}
 }
 
-func (c *BenchFastCache) Get(key string) interface{} {
+func (c *BenchFastCache) Get(key string) (interface{}, bool) {
 	value := c.cache.Get(nil, []byte(key))
-	return value
+	if len(value) > 0 {
+		return value, true
+	}
+	return value, false
 }
 
 func (c *BenchFastCache) GetFast(key string) interface{} {
@@ -247,9 +257,12 @@ func NewBenchFreeCache(capacity int, track bool) Cache {
 	}
 }
 
-func (c *BenchFreeCache) Get(key string) interface{} {
-	value, _ := c.cache.Get([]byte(key))
-	return value
+func (c *BenchFreeCache) Get(key string) (interface{}, bool) {
+	value, err := c.cache.Get([]byte(key))
+	if err != nil {
+		return value, false
+	}
+	return value, true
 }
 
 func (c *BenchFreeCache) Set(key string, value interface{}) {
@@ -289,9 +302,8 @@ func NewBenchGoburrow(capacity int, track bool) Cache {
 	}
 }
 
-func (c *BenchGoburrow) Get(key string) interface{} {
-	value, _ := c.cache.GetIfPresent(key)
-	return value
+func (c *BenchGoburrow) Get(key string) (interface{}, bool) {
+	return c.cache.GetIfPresent(key)
 }
 
 func (c *BenchGoburrow) Set(key string, value interface{}) {

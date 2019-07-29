@@ -26,7 +26,7 @@ import "sync"
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get(uint64) interface{}
+	Get(uint64) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
 	Set(uint64, interface{})
@@ -52,9 +52,8 @@ func newSyncMap() store {
 	return &syncMap{&sync.Map{}}
 }
 
-func (m *syncMap) Get(key uint64) interface{} {
-	value, _ := m.Load(key)
-	return value
+func (m *syncMap) Get(key uint64) (interface{}, bool) {
+	return m.Load(key)
 }
 
 func (m *syncMap) Set(key uint64, value interface{}) {

@@ -103,6 +103,7 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			{"set-get      ", SetGet},
 			{"set-same     ", SetSame},
 			{"set-zipf     ", SetZipf},
+			{"set-get-zipf ", SetGetZipf},
 		}...)
 	}
 	// create benchmarks from bench suite
@@ -233,6 +234,7 @@ func Labels() []string {
 		"hits    ",
 		"misses  ",
 		"  ratio ",
+		"  ns/op   ",
 	}
 }
 
@@ -257,6 +259,7 @@ func (l *Log) Record() []string {
 		fmt.Sprintf("%6.2f%%",
 			100*(float64(l.Result.Hits)/float64(l.Result.Hits+l.Result.Misses)),
 		),
+		l.Result.NsOp,
 	}
 }
 
@@ -274,6 +277,7 @@ type Result struct {
 	Procs  int
 	Hits   int64
 	Misses int64
+	NsOp   string
 }
 
 // NewResult extracts the data we're interested in from a BenchmarkResult.
@@ -293,6 +297,7 @@ func NewResult(res testing.BenchmarkResult, coll *LogCollection) *Result {
 		Procs:  runtime.GOMAXPROCS(0),
 		Hits:   coll.Hits(),
 		Misses: coll.Misses(),
+		NsOp:   fmt.Sprintf("%10d ns/op", res.NsPerOp()),
 	}
 }
 
