@@ -47,6 +47,8 @@ type Config struct {
 	BufferItems int64
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
 	Log bool
+
+	Store store
 }
 
 func NewCache(config *Config) (*Cache, error) {
@@ -62,14 +64,16 @@ func NewCache(config *Config) (*Cache, error) {
 	// Data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
-	data := newStore()
+	if config.Store == nil {
+		config.Store = newStore()
+	}
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	if config.Log {
-		policy = NewRecorder(policy, data)
+		policy = NewRecorder(policy, config.Store)
 	}
 	return &Cache{
-		data:   data,
+		data:   config.Store,
 		policy: policy,
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,

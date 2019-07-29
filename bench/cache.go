@@ -71,6 +71,42 @@ func (c *BenchRistretto) Log() *ristretto.PolicyLog {
 	return c.cache.Log()
 }
 
+type BenchRistrettoLazy struct {
+	cache *ristretto.Cache
+}
+
+func NewBenchRistrettoLazy(capacity int, track bool) Cache {
+	c, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: int64(10 * capacity),
+		MaxCost:     int64(capacity),
+		Log:         track,
+		BufferItems: 5,
+		Store:       ristretto.NewLazyMap(),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return &BenchRistretto{
+		cache: c,
+	}
+}
+
+func (c *BenchRistrettoLazy) Get(key string) (interface{}, bool) {
+	return c.cache.Get(key)
+}
+
+func (c *BenchRistrettoLazy) Set(key string, value interface{}) {
+	c.cache.Set(key, value, 1)
+}
+
+func (c *BenchRistrettoLazy) Del(key string) {
+	c.cache.Del(key)
+}
+
+func (c *BenchRistrettoLazy) Log() *ristretto.PolicyLog {
+	return c.cache.Log()
+}
+
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache

@@ -132,6 +132,7 @@ type benchCache struct {
 func getBenchCaches(include string) []*benchCache {
 	caches := []*benchCache{
 		{"ristretto  ", NewBenchRistretto},
+		{"lazycache  ", NewBenchRistrettoLazy},
 	}
 	if include == "ristretto" {
 		return caches
