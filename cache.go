@@ -38,7 +38,8 @@ type Cache struct {
 }
 
 type Config struct {
-	// NumCounters is the number of keys whose frequency of access should be tracked via TinyLFU.
+	// NumCounters is the number of keys whose frequency of access should be
+	// tracked via TinyLFU.
 	// Each counter is worth 4-bits, so TinyLFU can store 2 counters per byte.
 	NumCounters int64
 	// MaxCost is the cost capacity of the Cache.

@@ -418,8 +418,7 @@ func (r *recorder) Push(keys []uint64) {
 }
 
 func (r *recorder) Add(key uint64, cost int64) ([]uint64, bool) {
-	_, ok := r.data.Get(key)
-	if !ok {
+	if _, ok := r.data.Get(key); ok {
 		r.log.Hit()
 	} else {
 		r.log.Miss()

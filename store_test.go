@@ -61,7 +61,7 @@ func GenerateTest(create func() store) func(*testing.T) {
 		t.Run("set/get", func(t *testing.T) {
 			m := create()
 			m.Set(1, 1)
-			if m.Get(1).(int) != 1 {
+			if val, _ := m.Get(1); val != nil && val.(int) != 1 {
 				t.Fatal("set-get error")
 			}
 		})
@@ -70,7 +70,7 @@ func GenerateTest(create func() store) func(*testing.T) {
 			m.Set(1, 1)
 			// overwrite
 			m.Set(1, 2)
-			if m.Get(1).(int) != 2 {
+			if val, _ := m.Get(1); val != nil && val.(int) != 2 {
 				t.Fatal("set update error")
 			}
 		})
@@ -79,7 +79,7 @@ func GenerateTest(create func() store) func(*testing.T) {
 			m.Set(1, 1)
 			// delete item
 			m.Del(1)
-			if m.Get(1) != nil {
+			if val, found := m.Get(1); val != nil || found {
 				t.Fatal("del error")
 			}
 		})
