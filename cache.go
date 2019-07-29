@@ -78,7 +78,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}, nil
 }
 
-func (c *Cache) Get(key interface{}) interface{} {
+func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	hash := z.KeyToHash(key)
 	c.buffer.Push(hash)
 	return c.data.Get(hash)
