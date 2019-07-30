@@ -43,12 +43,15 @@ type stringStruct struct {
 //go:linkname aeshash runtime.aeshash
 func aeshash(p unsafe.Pointer, h, s uintptr) uintptr
 
-// AESHash is the hash function used by map, it utilize available hardware instructions.
+// AESHash is the hash function used by map, it utilizes available hardware instructions.
+// NOTE: The hash seed changes for every process. So, this cannot be used as a persistent hash.
 func AESHash(data []byte) uint64 {
 	ss := (*stringStruct)(unsafe.Pointer(&data))
 	return uint64(aeshash(ss.str, 0, uintptr(ss.len)))
 }
 
+// AESHashString is the hash function used by map, it utilizes available hardware instructions.
+// NOTE: The hash seed changes for every process. So, this cannot be used as a persistent hash.
 func AESHashString(str string) uint64 {
 	ss := (*stringStruct)(unsafe.Pointer(&str))
 	return uint64(aeshash(ss.str, 0, uintptr(ss.len)))
