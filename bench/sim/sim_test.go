@@ -18,15 +18,30 @@ package sim
 
 import (
 	"bytes"
+	"math"
 	"testing"
 )
 
 func TestZipfian(t *testing.T) {
 	s := NewZipfian(1.25, 2, 100)
+	m := make(map[uint64]uint64, 100)
 	for i := 0; i < 100; i++ {
-		if _, err := s(); err != nil {
+		k, err := s()
+		if err != nil {
 			t.Fatal(err)
 		}
+		m[k]++
+	}
+	maxVal, minVal := uint64(0), uint64(math.MaxUint64)
+	for _, v := range m {
+		if v < minVal {
+			minVal = v
+		} else if v > maxVal {
+			maxVal = v
+		}
+	}
+	if maxVal-minVal < 10 {
+		t.Fatal("zipf not skewed enough")
 	}
 }
 
