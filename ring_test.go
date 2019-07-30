@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"testing"
+	"time"
 )
 
 const (
@@ -51,7 +52,8 @@ func TestRingLossy(t *testing.T) {
 	buffer.Push(2)
 	buffer.Push(3)
 	buffer.Push(4)
-	if drainCount != 1 {
+	time.Sleep(5 * time.Millisecond)
+	if drainCount == 0 {
 		t.Fatal("drain error")
 	}
 }
