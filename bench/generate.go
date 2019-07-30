@@ -41,7 +41,7 @@ const (
 // HitsUniform records the hit ratio using a uniformly random distribution.
 func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(true)
 		keys := sim.StringCollection(sim.NewUniform(w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -61,7 +61,7 @@ func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 // HitsZipf records the hit ratio using a Zipfian distribution.
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(true)
 		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -80,7 +80,7 @@ func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		cache.Set("*", []byte("*"))
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -95,7 +95,7 @@ func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -110,7 +110,7 @@ func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		data := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -125,7 +125,7 @@ func SetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -141,7 +141,7 @@ func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -163,7 +163,7 @@ func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetGet(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)

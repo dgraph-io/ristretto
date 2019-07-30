@@ -75,7 +75,7 @@ type Benchmark struct {
 	Para int
 	// Create is the lazily evaluated function for creating new instances of the
 	// underlying cache.
-	Create func() Cache
+	Create func(hits bool) Cache
 }
 
 func (b *Benchmark) Log() {
@@ -114,9 +114,7 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			Label:   suite[i].label,
 			Bencher: suite[i].bencher,
 			Para:    para,
-			Create: func() Cache {
-				return cache.create(capa, suite[i].label[:4] == "hits")
-			},
+			Create:  func(hits bool) Cache { return cache.create(capa, hits) },
 		}
 	}
 	return benchmarks
