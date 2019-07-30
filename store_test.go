@@ -17,7 +17,10 @@
 package ristretto
 
 import (
+	"math/rand"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func BenchmarkStoreSyncMap(b *testing.B) {
@@ -26,6 +29,12 @@ func BenchmarkStoreSyncMap(b *testing.B) {
 
 func BenchmarkStoreLockedMap(b *testing.B) {
 	GenerateBench(func() store { return newLockedMap() })(b)
+}
+
+func BenchmarkLazyMap(b *testing.B) {
+	GenerateBench(func() store {
+		return NewLazyMap()
+	})(b)
 }
 
 func GenerateBench(create func() store) func(*testing.B) {
@@ -38,6 +47,31 @@ func GenerateBench(create func() store) func(*testing.B) {
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					m.Get(1)
+				}
+			})
+		})
+		b.Run("set-get-zipf", func(b *testing.B) {
+			gen := rand.NewZipf(rand.New(rand.NewSource(time.Now().UnixNano())), 1.2, 2, 2048)
+			keys := make([]uint64, 2048)
+			for i := range keys {
+				keys[i] = gen.Uint64()
+			}
+			m := create()
+			b.ResetTimer()
+			i := int32(0)
+			b.RunParallel(func(pb *testing.PB) {
+
+				for pb.Next() {
+					n := atomic.LoadInt32(&i)
+					if n > 2047 {
+						atomic.StoreInt32(&i, 1)
+						n = 1
+					}
+					atomic.AddInt32(&i, 1)
+					_, ok := m.Get(keys[n])
+					if !ok {
+						m.Set(keys[n], keys[n])
+					}
 				}
 			})
 		})
@@ -61,7 +95,8 @@ func GenerateTest(create func() store) func(*testing.T) {
 		t.Run("set/get", func(t *testing.T) {
 			m := create()
 			m.Set(1, 1)
-			if m.Get(1).(int) != 1 {
+
+			if val, ok := m.Get(1); !ok || val.(int) != 1 {
 				t.Fatal("set-get error")
 			}
 		})
@@ -70,8 +105,8 @@ func GenerateTest(create func() store) func(*testing.T) {
 			m.Set(1, 1)
 			// overwrite
 			m.Set(1, 2)
-			if m.Get(1).(int) != 2 {
-				t.Fatal("set update error")
+			if val, ok := m.Get(1); !ok || val.(int) != 2 {
+				t.Fatal("set-get error")
 			}
 		})
 		t.Run("del", func(t *testing.T) {
@@ -79,8 +114,8 @@ func GenerateTest(create func() store) func(*testing.T) {
 			m.Set(1, 1)
 			// delete item
 			m.Del(1)
-			if m.Get(1) != nil {
-				t.Fatal("del error")
+			if _, ok := m.Get(1); ok {
+				t.Fatal("set-get error")
 			}
 		})
 		t.Run("run", func(t *testing.T) {

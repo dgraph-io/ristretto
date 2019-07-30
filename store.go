@@ -80,10 +80,11 @@ func newLockedMap() *lockedMap {
 	return &lockedMap{data: make(map[uint64]interface{})}
 }
 
-func (m *lockedMap) Get(key uint64) interface{} {
+func (m *lockedMap) Get(key uint64) (interface{}, bool) {
 	m.RLock()
 	defer m.RUnlock()
-	return m.data[key]
+	val, ok := m.data[key]
+	return val, ok
 }
 
 func (m *lockedMap) Set(key uint64, value interface{}) {

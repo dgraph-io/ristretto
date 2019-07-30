@@ -83,7 +83,7 @@ func BenchmarkCacheLong(b *testing.B) {
 		for pb.Next() {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			idx := r.Int31() % (512 << 20)
-			if out := cache.Get(idx); out != nil {
+			if out, ok := cache.Get(idx); ok {
 				if out.(int32) != idx {
 					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
 				}
@@ -164,7 +164,7 @@ func TestCacheBasic(t *testing.T) {
 	if added := c.Set("1", 1, 1); !added {
 		t.Fatal("set error")
 	}
-	if value := c.Get("1"); value.(int) != 1 {
+	if value, ok := c.Get("1"); !ok || value.(int) != 1 {
 		t.Fatal("get error")
 	}
 }
@@ -182,8 +182,8 @@ func TestCacheSetGet(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
 		if added := c.Set(key, i, 1); added {
-			value := c.Get(key)
-			if value == nil || value.(int) != i {
+			value, ok := c.Get(key)
+			if !ok || value.(int) != i {
 				t.Fatal("set/get error")
 			}
 		}
