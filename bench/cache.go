@@ -42,10 +42,10 @@ type BenchRistretto struct {
 
 func NewBenchRistretto(capacity int, track bool) Cache {
 	c, err := ristretto.NewCache(&ristretto.Config{
-		NumCounters: int64(10 * capacity),
+		NumCounters: int64(capacity * 10),
 		MaxCost:     int64(capacity),
 		Log:         track,
-		BufferItems: 5,
+		BufferItems: int64(capacity) / 16,
 	})
 	if err != nil {
 		panic(err)

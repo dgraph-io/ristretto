@@ -41,7 +41,7 @@ const (
 // HitsUniform records the hit ratio using a uniformly random distribution.
 func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(true)
 		keys := sim.StringCollection(sim.NewUniform(w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -61,7 +61,7 @@ func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 // HitsZipf records the hit ratio using a Zipfian distribution.
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(true)
 		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
@@ -80,7 +80,7 @@ func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		cache.Set("*", []byte("*"))
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -95,14 +95,14 @@ func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		cache := bench.Create(false)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Get(keys[i&(w-1)])
+				cache.Get(keys[i&(capacity-1)])
 			}
 		})
 	}
@@ -110,7 +110,7 @@ func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		data := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -125,15 +125,15 @@ func SetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		cache := bench.Create(false)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(w-1)], vals)
+				cache.Set(keys[i&(capacity-1)], vals)
 			}
 		})
 	}
@@ -141,8 +141,8 @@ func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		cache := bench.Create(false)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -150,12 +150,10 @@ func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 		i := int32(0)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				ti := atomic.LoadInt32(&i)
-				_, ok := cache.Get(keys[ti&(w-1)])
-				if !ok {
-					cache.Set(keys[ti&(w-1)], vals)
+				ti := atomic.AddInt32(&i, 1)
+				if _, ok := cache.Get(keys[ti&(capacity-1)]); !ok {
+					cache.Set(keys[ti&(capacity-1)], vals)
 				}
-				atomic.AddInt32(&i, 1)
 			}
 		})
 	}
@@ -163,7 +161,7 @@ func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 func SetGet(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
-		cache := bench.Create()
+		cache := bench.Create(false)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
