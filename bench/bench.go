@@ -225,14 +225,14 @@ func Labels() []string {
 	return []string{
 		"name       ",
 		"label        ",
-		"gr",
-		"ops   ",
+		"go",
+		" mop/s",
+		" ns/op",
 		"ac",
 		"byt",
 		"hits    ",
 		"misses  ",
 		"  ratio ",
-		"  ns/op   ",
 	}
 }
 
@@ -244,20 +244,41 @@ type Log struct {
 
 // Record generates a CSV record.
 func (l *Log) Record() []string {
+	var (
+		goroutines  string = fmt.Sprintf("%2d", l.Benchmark.Para*l.Result.Procs)
+		mOpsPerSec  string = fmt.Sprintf("%6.2f", l.Result.Ops)
+		allocsPerOp string = fmt.Sprintf("%02d", l.Result.Allocs)
+		bytesPerOp  string = fmt.Sprintf("%03d", l.Result.Bytes)
+		nsPerOp     string = fmt.Sprintf("%6d", l.Result.NsOp)
+		totalHits   string = fmt.Sprintf("%08d", l.Result.Hits)
+		totalMisses string = fmt.Sprintf("%08d", l.Result.Misses)
+		hitRatio    string = fmt.Sprintf("%6.2f%%",
+			100*(float64(l.Result.Hits)/float64(l.Result.Hits+l.Result.Misses)),
+		)
+	)
+	if l.Benchmark.Label[:4] == "hits" {
+		mOpsPerSec = "------"
+		allocsPerOp = "--"
+		bytesPerOp = "---"
+		nsPerOp = "------"
+	} else {
+		totalHits = "--------"
+		totalMisses = "--------"
+		hitRatio = "-------"
+	}
 	return []string{
 		l.Benchmark.Name,
 		l.Benchmark.Label,
-		fmt.Sprintf("%d", l.Benchmark.Para*l.Result.Procs),
-		fmt.Sprintf("%6.2f", l.Result.Ops),
-		fmt.Sprintf("%02d", l.Result.Allocs),
-		fmt.Sprintf("%03d", l.Result.Bytes),
+		// throughput stats
+		goroutines,
+		mOpsPerSec,
+		nsPerOp,
+		allocsPerOp,
+		bytesPerOp,
 		// hit ratio stats
-		fmt.Sprintf("%08d", l.Result.Hits),
-		fmt.Sprintf("%08d", l.Result.Misses),
-		fmt.Sprintf("%6.2f%%",
-			100*(float64(l.Result.Hits)/float64(l.Result.Hits+l.Result.Misses)),
-		),
-		l.Result.NsOp,
+		totalHits,
+		totalMisses,
+		hitRatio,
 	}
 }
 
@@ -275,7 +296,7 @@ type Result struct {
 	Procs  int
 	Hits   int64
 	Misses int64
-	NsOp   string
+	NsOp   int64
 }
 
 // NewResult extracts the data we're interested in from a BenchmarkResult.
@@ -295,7 +316,7 @@ func NewResult(res testing.BenchmarkResult, coll *LogCollection) *Result {
 		Procs:  runtime.GOMAXPROCS(0),
 		Hits:   coll.Hits(),
 		Misses: coll.Misses(),
-		NsOp:   fmt.Sprintf("%10d ns/op", res.NsPerOp()),
+		NsOp:   res.NsPerOp(),
 	}
 }
 
