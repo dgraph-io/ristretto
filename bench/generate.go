@@ -150,12 +150,10 @@ func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 		i := int32(0)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				ti := atomic.LoadInt32(&i)
-				_, ok := cache.Get(keys[ti&(w-1)])
-				if !ok {
+				ti := atomic.AddInt32(&i, 1)
+				if _, ok := cache.Get(keys[ti&(w-1)]); !ok {
 					cache.Set(keys[ti&(w-1)], vals)
 				}
-				atomic.AddInt32(&i, 1)
 			}
 		})
 	}
