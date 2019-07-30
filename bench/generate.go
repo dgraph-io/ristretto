@@ -96,13 +96,13 @@ func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(false)
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Get(keys[i&(w-1)])
+				cache.Get(keys[i&(capacity-1)])
 			}
 		})
 	}
@@ -126,14 +126,14 @@ func SetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(false)
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(w-1)], vals)
+				cache.Set(keys[i&(capacity-1)], vals)
 			}
 		})
 	}
@@ -142,7 +142,7 @@ func SetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(false)
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
+		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
@@ -151,8 +151,8 @@ func SetGetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
 				ti := atomic.AddInt32(&i, 1)
-				if _, ok := cache.Get(keys[ti&(w-1)]); !ok {
-					cache.Set(keys[ti&(w-1)], vals)
+				if _, ok := cache.Get(keys[ti&(capacity-1)]); !ok {
+					cache.Set(keys[ti&(capacity-1)], vals)
 				}
 			}
 		})
