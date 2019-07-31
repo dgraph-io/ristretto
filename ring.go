@@ -30,7 +30,7 @@ const (
 // ringConsumer is the user-defined object responsible for receiving and
 // processing items in batches when buffers are drained.
 type ringConsumer interface {
-	Push([]uint64)
+	Push([]uint64) bool
 }
 
 // ringStripe is a singular ring buffer that is not concurrent safe.
@@ -56,8 +56,11 @@ func (s *ringStripe) Push(item uint64) {
 	// if we should drain
 	if len(s.data) >= s.capacity {
 		// Send elements to consumer. Create a new one.
-		go s.consumer.Push(s.data)
-		s.data = make([]uint64, 0, s.capacity)
+		if s.consumer.Push(s.data) {
+			s.data = make([]uint64, 0, s.capacity)
+		} else {
+			s.data = s.data[:0]
+		}
 	}
 }
 

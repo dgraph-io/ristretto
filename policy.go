@@ -47,10 +47,14 @@ type Policy interface {
 }
 
 func newPolicy(numCounters, maxCost int64) Policy {
-	return &defaultPolicy{
-		admit: newTinyLFU(numCounters),
-		evict: newSampledLFU(maxCost),
+	p := &defaultPolicy{
+		admit:   newTinyLFU(numCounters),
+		evict:   newSampledLFU(maxCost),
+		itemsCh: make(chan []uint64, 3),
 	}
+	// TODO: Add a way to stop the goroutine.
+	go p.processItems()
+	return p
 }
 
 // defaultPolicy is the default defaultPolicy, which is currently TinyLFU
@@ -59,6 +63,8 @@ type defaultPolicy struct {
 	sync.Mutex
 	admit *tinyLFU
 	evict *sampledLFU
+
+	itemsCh chan []uint64
 }
 
 type policyPair struct {
@@ -66,10 +72,21 @@ type policyPair struct {
 	cost int64
 }
 
-func (p *defaultPolicy) Push(keys []uint64) {
-	p.Lock()
-	defer p.Unlock()
-	p.admit.Push(keys)
+func (p *defaultPolicy) processItems() {
+	for items := range p.itemsCh {
+		p.Lock()
+		p.admit.Push(items)
+		p.Unlock()
+	}
+}
+
+func (p *defaultPolicy) Push(keys []uint64) bool {
+	select {
+	case p.itemsCh <- keys:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
@@ -309,12 +326,13 @@ func (p *Clairvoyant) record(key uint64) {
 	p.future = append(p.future, key)
 }
 
-func (p *Clairvoyant) Push(keys []uint64) {
+func (p *Clairvoyant) Push(keys []uint64) bool {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
 		p.record(key)
 	}
+	return true
 }
 
 func (p *Clairvoyant) Add(key uint64, cost int64) ([]uint64, bool) {
@@ -413,8 +431,8 @@ func NewRecorder(policy Policy, data store) Policy {
 	}
 }
 
-func (r *recorder) Push(keys []uint64) {
-	r.policy.Push(keys)
+func (r *recorder) Push(keys []uint64) bool {
+	return r.policy.Push(keys)
 }
 
 func (r *recorder) Add(key uint64, cost int64) ([]uint64, bool) {
