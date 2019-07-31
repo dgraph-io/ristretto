@@ -1,6 +1,7 @@
 # Ristretto
 Higher performance, concurrent cache library
 
+Branch:
 $ go test -count=2 -cpu=4,8,16,32,64 -v -bench=BenchmarkCaches/RistrettoZipfRead
 goos: linux
 goarch: amd64
@@ -15,3 +16,19 @@ BenchmarkCaches/RistrettoZipfRead-32         	50000000	        22.9 ns/op	      
 BenchmarkCaches/RistrettoZipfRead-64         	50000000	        21.8 ns/op	       8 B/op	       0 allocs/op
 BenchmarkCaches/RistrettoZipfRead-64         	50000000	        21.8 ns/op	       8 B/op	       0 allocs/op
 
+Master:
+$ go test -count=2 -cpu=4,8,16,32,64 -v -bench=BenchmarkCaches/RistrettoZipfRead
+goos: linux
+goarch: amd64
+BenchmarkCaches/RistrettoZipfRead-4          	10000000	       123 ns/op	       8 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-4          	20000000	       118 ns/op	       8 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-8          	20000000	        64.0 ns/op	       8 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-8          	20000000	        63.6 ns/op	       8 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-16         	30000000	        45.3 ns/op	      12 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-16         	30000000	        43.8 ns/op	       8 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-32         	50000000	        31.4 ns/op	      11 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-32         	50000000	        31.6 ns/op	       9 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-64         	50000000	        24.7 ns/op	       9 B/op	       0 allocs/op
+BenchmarkCaches/RistrettoZipfRead-64         	50000000	        25.0 ns/op	       9 B/op	       0 allocs/op
+PASS
+ok  	_/home/mrjn/benchmarks/cachebench	171.174s
