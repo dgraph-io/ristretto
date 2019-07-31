@@ -97,7 +97,7 @@ type Bloom struct {
 // 	return l, h
 // }
 
-// Add adds hash of any key to the bloomfilter.
+// Add adds hash of a key to the bloomfilter.
 func (bl *Bloom) Add(hash uint64) {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
@@ -123,7 +123,7 @@ func (bl Bloom) Has(hash uint64) bool {
 
 // AddIfNotHas only Adds hash, if it's not present in the bloomfilter.
 // Returns true if hash was added.
-// Returns false if hash was allready registered in the bloomfilter.
+// Returns false if hash was already registered in the bloomfilter.
 func (bl *Bloom) AddIfNotHas(hash uint64) bool {
 	if bl.Has(hash) {
 		return false
