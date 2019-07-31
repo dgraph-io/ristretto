@@ -49,8 +49,6 @@ func newRingStripe(config *ringConfig) *ringStripe {
 	}
 }
 
-var numPendingGo int32
-
 // Push appends an item in the ring buffer and drains (copies items and
 // sends to Consumer) if full.
 func (s *ringStripe) Push(item uint64) {
@@ -58,12 +56,8 @@ func (s *ringStripe) Push(item uint64) {
 	// if we should drain
 	if len(s.data) >= s.capacity {
 		// Send elements to consumer. Create a new one.
-		if atomic.CompareAndSwapInt32(&numPendingGo, 0, 1) {
-			go s.consumer.Push(s.data)
-			s.data = make([]uint64, 0, s.capacity)
-		} else {
-			s.data = s.data[:0]
-		}
+		go s.consumer.Push(s.data)
+		s.data = make([]uint64, 0, s.capacity)
 	}
 }
 
@@ -132,7 +126,6 @@ func pushLossy(b *ringBuffer, item uint64) {
 	stripe := b.pool.Get().(*ringStripe)
 	stripe.Push(item)
 	b.pool.Put(stripe)
-	atomic.StoreInt32(&numPendingGo, 0)
 }
 
 func pushLossless(b *ringBuffer, item uint64) {

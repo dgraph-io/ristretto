@@ -66,10 +66,17 @@ type policyPair struct {
 	cost int64
 }
 
+var numPendingGo int32
+
 func (p *defaultPolicy) Push(keys []uint64) {
+	if !atomic.CompareAndSwapInt32(&numPendingGo, 0, 1) {
+		// Only have one running at a time.
+		return
+	}
 	p.Lock()
-	defer p.Unlock()
 	p.admit.Push(keys)
+	p.Unlock()
+	atomic.StoreInt32(&numPendingGo, 0)
 }
 
 func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
