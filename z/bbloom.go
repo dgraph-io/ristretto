@@ -49,8 +49,7 @@ func calcSizeByWrongPositives(numEntries, wrongs float64) (uint64, uint64) {
 	return uint64(size), uint64(locs)
 }
 
-// New
-// returns a new bloomfilter
+// NewBloomFilter returns a new bloomfilter.
 func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 	var entries, locs uint64
 	if len(params) == 2 {
@@ -75,7 +74,6 @@ func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 	return bloomfilter
 }
 
-//
 // Bloom filter
 type Bloom struct {
 	bitset  []uint64
@@ -99,7 +97,7 @@ type Bloom struct {
 // 	return l, h
 // }
 
-// AddAESHash accepts an AES hash of the entry calculated by the caller.
+// Add adds hash of a key to the bloomfilter.
 func (bl *Bloom) Add(hash uint64) {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
@@ -109,9 +107,8 @@ func (bl *Bloom) Add(hash uint64) {
 	}
 }
 
-// Has
-// check if bit(s) for entry is/are set
-// returns true if the entry was added to the Bloom Filter
+// Has checks if bit(s) for entry hash is/are set,
+// returns true if the hash was added to the Bloom Filter.
 func (bl Bloom) Has(hash uint64) bool {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
@@ -124,42 +121,36 @@ func (bl Bloom) Has(hash uint64) bool {
 	return true
 }
 
-// AddIfNotHas
-// Only Add entry if it's not present in the bloomfilter
-// returns true if entry was added
-// returns false if entry was allready registered in the bloomfilter
-func (bl *Bloom) AddIfNotHas(entry uint64) bool {
-	if bl.Has(entry) {
+// AddIfNotHas only Adds hash, if it's not present in the bloomfilter.
+// Returns true if hash was added.
+// Returns false if hash was already registered in the bloomfilter.
+func (bl *Bloom) AddIfNotHas(hash uint64) bool {
+	if bl.Has(hash) {
 		return false
 	}
-	bl.Add(entry)
+	bl.Add(hash)
 	return true
 }
 
-// Size
-// make Bloom filter with as bitset of size sz
+// Size makes Bloom filter with as bitset of size sz.
 func (bl *Bloom) Size(sz uint64) {
 	bl.bitset = make([]uint64, sz>>6)
 }
 
-// Clear
-// resets the Bloom filter
+// Clear resets the Bloom filter.
 func (bl *Bloom) Clear() {
 	for i, _ := range bl.bitset {
 		bl.bitset[i] = 0
 	}
 }
 
-// Set
-// set the bit[idx] of bitsit
+// Set sets the bit[idx] of bitset.
 func (bl *Bloom) Set(idx uint64) {
 	ptr := unsafe.Pointer(uintptr(unsafe.Pointer(&bl.bitset[idx>>6])) + uintptr((idx%64)>>3))
 	*(*uint8)(ptr) |= mask[idx%8]
 }
 
-// IsSet
-// check if bit[idx] of bitset is set
-// returns true/false
+// IsSet checks if bit[idx] of bitset is set, returns true/false.
 func (bl *Bloom) IsSet(idx uint64) bool {
 	ptr := unsafe.Pointer(uintptr(unsafe.Pointer(&bl.bitset[idx>>6])) + uintptr((idx%64)>>3))
 	r := ((*(*uint8)(ptr)) >> (idx % 8)) & 1
@@ -173,9 +164,8 @@ type bloomJSONImExport struct {
 	SetLocs   uint64
 }
 
-// NewWithBoolset
-// takes a []byte slice and number of locs per entry
-// returns the bloomfilter with a bitset populated according to the input []byte
+// NewWithBoolset takes a []byte slice and number of locs per entry,
+// returns the bloomfilter with a bitset populated according to the input []byte.
 func newWithBoolset(bs *[]byte, locs uint64) *Bloom {
 	bloomfilter := NewBloomFilter(float64(len(*bs)<<3), float64(locs))
 	ptr := uintptr(unsafe.Pointer(&bloomfilter.bitset[0]))
@@ -186,9 +176,8 @@ func newWithBoolset(bs *[]byte, locs uint64) *Bloom {
 	return bloomfilter
 }
 
-// JSONUnmarshal
-// takes JSON-Object (type bloomJSONImExport) as []bytes
-// returns bloom32 / bloom64 object
+// JSONUnmarshal takes JSON-Object (type bloomJSONImExport) as []bytes
+// returns bloom32 / bloom64 object.
 func JSONUnmarshal(dbData []byte) *Bloom {
 	bloomImEx := bloomJSONImExport{}
 	json.Unmarshal(dbData, &bloomImEx)
@@ -198,8 +187,7 @@ func JSONUnmarshal(dbData []byte) *Bloom {
 	return bf
 }
 
-// JSONMarshal
-// returns JSON-object (type bloomJSONImExport) as []byte
+// JSONMarshal returns JSON-object (type bloomJSONImExport) as []byte.
 func (bl Bloom) JSONMarshal() []byte {
 	bloomImEx := bloomJSONImExport{}
 	bloomImEx.SetLocs = uint64(bl.setLocs)
