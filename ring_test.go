@@ -30,13 +30,13 @@ const (
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Push(items []uint64) {}
+func (c *BaseConsumer) Push(items []uint64) bool { return true }
 
 type TestConsumer struct {
 	push func([]uint64)
 }
 
-func (c *TestConsumer) Push(items []uint64) { c.push(items) }
+func (c *TestConsumer) Push(items []uint64) bool { c.push(items); return true }
 
 func TestRingLossy(t *testing.T) {
 	drainCount := 0
