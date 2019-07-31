@@ -55,10 +55,9 @@ func (s *ringStripe) Push(item uint64) {
 	s.data = append(s.data, item)
 	// if we should drain
 	if len(s.data) >= s.capacity {
-		// copy elements and send to consumer
-		items := append(s.data[:0:0], s.data...)
-		go s.consumer.Push(items)
-		s.data = s.data[:0]
+		// Send elements to consumer. Create a new one.
+		go s.consumer.Push(s.data)
+		s.data = make([]uint64, 0, s.capacity)
 	}
 }
 
