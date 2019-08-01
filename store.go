@@ -62,7 +62,7 @@ func (m *syncMap) Del(key uint64) {
 	m.Delete(key)
 }
 
-const numShards uint64 = 1024
+const numShards uint64 = 256
 
 type shardedMap struct {
 	shards []*lockedMap
