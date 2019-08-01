@@ -26,6 +26,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,16 +38,22 @@ var (
 type Simulator func() (uint64, error)
 
 func NewZipfian(s, v float64, n uint64) Simulator {
+	u := &sync.Mutex{}
 	z := rand.NewZipf(rand.New(rand.NewSource(time.Now().UnixNano())), s, v, n)
 	return func() (uint64, error) {
+		u.Lock()
+		defer u.Unlock()
 		return z.Uint64(), nil
 	}
 }
 
 func NewUniform(n uint64) Simulator {
+	u := &sync.Mutex{}
 	m := int64(n)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return func() (uint64, error) {
+		u.Lock()
+		defer u.Unlock()
 		return uint64(r.Int63n(m)), nil
 	}
 }
@@ -54,11 +61,14 @@ func NewUniform(n uint64) Simulator {
 type Parser func(string, error) ([]uint64, error)
 
 func NewReader(parser Parser, file io.Reader) Simulator {
+	u := &sync.Mutex{}
 	b := bufio.NewReader(file)
 	s := make([]uint64, 0)
 	i := -1
 	var err error
 	return func() (uint64, error) {
+		u.Lock()
+		defer u.Unlock()
 		// only parse a new line when we've run out of items
 		if i++; i == len(s) {
 			// parse sequence from line
@@ -74,7 +84,7 @@ func NewReader(parser Parser, file io.Reader) Simulator {
 func ParseLirs(line string, err error) ([]uint64, error) {
 	if line != "" {
 		// example: "1\r\n"
-		key, err := strconv.ParseUint(line[:len(line)-2], 10, 64)
+		key, err := strconv.ParseUint(strings.TrimSpace(line), 10, 64)
 		return []uint64{key}, err
 	}
 	return nil, ErrDone

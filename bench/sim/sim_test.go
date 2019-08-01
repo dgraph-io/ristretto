@@ -18,7 +18,9 @@ package sim
 
 import (
 	"bytes"
+	"compress/gzip"
 	"math"
+	"os"
 	"testing"
 )
 
@@ -56,7 +58,7 @@ func TestUniform(t *testing.T) {
 
 func TestParseLirs(t *testing.T) {
 	s := NewReader(ParseLirs, bytes.NewReader([]byte{
-		'0', '\r', '\n',
+		'0', '\n',
 		'1', '\r', '\n',
 		'2', '\r', '\n',
 	}))
@@ -67,6 +69,23 @@ func TestParseLirs(t *testing.T) {
 		}
 		if v != i {
 			t.Fatal("value mismatch")
+		}
+	}
+}
+
+func TestReadLirs(t *testing.T) {
+	f, err := os.Open("../trace/gli.lirs.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewReader(ParseLirs, r)
+	for i := uint64(0); i < 100; i++ {
+		if _, err = s(); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

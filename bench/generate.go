@@ -17,6 +17,9 @@
 package main
 
 import (
+	"compress/gzip"
+	"fmt"
+	"os"
 	"sync/atomic"
 	"testing"
 
@@ -25,7 +28,7 @@ import (
 
 const (
 	// CAPACITY is the cache size in number of elements
-	capacity = 1024 * 8
+	capacity = 32000000
 	// W is the number of elements in the "sample size" as mentioned in the
 	// TinyLFU paper, where W/C = 16. W denotes the sample size, and C is the
 	// cache size (denoted by *CAPA).
@@ -34,22 +37,25 @@ const (
 	//
 	// ZIPF_S must be > 1, the larger the value the more spread out the
 	// distribution is
-	zipfS = 1.01
-	zipfV = 2
+	zipfS = 1.001
+	zipfV = 10
 )
 
-// HitsUniform records the hit ratio using a uniformly random distribution.
-func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+func GenerateHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(true)
-		keys := sim.StringCollection(sim.NewUniform(w), w)
 		vals := []byte("*")
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
-			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(uint64(w-1))], vals)
+			for pb.Next() {
+				key, err := keys()
+				if err != nil {
+					fmt.Println(key)
+					panic(err)
+				}
+				cache.Set(fmt.Sprintf("%d", key), vals)
 			}
 		})
 		if stats := cache.Log(); stats != nil {
@@ -60,22 +66,19 @@ func HitsUniform(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 
 // HitsZipf records the hit ratio using a Zipfian distribution.
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
-	return func(b *testing.B) {
-		cache := bench.Create(true)
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, w), w)
-		vals := []byte("*")
-		b.SetParallelism(bench.Para)
-		b.SetBytes(1)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for i := uint64(0); pb.Next(); i++ {
-				cache.Set(keys[i&(w-1)], vals)
-			}
-		})
-		if stats := cache.Log(); stats != nil {
-			coll.Append(stats)
-		}
+	return GenerateHits(bench, coll, sim.NewZipfian(zipfS, zipfV, w))
+}
+
+func HitsLirs(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+	file, err := os.Open("trace/gli.lirs.gz")
+	if err != nil {
+		panic(err)
 	}
+	trace, err := gzip.NewReader(file)
+	if err != nil {
+		panic(err)
+	}
+	return GenerateHits(bench, coll, sim.NewReader(sim.ParseLirs, trace))
 }
 
 func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {

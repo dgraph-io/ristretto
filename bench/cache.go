@@ -19,7 +19,6 @@ package main
 import (
 	"log"
 	"sync"
-	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/allegro/bigcache"
@@ -45,7 +44,7 @@ func NewBenchRistretto(capacity int, track bool) Cache {
 		NumCounters: int64(capacity * 10),
 		MaxCost:     int64(capacity),
 		Log:         track,
-		BufferItems: int64(capacity) / 16,
+		BufferItems: 64,
 	})
 	if err != nil {
 		panic(err)
@@ -128,13 +127,12 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 	//
 	// https://github.com/allegro/bigcache/blob/master/config.go#L47
 	cache, err := bigcache.NewBigCache(bigcache.Config{
-		Shards:             2,
-		LifeWindow:         time.Second * 30,
+		Shards:             256,
+		LifeWindow:         0,
 		CleanWindow:        0,
 		MaxEntriesInWindow: capacity,
 		MaxEntrySize:       500,
 		Verbose:            true,
-		Hasher:             newBigCacheHasher(),
 		HardMaxCacheSize:   0,
 		Logger:             nil,
 	})
@@ -177,23 +175,6 @@ func (c *BenchBigCache) Del(key string) {
 
 func (c *BenchBigCache) Log() *ristretto.PolicyLog {
 	return c.log
-}
-
-// bigCacheHasher is just trying to mimic bigcache's internal implementation of
-// a 64bit fnv-1a hasher
-//
-// https://github.com/allegro/bigcache/blob/master/fnv.go
-type bigCacheHasher struct{}
-
-func newBigCacheHasher() *bigCacheHasher { return &bigCacheHasher{} }
-
-func (h bigCacheHasher) Sum64(key string) uint64 {
-	hash := uint64(14695981039346656037)
-	for i := 0; i < len(key); i++ {
-		hash ^= uint64(key[i])
-		hash *= 1099511628211
-	}
-	return hash
 }
 
 type BenchFastCache struct {

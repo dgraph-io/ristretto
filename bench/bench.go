@@ -92,8 +92,8 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 	// create the bench suite from the suite param (SUITE flag)
 	if kind == "hits" || kind == "full" {
 		suite = append(suite, []*benchSuite{
-			{"hits-uniform ", HitsUniform},
 			{"hits-zipf    ", HitsZipf},
+			{"hits-lirs    ", HitsLirs},
 		}...)
 	}
 	if kind == "speed" || kind == "full" {
