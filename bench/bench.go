@@ -92,18 +92,20 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 	// create the bench suite from the suite param (SUITE flag)
 	if kind == "hits" || kind == "full" {
 		suite = append(suite, []*benchSuite{
-			{"hits-zipf    ", HitsZipf},
-			{"hits-lirs    ", HitsLirs},
+			{"hits-zipf     ", HitsZipf},
+			{"hits-lirs-gli ", HitsLIRS("gli")},
+			{"hits-lirs-loop", HitsLIRS("loop")},
+			{"hits-arc-p3   ", HitsARC("p3")},
 		}...)
 	}
 	if kind == "speed" || kind == "full" {
 		suite = append(suite, []*benchSuite{
-			{"get-same     ", GetSame},
-			{"get-zipf     ", GetZipf},
-			{"set-get      ", SetGet},
-			{"set-same     ", SetSame},
-			{"set-zipf     ", SetZipf},
-			{"set-get-zipf ", SetGetZipf},
+			{"get-same      ", GetSame},
+			{"get-zipf      ", GetZipf},
+			{"set-get       ", SetGet},
+			{"set-same      ", SetSame},
+			{"set-zipf      ", SetZipf},
+			{"set-get-zipf  ", SetGetZipf},
 		}...)
 	}
 	// create benchmarks from bench suite
@@ -224,7 +226,7 @@ func save(logs []*Log) error {
 func Labels() []string {
 	return []string{
 		"name       ",
-		"label        ",
+		"label         ",
 		"go",
 		" mop/s",
 		" ns/op",

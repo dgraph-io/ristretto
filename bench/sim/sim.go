@@ -87,11 +87,11 @@ func NewReader(parser Parser, file io.Reader) Simulator {
 		if i++; i == len(s) {
 			// parse sequence from line
 			if s, err = parser(b.ReadString('\n')); err != nil {
-				return 0, err
+				s = []uint64{0}
 			}
 			i = 0
 		}
-		return s[i], nil
+		return s[i], err
 	}
 }
 

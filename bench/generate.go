@@ -41,23 +41,21 @@ const (
 	zipfV = 10
 )
 
-func GenerateHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func(b *testing.B) {
+func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(true)
-		vals := []byte("*")
-		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				key, err := keys()
-				if err != nil {
-					fmt.Println(key)
-					panic(err)
+		for n := 0; n < b.N; n++ {
+			key, err := keys()
+			if err != nil {
+				if err == sim.ErrDone {
+					break
 				}
-				cache.Set(fmt.Sprintf("%d", key), vals)
+				panic(err)
 			}
-		})
+			cache.Set(fmt.Sprintf("%d", key), []byte("*"))
+		}
 		if stats := cache.Log(); stats != nil {
 			coll.Append(stats)
 		}
@@ -66,19 +64,35 @@ func GenerateHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) fun
 
 // HitsZipf records the hit ratio using a Zipfian distribution.
 func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
-	return GenerateHits(bench, coll, sim.NewZipfian(zipfS, zipfV, w))
+	return NewHits(bench, coll, sim.NewZipfian(zipfS, zipfV, w))
 }
 
-func HitsLirs(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
-	file, err := os.Open("trace/gli.lirs.gz")
-	if err != nil {
-		panic(err)
+func HitsLIRS(pre string) func(*Benchmark, *LogCollection) func(b *testing.B) {
+	return func(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+		file, err := os.Open("./trace/" + pre + ".lirs.gz")
+		if err != nil {
+			panic(err)
+		}
+		trace, err := gzip.NewReader(file)
+		if err != nil {
+			panic(err)
+		}
+		return NewHits(bench, coll, sim.NewReader(sim.ParseLIRS, trace))
 	}
-	trace, err := gzip.NewReader(file)
-	if err != nil {
-		panic(err)
+}
+
+func HitsARC(pre string) func(*Benchmark, *LogCollection) func(b *testing.B) {
+	return func(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+		file, err := os.Open("./trace/" + pre + ".arc.gz")
+		if err != nil {
+			panic(err)
+		}
+		trace, err := gzip.NewReader(file)
+		if err != nil {
+			panic(err)
+		}
+		return NewHits(bench, coll, sim.NewReader(sim.ParseARC, trace))
 	}
-	return GenerateHits(bench, coll, sim.NewReader(sim.ParseLirs, trace))
 }
 
 func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
