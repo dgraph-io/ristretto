@@ -20,11 +20,18 @@ package sim
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
+)
+
+var (
+	ErrDone    = errors.New("no more values in the simulator")
+	ErrBadLine = errors.New("bad line for trace format")
 )
 
 type Simulator func() (uint64, error)
@@ -44,21 +51,63 @@ func NewUniform(n uint64) Simulator {
 	}
 }
 
-type Parser func(string, error) (uint64, error)
+type Parser func(string, error) ([]uint64, error)
 
 func NewReader(parser Parser, file io.Reader) Simulator {
 	b := bufio.NewReader(file)
+	s := make([]uint64, 0)
+	i := -1
+	var err error
 	return func() (uint64, error) {
-		return parser(b.ReadString('\n'))
+		// only parse a new line when we've run out of items
+		if i++; i == len(s) {
+			// parse sequence from line
+			if s, err = parser(b.ReadString('\n')); err != nil {
+				return 0, err
+			}
+			i = 0
+		}
+		return s[i], nil
 	}
 }
 
-func ParseLirs(line string, err error) (uint64, error) {
+func ParseLirs(line string, err error) ([]uint64, error) {
 	if line != "" {
 		// example: "1\r\n"
-		return strconv.ParseUint(line[:len(line)-2], 10, 64)
+		key, err := strconv.ParseUint(line[:len(line)-2], 10, 64)
+		return []uint64{key}, err
 	}
-	return 0, ErrDone
+	return nil, ErrDone
+}
+
+func ParseArc(line string, err error) ([]uint64, error) {
+	if line != "" {
+		// example: "0 5 0 0\r\n"
+		//
+		// -  first block: starting number in sequence
+		// - second block: number of items in sequence
+		// -  third block: ignore
+		// - fourth block: global line number (not used)
+		cols := strings.Fields(line)
+		if len(cols) != 4 {
+			return nil, ErrBadLine
+		}
+		start, err := strconv.ParseUint(cols[0], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		count, err := strconv.ParseUint(cols[1], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		// populate sequence from start to start + count
+		seq := make([]uint64, count)
+		for i := range seq {
+			seq[i] = start + uint64(i)
+		}
+		return seq, nil
+	}
+	return nil, ErrDone
 }
 
 func Collection(simulator Simulator, size uint64) []uint64 {

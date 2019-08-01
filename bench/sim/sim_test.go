@@ -23,7 +23,7 @@ import (
 )
 
 func TestZipfian(t *testing.T) {
-	s := NewZipfian(1.25, 2, 100)
+	s := NewZipfian(1.5, 1, 100)
 	m := make(map[uint64]uint64, 100)
 	for i := 0; i < 100; i++ {
 		k, err := s()
@@ -71,10 +71,34 @@ func TestParseLirs(t *testing.T) {
 	}
 }
 
-func TestCollect(t *testing.T) {
+func TestParseArc(t *testing.T) {
+	s := NewReader(ParseArc, bytes.NewReader([]byte{
+		'1', '2', '7', ' ', '6', '4', ' ', '0', ' ', '0', '\r', '\n',
+		'1', '9', '1', ' ', '3', '6', ' ', '0', ' ', '0', '\r', '\n',
+	}))
+	for i := uint64(0); i < 100; i++ {
+		v, err := s()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v != 127+i {
+			t.Fatal("value mismatch")
+		}
+	}
+}
+
+func TestCollection(t *testing.T) {
 	s := NewUniform(100)
 	c := Collection(s, 100)
 	if len(c) != 100 {
 		t.Fatal("collection not full")
+	}
+}
+
+func TestStringCollection(t *testing.T) {
+	s := NewUniform(100)
+	c := StringCollection(s, 100)
+	if len(c) != 100 {
+		t.Fatal("string collection not full")
 	}
 }
