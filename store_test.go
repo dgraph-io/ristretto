@@ -83,35 +83,5 @@ func GenerateTest(create func() store) func(*testing.T) {
 				t.Fatal("del error")
 			}
 		})
-		t.Run("run", func(t *testing.T) {
-			m := create()
-			n := 10
-			// populate with incrementing ints
-			for i := 0; i < n; i++ {
-				m.Set(uint64(i), i)
-			}
-			// will hold items collected during Run
-			check := make(map[uint64]struct{})
-			// iterate over items
-			m.Run(func(key, value interface{}) bool {
-				check[key.(uint64)] = struct{}{}
-				// go until no more items
-				return true
-			})
-			if len(check) != n {
-				t.Fatal("run not iterating over all elements")
-			}
-			// check stopping run iteration
-			i := 0
-			// iterate 3 times
-			m.Run(func(key, value interface{}) bool {
-				i++
-				return !(i == 3)
-			})
-			if i != 3 {
-				println(i)
-				t.Fatal("run not checking return bool")
-			}
-		})
 	}
 }
