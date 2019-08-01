@@ -56,8 +56,8 @@ func TestUniform(t *testing.T) {
 	}
 }
 
-func TestParseLirs(t *testing.T) {
-	s := NewReader(ParseLirs, bytes.NewReader([]byte{
+func TestParseLIRS(t *testing.T) {
+	s := NewReader(ParseLIRS, bytes.NewReader([]byte{
 		'0', '\n',
 		'1', '\r', '\n',
 		'2', '\r', '\n',
@@ -73,7 +73,7 @@ func TestParseLirs(t *testing.T) {
 	}
 }
 
-func TestReadLirs(t *testing.T) {
+func TestReadLIRS(t *testing.T) {
 	f, err := os.Open("../trace/gli.lirs.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestReadLirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewReader(ParseLirs, r)
+	s := NewReader(ParseLIRS, r)
 	for i := uint64(0); i < 100; i++ {
 		if _, err = s(); err != nil {
 			t.Fatal(err)
@@ -90,8 +90,8 @@ func TestReadLirs(t *testing.T) {
 	}
 }
 
-func TestParseArc(t *testing.T) {
-	s := NewReader(ParseArc, bytes.NewReader([]byte{
+func TestParseARC(t *testing.T) {
+	s := NewReader(ParseARC, bytes.NewReader([]byte{
 		'1', '2', '7', ' ', '6', '4', ' ', '0', ' ', '0', '\r', '\n',
 		'1', '9', '1', ' ', '3', '6', ' ', '0', ' ', '0', '\r', '\n',
 	}))
