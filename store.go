@@ -16,7 +16,9 @@
 
 package ristretto
 
-import "sync"
+import (
+	"sync"
+)
 
 // store is the interface fulfilled by all hash map implementations in this
 // file. Some hash map implementations are better suited for certain data
@@ -32,16 +34,12 @@ type store interface {
 	Set(uint64, interface{})
 	// Del deletes the key-value pair from the Map.
 	Del(uint64)
-	// Run applies the function parameter to random key-value pairs. No key
-	// will be visited more than once. If the function returns false, the
-	// iteration stops. If the function returns true, the iteration will
-	// continue until every key has been visited once.
-	Run(func(interface{}, interface{}) bool)
 }
 
 // newStore returns the default store implementation.
 func newStore() store {
-	return newSyncMap()
+	// return newSyncMap()
+	return newShardedMap()
 }
 
 type syncMap struct {
@@ -64,8 +62,33 @@ func (m *syncMap) Del(key uint64) {
 	m.Delete(key)
 }
 
-func (m *syncMap) Run(f func(key, value interface{}) bool) {
-	m.Range(f)
+const numShards uint64 = 1024
+
+type shardedMap struct {
+	shards []*lockedMap
+}
+
+func newShardedMap() *shardedMap {
+	sm := &shardedMap{shards: make([]*lockedMap, int(numShards))}
+	for i := range sm.shards {
+		sm.shards[i] = newLockedMap()
+	}
+	return sm
+}
+
+func (sm *shardedMap) Get(key uint64) (interface{}, bool) {
+	idx := key % numShards
+	return sm.shards[idx].Get(key)
+}
+
+func (sm *shardedMap) Set(key uint64, value interface{}) {
+	idx := key % numShards
+	sm.shards[idx].Set(key, value)
+}
+
+func (sm *shardedMap) Del(key uint64) {
+	idx := key % numShards
+	sm.shards[idx].Del(key)
 }
 
 type lockedMap struct {
@@ -94,14 +117,4 @@ func (m *lockedMap) Del(key uint64) {
 	m.Lock()
 	defer m.Unlock()
 	delete(m.data, key)
-}
-
-func (m *lockedMap) Run(f func(interface{}, interface{}) bool) {
-	m.RLock()
-	defer m.RUnlock()
-	for k, v := range m.data {
-		if !f(k, v) {
-			return
-		}
-	}
 }

@@ -35,6 +35,14 @@ type Cache struct {
 	data   store
 	policy Policy
 	buffer *ringBuffer
+
+	setCh chan *item
+}
+
+type item struct {
+	key  uint64
+	val  interface{}
+	cost int64
 }
 
 type Config struct {
@@ -69,7 +77,7 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Log {
 		policy = NewRecorder(policy, data)
 	}
-	return &Cache{
+	cache := &Cache{
 		data:   data,
 		policy: policy,
 		buffer: newRingBuffer(ringLossy, &ringConfig{
@@ -77,7 +85,13 @@ func NewCache(config *Config) (*Cache, error) {
 			Capacity: config.BufferItems,
 			Stripes:  0, // Don't care about the stripes in ringLossy.
 		}),
-	}, nil
+		setCh: make(chan *item, 32*1024),
+	}
+	// TODO: Make this configurable. How many goroutines to process the sets.
+	for i := 0; i < 2; i++ {
+		go cache.processItems()
+	}
+	return cache, nil
 }
 
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
@@ -86,17 +100,28 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return c.data.Get(hash)
 }
 
+func (c *Cache) processItems() {
+	for item := range c.setCh {
+		victims, added := c.policy.Add(item.key, item.cost)
+		if added {
+			c.data.Set(item.key, item.val)
+		}
+		for _, victim := range victims {
+			c.data.Del(victim)
+		}
+	}
+}
+
 func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	hash := z.KeyToHash(key)
-	victims, added := c.policy.Add(hash, cost)
-	if !added {
-		return false
+	// We should not set the key value to c.data here. Otherwise, if we drop the item on the floor,
+	// we would have an orphan key whose cost is not being tracked.
+	select {
+	case c.setCh <- &item{key: hash, val: val, cost: cost}:
+	default:
+		// Drop the set on the floor. Too many to tackle.
 	}
-	for _, victim := range victims {
-		c.data.Del(victim)
-	}
-	c.data.Set(hash, val)
-	return true
+	return true // We should remove this bool.
 }
 
 func (c *Cache) Del(key interface{}) {
