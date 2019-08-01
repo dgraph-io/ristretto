@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -500,4 +501,8 @@ func (p *PolicyLog) GetEvictions() int64 {
 func (p *PolicyLog) Ratio() float64 {
 	hits, misses := atomic.LoadInt64(&p.hits), atomic.LoadInt64(&p.miss)
 	return float64(hits) / float64(hits+misses)
+}
+
+func (p *PolicyLog) String() string {
+	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.GetHits(), p.GetMisses(), p.GetEvictions())
 }

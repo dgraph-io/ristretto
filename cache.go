@@ -35,8 +35,7 @@ type Cache struct {
 	data   store
 	policy Policy
 	buffer *ringBuffer
-
-	setCh chan *item
+	setCh  chan *item
 }
 
 type item struct {
@@ -55,6 +54,8 @@ type Config struct {
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems int64
 	// Log is whether or not to Log hit ratio statistics (with some overhead).
+	// TODO: With lossy setup, the policy might not be invoked, in which case the numbers from this
+	// are going to be incorrect. Instead, we should be doing log within Cache itself.
 	Log bool
 }
 
@@ -87,7 +88,9 @@ func NewCache(config *Config) (*Cache, error) {
 		}),
 		setCh: make(chan *item, 32*1024),
 	}
-	// TODO: Make this configurable. How many goroutines to process the sets.
+	// We can possibly make this configurable. But having 2 goroutines processing this seems
+	// sufficient for now.
+	// TODO: Allow a way to stop these goroutines.
 	for i := 0; i < 2; i++ {
 		go cache.processItems()
 	}
@@ -118,10 +121,11 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	// we would have an orphan key whose cost is not being tracked.
 	select {
 	case c.setCh <- &item{key: hash, val: val, cost: cost}:
+		return true
 	default:
-		// Drop the set on the floor. Too many to tackle.
+		// Drop the set on the floor to avoid blocking.
+		return false
 	}
-	return true // We should remove this bool.
 }
 
 func (c *Cache) Del(key interface{}) {
