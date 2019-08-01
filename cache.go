@@ -18,6 +18,8 @@ package ristretto
 
 import (
 	"errors"
+	"fmt"
+	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -36,6 +38,7 @@ type Cache struct {
 	policy Policy
 	buffer *ringBuffer
 	setCh  chan *item
+	stats  *stats
 }
 
 type item struct {
@@ -53,10 +56,8 @@ type Config struct {
 	MaxCost int64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems int64
-	// Log is whether or not to Log hit ratio statistics (with some overhead).
-	// TODO: With lossy setup, the policy might not be invoked, in which case the numbers from this
-	// are going to be incorrect. Instead, we should be doing log within Cache itself.
-	Log bool
+	// If set to true, cache would collect useful metrics about usage.
+	Metrics bool
 }
 
 func NewCache(config *Config) (*Cache, error) {
@@ -75,9 +76,6 @@ func NewCache(config *Config) (*Cache, error) {
 	data := newStore()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	policy := newPolicy(config.NumCounters, config.MaxCost)
-	if config.Log {
-		policy = NewRecorder(policy, data)
-	}
 	cache := &Cache{
 		data:   data,
 		policy: policy,
@@ -88,6 +86,9 @@ func NewCache(config *Config) (*Cache, error) {
 		}),
 		setCh: make(chan *item, 32*1024),
 	}
+	if config.Metrics {
+		cache.collectMetrics()
+	}
 	// We can possibly make this configurable. But having 2 goroutines processing this seems
 	// sufficient for now.
 	// TODO: Allow a way to stop these goroutines.
@@ -97,10 +98,21 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
+func (c *Cache) collectMetrics() {
+	c.stats = newStats()
+	c.policy.CollectMetrics(c.stats)
+}
+
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	hash := z.KeyToHash(key)
 	c.buffer.Push(hash)
-	return c.data.Get(hash)
+	val, ok := c.data.Get(hash)
+	if ok {
+		c.stats.Add(hit, 1)
+	} else {
+		c.stats.Add(miss, 1)
+	}
+	return val, ok
 }
 
 func (c *Cache) processItems() {
@@ -134,6 +146,64 @@ func (c *Cache) Del(key interface{}) {
 	c.data.Del(hash)
 }
 
-func (c *Cache) Log() *PolicyLog {
-	return c.policy.Log()
+func (c *Cache) Stats() *stats {
+	return c.stats
+}
+
+type statsType int
+
+const (
+	hit = iota
+	miss
+	evict
+	dropSet
+	keepSet
+	doNotUse
+)
+
+// stats is the struct for hit ratio statistics. Note that there is some
+// cost to maintaining the counters, so it's best to wrap Policies via the
+// Recorder type when hit ratio analysis is needed.
+type stats struct {
+	all []*uint64
+}
+
+func newStats() *stats {
+	s := &stats{}
+	for i := 0; i < doNotUse; i++ {
+		v := new(uint64)
+		s.all = append(s.all, v)
+	}
+	return s
+}
+
+func (p *stats) Add(t statsType, delta uint64) {
+	if p == nil {
+		return
+	}
+	valp := p.all[t]
+	atomic.AddUint64(valp, delta)
+}
+
+func (p *stats) Get(t statsType) uint64 {
+	if p == nil {
+		return 0
+	}
+	valp := p.all[t]
+	return atomic.LoadUint64(valp)
+}
+
+func (p *stats) Ratio() float64 {
+	if p == nil {
+		return 0.0
+	}
+	hits, misses := p.Get(hit), p.Get(miss)
+	return float64(hits) / float64(hits+misses)
+}
+
+func (p *stats) String() string {
+	if p == nil {
+		return ""
+	}
+	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.Get(hit), p.Get(miss), p.Get(evict))
 }

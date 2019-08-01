@@ -37,26 +37,24 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	if config.MaxCost == 0 && config.NumCounters != 0 {
 		config.MaxCost = config.NumCounters
 	}
-	data := newStore()
 	policy := p(config.NumCounters, config.MaxCost)
-	if config.Log {
-		policy = NewRecorder(policy, data)
-	}
-	return &Cache{
-		data:   data,
+	cache := &Cache{
+		data:   newStore(),
 		policy: policy,
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
 	}
+	cache.collectMetrics()
+	return cache
 }
 
 func BenchmarkCacheOneGet(b *testing.B) {
 	c := newCache(&Config{
 		NumCounters: NUM_COUNTERS,
 		BufferItems: BUFFER_ITEMS,
-		Log:         false,
+		Metrics:     false,
 	}, newPolicy)
 	c.Set("1", 1, 1)
 	b.SetBytes(1)
@@ -72,7 +70,7 @@ func BenchmarkCacheGets(b *testing.B) {
 	cache, err := NewCache(&Config{
 		NumCounters: 64 << 20,
 		BufferItems: 1000,
-		Log:         true,
+		Metrics:     true,
 		MaxCost:     256 << 20,
 	})
 	if err != nil {
@@ -98,7 +96,7 @@ func BenchmarkCacheGets(b *testing.B) {
 		}
 	})
 	// TODO: Hit ratio should be 100%.
-	b.Logf("Got Hit Ratio: %.2f\n", cache.Log().Ratio())
+	b.Logf("Got Hit Ratio: %.2f\n", cache.Stats().Ratio())
 }
 
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
@@ -107,8 +105,8 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 		cache := newCache(&Config{
 			NumCounters: NUM_COUNTERS,
 			BufferItems: BUFFER_ITEMS,
-			Log:         true,
 		}, p)
+		cache.collectMetrics()
 		// must iterate through SAMPLE_ITEMS because it's fixed and should be
 		// much larger than the MAX_ITEMS
 		for i := 0; i < SAMPLE_ITEMS; i++ {
@@ -121,7 +119,7 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 			cache.Set(fmt.Sprintf("%d", key), i, 1)
 		}
 		// stats is the hit ratio stats for the cache instance
-		stats := cache.Log()
+		stats := cache.Stats()
 		// log the hit ratio
 		t.Logf("------------------- %d%%\n", uint64(stats.Ratio()*100))
 	}
@@ -187,10 +185,12 @@ func TestCacheSetGet(t *testing.T) {
 
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
-		if added := c.Set(key, i, 1); added {
+		if pushed := c.Set(key, i, 1); pushed {
+			time.Sleep(10 * time.Millisecond)
 			value, found := c.Get(key)
-			if !found || value == nil || value.(int) != i {
-				t.Fatal("set/get error")
+			if found && (value == nil || value.(int) != i) {
+				// There's no guarantee that the key would definitely make it to cache.
+				t.Fatalf("set/get error for key: %s", key)
 			}
 		}
 	}
