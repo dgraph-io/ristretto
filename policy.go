@@ -141,8 +141,9 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 				minKey, minHits, minId = pair.key, hits, i
 			}
 		}
-		// if the incoming item isn't worth keeping in the policy, stop
+		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
+			p.stats.Add(rejectSets, 1)
 			return victims, false
 		}
 		// delete the victim from metadata

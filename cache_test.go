@@ -46,16 +46,22 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 			Capacity: config.BufferItems,
 		}),
 	}
-	cache.collectMetrics()
+	if config.Metrics {
+		cache.collectMetrics()
+	}
 	return cache
 }
 
 func BenchmarkCacheOneGet(b *testing.B) {
-	c := newCache(&Config{
+	c, err := NewCache(&Config{
 		NumCounters: NUM_COUNTERS,
+		MaxCost:     NUM_COUNTERS,
 		BufferItems: BUFFER_ITEMS,
-		Metrics:     false,
-	}, newPolicy)
+		Metrics:     true,
+	})
+	if err != nil {
+		b.Fatalf("Error: %v", err)
+	}
 	c.Set("1", 1, 1)
 	b.SetBytes(1)
 	b.ResetTimer()
@@ -64,6 +70,7 @@ func BenchmarkCacheOneGet(b *testing.B) {
 			c.Get("1")
 		}
 	})
+	b.Logf("cache.Stats: %s\n", c.Metrics())
 }
 
 func BenchmarkCacheGets(b *testing.B) {
@@ -96,7 +103,7 @@ func BenchmarkCacheGets(b *testing.B) {
 		}
 	})
 	// TODO: Hit ratio should be 100%.
-	b.Logf("Got Hit Ratio: %.2f\n", cache.Stats().Ratio())
+	b.Logf("Cache Metrics: %s\n", cache.Metrics())
 }
 
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
@@ -119,7 +126,8 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 			cache.Set(fmt.Sprintf("%d", key), i, 1)
 		}
 		// stats is the hit ratio stats for the cache instance
-		stats := cache.Stats()
+		stats := cache.Metrics()
+		t.Logf("metrics: %s\n", stats)
 		// log the hit ratio
 		t.Logf("------------------- %d%%\n", uint64(stats.Ratio()*100))
 	}

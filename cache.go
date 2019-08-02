@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -136,6 +137,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 		return true
 	default:
 		// Drop the set on the floor to avoid blocking.
+		c.stats.Add(dropSets, 1)
 		return false
 	}
 }
@@ -146,7 +148,7 @@ func (c *Cache) Del(key interface{}) {
 	c.data.Del(hash)
 }
 
-func (c *Cache) Stats() *metrics {
+func (c *Cache) Metrics() *metrics {
 	return c.stats
 }
 
@@ -166,9 +168,9 @@ const (
 	costAdded
 	costEvicted
 
-	// The following keep track of how many sets were kept and dropped on the floor.
+	// The following keep track of how many sets were dropped or rejected later.
 	dropSets
-	keepSets
+	rejectSets
 
 	// The following 2 keep track of how many gets were kept and dropped on the floor.
 	dropGets
@@ -215,12 +217,50 @@ func (p *metrics) Ratio() float64 {
 		return 0.0
 	}
 	hits, misses := p.Get(hit), p.Get(miss)
+	if hits == 0 && misses == 0 {
+		return 0.0
+	}
 	return float64(hits) / float64(hits+misses)
+}
+
+func stringFor(t metricType) string {
+	switch t {
+	case hit:
+		return "hit"
+	case miss:
+		return "miss"
+	case keyAdd:
+		return "keys-added"
+	case keyUpdate:
+		return "keys-updated"
+	case keyEvict:
+		return "keys-evicted"
+	case costAdded:
+		return "cost-added"
+	case costEvicted:
+		return "cost-evicted"
+	case dropSets:
+		return "sets-dropped"
+	case rejectSets:
+		return "sets-rejected" // by policy.
+	case dropGets:
+		return "gets-dropped"
+	case keepGets:
+		return "gets-kept"
+	default:
+		return "unidentified"
+	}
 }
 
 func (p *metrics) String() string {
 	if p == nil {
 		return ""
 	}
-	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.Get(hit), p.Get(miss), p.Get(keyEvict))
+	var buf bytes.Buffer
+	for i := 0; i < doNotUse; i++ {
+		t := metricType(i)
+		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.Get(t))
+	}
+	fmt.Fprintf(&buf, "gets-total: %d", p.Get(hit)+p.Get(miss))
+	return string(buf.Bytes())
 }
