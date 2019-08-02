@@ -43,7 +43,7 @@ type Policy interface {
 	// Cap returns the available capacity.
 	Cap() int64
 	// Optionally, set stats object to track how policy is performing.
-	CollectMetrics(stats *stats)
+	CollectMetrics(stats *metrics)
 }
 
 func newPolicy(numCounters, maxCost int64) Policy {
@@ -64,11 +64,12 @@ type defaultPolicy struct {
 	admit   *tinyLFU
 	evict   *sampledLFU
 	itemsCh chan []uint64
-	stats   *stats
+	stats   *metrics
 }
 
-func (p *defaultPolicy) CollectMetrics(stats *stats) {
+func (p *defaultPolicy) CollectMetrics(stats *metrics) {
 	p.stats = stats
+	p.evict.stats = stats
 }
 
 type policyPair struct {
@@ -87,8 +88,10 @@ func (p *defaultPolicy) processItems() {
 func (p *defaultPolicy) Push(keys []uint64) bool {
 	select {
 	case p.itemsCh <- keys:
+		p.stats.Add(keepGets, uint64(len(keys)))
 		return true
 	default:
+		p.stats.Add(dropGets, uint64(len(keys)))
 		return false
 	}
 }
@@ -102,6 +105,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		return nil, false
 	}
 	if has := p.evict.updateIfHas(key, cost); has {
+		p.stats.Add(keyUpdate, 1)
 		return nil, true
 	}
 
@@ -177,6 +181,7 @@ type sampledLFU struct {
 	keyCosts map[uint64]int64
 	maxCost  int64
 	used     int64
+	stats    *metrics
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
@@ -204,11 +209,16 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 }
 
 func (p *sampledLFU) del(key uint64) {
-	p.used -= p.keyCosts[key]
+	cost := p.keyCosts[key]
+	p.stats.Add(costAdded, uint64(cost))
+	p.stats.Add(keyEvict, 1)
+	p.used -= cost
 	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
+	p.stats.Add(costAdded, uint64(cost))
+	p.stats.Add(keyAdd, 1)
 	p.keyCosts[key] = cost
 	p.used += cost
 }
@@ -217,6 +227,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	if prev, exists := p.keyCosts[key]; exists {
 		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
 		// if the updated cost causes the size to grow beyond maxCost.
+		p.stats.Add(keyUpdate, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
@@ -288,7 +299,7 @@ func (p *tinyLFU) reset() {
 type Clairvoyant struct {
 	sync.Mutex
 	time     int64
-	log      *stats
+	log      *metrics
 	access   map[uint64][]int64
 	capacity int64
 	future   []uint64
@@ -301,7 +312,7 @@ func newClairvoyant(numCounters, maxCost int64) Policy {
 	}
 }
 
-func (p *Clairvoyant) CollectMetrics(stats *stats) {
+func (p *Clairvoyant) CollectMetrics(stats *metrics) {
 	p.log = stats
 }
 
@@ -362,7 +373,7 @@ func (p *Clairvoyant) Cap() int64 {
 	return 0
 }
 
-func (p *Clairvoyant) Log() *stats {
+func (p *Clairvoyant) Log() *metrics {
 	p.Lock()
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
@@ -388,7 +399,7 @@ func (p *Clairvoyant) Log() *stats {
 					// there's no good distances because the key isn't used
 					// again in the future, so we can just stop here and delete
 					// it, and skip over the rest
-					p.log.Add(evict, 1)
+					p.log.Add(keyEvict, 1)
 					delete(data, k)
 					size--
 					goto add
@@ -404,7 +415,7 @@ func (p *Clairvoyant) Log() *stats {
 				c++
 			}
 			// delete the item furthest away
-			p.log.Add(evict, 1)
+			p.log.Add(keyEvict, 1)
 			delete(data, maxKey)
 			size--
 		}

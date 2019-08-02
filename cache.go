@@ -38,7 +38,7 @@ type Cache struct {
 	policy Policy
 	buffer *ringBuffer
 	setCh  chan *item
-	stats  *stats
+	stats  *metrics
 }
 
 type item struct {
@@ -99,7 +99,7 @@ func NewCache(config *Config) (*Cache, error) {
 }
 
 func (c *Cache) collectMetrics() {
-	c.stats = newStats()
+	c.stats = newMetrics()
 	c.policy.CollectMetrics(c.stats)
 }
 
@@ -146,30 +146,47 @@ func (c *Cache) Del(key interface{}) {
 	c.data.Del(hash)
 }
 
-func (c *Cache) Stats() *stats {
+func (c *Cache) Stats() *metrics {
 	return c.stats
 }
 
-type statsType int
+type metricType int
 
 const (
+	// The following 2 keep track of hits and misses.
 	hit = iota
 	miss
-	evict
-	dropSet
-	keepSet
+
+	// The following 3 keep track of number of keys added, updated and evicted.
+	keyAdd
+	keyUpdate
+	keyEvict
+
+	// The following 2 keep track of cost of keys added and evicted.
+	costAdded
+	costEvicted
+
+	// The following keep track of how many sets were kept and dropped on the floor.
+	dropSets
+	keepSets
+
+	// The following 2 keep track of how many gets were kept and dropped on the floor.
+	dropGets
+	keepGets
+
+	// This should be the final enum. Other enums should be set before this.
 	doNotUse
 )
 
-// stats is the struct for hit ratio statistics. Note that there is some
+// metrics is the struct for hit ratio statistics. Note that there is some
 // cost to maintaining the counters, so it's best to wrap Policies via the
 // Recorder type when hit ratio analysis is needed.
-type stats struct {
+type metrics struct {
 	all []*uint64
 }
 
-func newStats() *stats {
-	s := &stats{}
+func newMetrics() *metrics {
+	s := &metrics{}
 	for i := 0; i < doNotUse; i++ {
 		v := new(uint64)
 		s.all = append(s.all, v)
@@ -177,7 +194,7 @@ func newStats() *stats {
 	return s
 }
 
-func (p *stats) Add(t statsType, delta uint64) {
+func (p *metrics) Add(t metricType, delta uint64) {
 	if p == nil {
 		return
 	}
@@ -185,7 +202,7 @@ func (p *stats) Add(t statsType, delta uint64) {
 	atomic.AddUint64(valp, delta)
 }
 
-func (p *stats) Get(t statsType) uint64 {
+func (p *metrics) Get(t metricType) uint64 {
 	if p == nil {
 		return 0
 	}
@@ -193,7 +210,7 @@ func (p *stats) Get(t statsType) uint64 {
 	return atomic.LoadUint64(valp)
 }
 
-func (p *stats) Ratio() float64 {
+func (p *metrics) Ratio() float64 {
 	if p == nil {
 		return 0.0
 	}
@@ -201,9 +218,9 @@ func (p *stats) Ratio() float64 {
 	return float64(hits) / float64(hits+misses)
 }
 
-func (p *stats) String() string {
+func (p *metrics) String() string {
 	if p == nil {
 		return ""
 	}
-	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.Get(hit), p.Get(miss), p.Get(evict))
+	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.Get(hit), p.Get(miss), p.Get(keyEvict))
 }
