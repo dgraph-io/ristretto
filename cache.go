@@ -180,6 +180,35 @@ const (
 	doNotUse
 )
 
+func stringFor(t metricType) string {
+	switch t {
+	case hit:
+		return "hit"
+	case miss:
+		return "miss"
+	case keyAdd:
+		return "keys-added"
+	case keyUpdate:
+		return "keys-updated"
+	case keyEvict:
+		return "keys-evicted"
+	case costAdd:
+		return "cost-added"
+	case costEvict:
+		return "cost-evicted"
+	case dropSets:
+		return "sets-dropped"
+	case rejectSets:
+		return "sets-rejected" // by policy.
+	case dropGets:
+		return "gets-dropped"
+	case keepGets:
+		return "gets-kept"
+	default:
+		return "unidentified"
+	}
+}
+
 // metrics is the struct for hit ratio statistics. Note that there is some
 // cost to maintaining the counters, so it's best to wrap Policies via the
 // Recorder type when hit ratio analysis is needed.
@@ -221,35 +250,6 @@ func (p *metrics) Ratio() float64 {
 		return 0.0
 	}
 	return float64(hits) / float64(hits+misses)
-}
-
-func stringFor(t metricType) string {
-	switch t {
-	case hit:
-		return "hit"
-	case miss:
-		return "miss"
-	case keyAdd:
-		return "keys-added"
-	case keyUpdate:
-		return "keys-updated"
-	case keyEvict:
-		return "keys-evicted"
-	case costAdd:
-		return "cost-added"
-	case costEvict:
-		return "cost-evicted"
-	case dropSets:
-		return "sets-dropped"
-	case rejectSets:
-		return "sets-rejected" // by policy.
-	case dropGets:
-		return "gets-dropped"
-	case keepGets:
-		return "gets-kept"
-	default:
-		return "unidentified"
-	}
 }
 
 func (p *metrics) String() string {
