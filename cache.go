@@ -233,7 +233,9 @@ func (p *metrics) Add(t metricType, hash, delta uint64) {
 		return
 	}
 	valp := p.all[t]
-	idx := (hash % 25) * 10 // Leave space between two counters.
+	// Avoid false sharing by padding at least 64 bytes of space between two
+	// atomic counters which would be incremented.
+	idx := (hash % 25) * 10
 	atomic.AddUint64(valp[idx], delta)
 }
 
