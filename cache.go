@@ -108,12 +108,10 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	hash := z.KeyToHash(key)
 	c.buffer.Push(hash)
 	val, ok := c.data.Get(hash)
-	if c.stats != nil {
-		if ok {
-			c.stats.Add(hit, 1)
-		} else {
-			c.stats.Add(miss, 1)
-		}
+	if ok {
+		c.stats.Add(hit, 1)
+	} else {
+		c.stats.Add(miss, 1)
 	}
 	return val, ok
 }
