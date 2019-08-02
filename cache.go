@@ -213,15 +213,18 @@ func stringFor(t metricType) string {
 // cost to maintaining the counters, so it's best to wrap Policies via the
 // Recorder type when hit ratio analysis is needed.
 type metrics struct {
-	all [doNotUse][256]uint64
+	all [doNotUse][]*uint64
 }
 
 func newMetrics() *metrics {
 	s := &metrics{}
-	// for i := 0; i < doNotUse; i++ {
-	// 	v := new(uint64)
-	// 	s.all = append(s.all, v)
-	// }
+	for i := 0; i < doNotUse; i++ {
+		s.all[i] = make([]*uint64, 256)
+		slice := s.all[i]
+		for j := range slice {
+			slice[j] = new(uint64)
+		}
+	}
 	return s
 }
 
@@ -230,8 +233,8 @@ func (p *metrics) Add(t metricType, hash, delta uint64) {
 		return
 	}
 	valp := p.all[t]
-	idx := (hash % 28) * 9 // Leave 64B space between two counters.
-	atomic.AddUint64(&valp[idx], delta)
+	idx := (hash % 25) * 10 // Leave space between two counters.
+	atomic.AddUint64(valp[idx], delta)
 }
 
 func (p *metrics) Get(t metricType) uint64 {
@@ -239,8 +242,11 @@ func (p *metrics) Get(t metricType) uint64 {
 		return 0
 	}
 	valp := p.all[t]
-	idx := z.FastRand() % 256
-	return atomic.LoadUint64(&valp[idx])
+	var total uint64
+	for i := range valp {
+		total += atomic.LoadUint64(valp[i])
+	}
+	return total
 }
 
 func (p *metrics) Ratio() float64 {
