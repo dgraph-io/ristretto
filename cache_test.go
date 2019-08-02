@@ -194,7 +194,6 @@ func TestCacheSetGet(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
 		if pushed := c.Set(key, i, 1); pushed {
-			time.Sleep(10 * time.Millisecond)
 			value, found := c.Get(key)
 			if found && (value == nil || value.(int) != i) {
 				// There's no guarantee that the key would definitely make it to cache.
