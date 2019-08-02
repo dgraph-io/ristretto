@@ -105,7 +105,6 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		return nil, false
 	}
 	if has := p.evict.updateIfHas(key, cost); has {
-		p.stats.Add(keyUpdate, 1)
 		return nil, true
 	}
 
