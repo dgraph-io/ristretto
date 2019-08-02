@@ -139,12 +139,9 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 	cache, err := bigcache.NewBigCache(bigcache.Config{
 		Shards:             256,
 		LifeWindow:         0,
-		CleanWindow:        0,
 		MaxEntriesInWindow: capacity,
-		MaxEntrySize:       500,
-		Verbose:            true,
-		HardMaxCacheSize:   capacity,
-		Logger:             nil,
+		MaxEntrySize:       128,
+		Verbose:            false,
 	})
 	if err != nil {
 		log.Panic(err)
@@ -159,6 +156,7 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 func (c *BenchBigCache) Get(key string) (interface{}, bool) {
 	value, err := c.cache.Get(key)
 	if err != nil {
+		panic(err)
 		return nil, false
 	}
 	return value, true
@@ -258,7 +256,7 @@ func (c *BenchFreeCache) Get(key string) (interface{}, bool) {
 
 func (c *BenchFreeCache) Set(key string, value interface{}) {
 	if c.track {
-		if value, ok := c.cache.Get([]byte(key)); value != nil || ok {
+		if value, _ := c.cache.Get([]byte(key)); value != nil {
 			c.log.Hit()
 		} else {
 			c.log.Miss()
