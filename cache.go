@@ -17,7 +17,10 @@
 package ristretto
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -36,6 +39,7 @@ type Cache struct {
 	policy Policy
 	buffer *ringBuffer
 	setCh  chan *item
+	stats  *metrics
 }
 
 type item struct {
@@ -53,10 +57,8 @@ type Config struct {
 	MaxCost int64
 	// BufferItems is max number of items in access batches (BP-Wrapper).
 	BufferItems int64
-	// Log is whether or not to Log hit ratio statistics (with some overhead).
-	// TODO: With lossy setup, the policy might not be invoked, in which case the numbers from this
-	// are going to be incorrect. Instead, we should be doing log within Cache itself.
-	Log bool
+	// If set to true, cache would collect useful metrics about usage.
+	Metrics bool
 }
 
 func NewCache(config *Config) (*Cache, error) {
@@ -75,9 +77,6 @@ func NewCache(config *Config) (*Cache, error) {
 	data := newStore()
 	// initialize the policy (with a recorder wrapping if logging is enabled)
 	policy := newPolicy(config.NumCounters, config.MaxCost)
-	if config.Log {
-		policy = NewRecorder(policy, data)
-	}
 	cache := &Cache{
 		data:   data,
 		policy: policy,
@@ -88,6 +87,9 @@ func NewCache(config *Config) (*Cache, error) {
 		}),
 		setCh: make(chan *item, 32*1024),
 	}
+	if config.Metrics {
+		cache.collectMetrics()
+	}
 	// We can possibly make this configurable. But having 2 goroutines processing this seems
 	// sufficient for now.
 	// TODO: Allow a way to stop these goroutines.
@@ -97,10 +99,21 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
+func (c *Cache) collectMetrics() {
+	c.stats = newMetrics()
+	c.policy.CollectMetrics(c.stats)
+}
+
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	hash := z.KeyToHash(key)
 	c.buffer.Push(hash)
-	return c.data.Get(hash)
+	val, ok := c.data.Get(hash)
+	if ok {
+		c.stats.Add(hit, hash, 1)
+	} else {
+		c.stats.Add(miss, hash, 1)
+	}
+	return val, ok
 }
 
 func (c *Cache) processItems() {
@@ -124,6 +137,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 		return true
 	default:
 		// Drop the set on the floor to avoid blocking.
+		c.stats.Add(dropSets, hash, 1)
 		return false
 	}
 }
@@ -134,6 +148,130 @@ func (c *Cache) Del(key interface{}) {
 	c.data.Del(hash)
 }
 
-func (c *Cache) Log() *PolicyLog {
-	return c.policy.Log()
+func (c *Cache) Metrics() *metrics {
+	return c.stats
+}
+
+type metricType int
+
+const (
+	// The following 2 keep track of hits and misses.
+	hit = iota
+	miss
+
+	// The following 3 keep track of number of keys added, updated and evicted.
+	keyAdd
+	keyUpdate
+	keyEvict
+
+	// The following 2 keep track of cost of keys added and evicted.
+	costAdd
+	costEvict
+
+	// The following keep track of how many sets were dropped or rejected later.
+	dropSets
+	rejectSets
+
+	// The following 2 keep track of how many gets were kept and dropped on the floor.
+	dropGets
+	keepGets
+
+	// This should be the final enum. Other enums should be set before this.
+	doNotUse
+)
+
+func stringFor(t metricType) string {
+	switch t {
+	case hit:
+		return "hit"
+	case miss:
+		return "miss"
+	case keyAdd:
+		return "keys-added"
+	case keyUpdate:
+		return "keys-updated"
+	case keyEvict:
+		return "keys-evicted"
+	case costAdd:
+		return "cost-added"
+	case costEvict:
+		return "cost-evicted"
+	case dropSets:
+		return "sets-dropped"
+	case rejectSets:
+		return "sets-rejected" // by policy.
+	case dropGets:
+		return "gets-dropped"
+	case keepGets:
+		return "gets-kept"
+	default:
+		return "unidentified"
+	}
+}
+
+// metrics is the struct for hit ratio statistics. Note that there is some
+// cost to maintaining the counters, so it's best to wrap Policies via the
+// Recorder type when hit ratio analysis is needed.
+type metrics struct {
+	all [doNotUse][]*uint64
+}
+
+func newMetrics() *metrics {
+	s := &metrics{}
+	for i := 0; i < doNotUse; i++ {
+		s.all[i] = make([]*uint64, 256)
+		slice := s.all[i]
+		for j := range slice {
+			slice[j] = new(uint64)
+		}
+	}
+	return s
+}
+
+func (p *metrics) Add(t metricType, hash, delta uint64) {
+	if p == nil {
+		return
+	}
+	valp := p.all[t]
+	// Avoid false sharing by padding at least 64 bytes of space between two
+	// atomic counters which would be incremented.
+	idx := (hash % 25) * 10
+	atomic.AddUint64(valp[idx], delta)
+}
+
+func (p *metrics) Get(t metricType) uint64 {
+	if p == nil {
+		return 0
+	}
+	valp := p.all[t]
+	var total uint64
+	for i := range valp {
+		total += atomic.LoadUint64(valp[i])
+	}
+	return total
+}
+
+func (p *metrics) Ratio() float64 {
+	if p == nil {
+		return 0.0
+	}
+	hits, misses := p.Get(hit), p.Get(miss)
+	if hits == 0 && misses == 0 {
+		return 0.0
+	}
+	return float64(hits) / float64(hits+misses)
+}
+
+func (p *metrics) String() string {
+	if p == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	for i := 0; i < doNotUse; i++ {
+		t := metricType(i)
+		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.Get(t))
+	}
+	fmt.Fprintf(&buf, "gets-total: %d ", p.Get(hit)+p.Get(miss))
+	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
+	return buf.String()
 }

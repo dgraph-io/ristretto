@@ -17,10 +17,8 @@
 package ristretto
 
 import (
-	"fmt"
 	"math"
 	"sync"
-	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -44,7 +42,8 @@ type Policy interface {
 	Del(uint64)
 	// Cap returns the available capacity.
 	Cap() int64
-	Log() *PolicyLog
+	// Optionally, set stats object to track how policy is performing.
+	CollectMetrics(stats *metrics)
 }
 
 func newPolicy(numCounters, maxCost int64) Policy {
@@ -62,10 +61,15 @@ func newPolicy(numCounters, maxCost int64) Policy {
 // admission with sampledLFU eviction.
 type defaultPolicy struct {
 	sync.Mutex
-	admit *tinyLFU
-	evict *sampledLFU
-
+	admit   *tinyLFU
+	evict   *sampledLFU
 	itemsCh chan []uint64
+	stats   *metrics
+}
+
+func (p *defaultPolicy) CollectMetrics(stats *metrics) {
+	p.stats = stats
+	p.evict.stats = stats
 }
 
 type policyPair struct {
@@ -82,10 +86,15 @@ func (p *defaultPolicy) processItems() {
 }
 
 func (p *defaultPolicy) Push(keys []uint64) bool {
+	if len(keys) == 0 {
+		return true
+	}
 	select {
 	case p.itemsCh <- keys:
+		p.stats.Add(keepGets, keys[0], uint64(len(keys)))
 		return true
 	default:
+		p.stats.Add(dropGets, keys[0], uint64(len(keys)))
 		return false
 	}
 }
@@ -134,8 +143,9 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 				minKey, minHits, minId = pair.key, hits, i
 			}
 		}
-		// if the incoming item isn't worth keeping in the policy, stop
+		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
+			p.stats.Add(rejectSets, key, 1)
 			return victims, false
 		}
 		// delete the victim from metadata
@@ -169,15 +179,12 @@ func (p *defaultPolicy) Cap() int64 {
 	return int64(p.evict.maxCost - p.evict.used)
 }
 
-func (p *defaultPolicy) Log() *PolicyLog {
-	return nil
-}
-
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
 	keyCosts map[uint64]int64
 	maxCost  int64
 	used     int64
+	stats    *metrics
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
@@ -205,11 +212,19 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 }
 
 func (p *sampledLFU) del(key uint64) {
-	p.used -= p.keyCosts[key]
+	cost := p.keyCosts[key]
+
+	p.stats.Add(keyEvict, key, 1)
+	p.stats.Add(costEvict, key, uint64(cost))
+
+	p.used -= cost
 	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
+	p.stats.Add(keyAdd, key, 1)
+	p.stats.Add(costAdd, key, uint64(cost))
+
 	p.keyCosts[key] = cost
 	p.used += cost
 }
@@ -218,6 +233,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	if prev, exists := p.keyCosts[key]; exists {
 		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
 		// if the updated cost causes the size to grow beyond maxCost.
+		p.stats.Add(keyUpdate, key, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
@@ -289,7 +305,7 @@ func (p *tinyLFU) reset() {
 type Clairvoyant struct {
 	sync.Mutex
 	time     int64
-	log      *PolicyLog
+	log      *metrics
 	access   map[uint64][]int64
 	capacity int64
 	future   []uint64
@@ -297,10 +313,13 @@ type Clairvoyant struct {
 
 func newClairvoyant(numCounters, maxCost int64) Policy {
 	return &Clairvoyant{
-		log:      &PolicyLog{},
 		capacity: numCounters,
 		access:   make(map[uint64][]int64, numCounters),
 	}
+}
+
+func (p *Clairvoyant) CollectMetrics(stats *metrics) {
+	p.log = stats
 }
 
 // distance finds the "time distance" from the start position to the minimum
@@ -360,7 +379,7 @@ func (p *Clairvoyant) Cap() int64 {
 	return 0
 }
 
-func (p *Clairvoyant) Log() *PolicyLog {
+func (p *Clairvoyant) Log() *metrics {
 	p.Lock()
 	defer p.Unlock()
 	// data serves as the "pseudocache" with the ability to see into the future
@@ -369,10 +388,10 @@ func (p *Clairvoyant) Log() *PolicyLog {
 	for i, key := range p.future {
 		// check if already exists
 		if _, exists := data[key]; exists {
-			p.log.Hit()
+			p.log.Add(hit, key, 1)
 			continue
 		}
-		p.log.Miss()
+		p.log.Add(miss, key, 1)
 		// check if eviction is needed
 		if size == p.capacity {
 			// eviction is needed
@@ -386,7 +405,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 					// there's no good distances because the key isn't used
 					// again in the future, so we can just stop here and delete
 					// it, and skip over the rest
-					p.log.Evict()
+					p.log.Add(keyEvict, key, 1)
 					delete(data, k)
 					size--
 					goto add
@@ -402,7 +421,7 @@ func (p *Clairvoyant) Log() *PolicyLog {
 				c++
 			}
 			// delete the item furthest away
-			p.log.Evict()
+			p.log.Add(keyEvict, key, 1)
 			delete(data, maxKey)
 			size--
 		}
@@ -412,97 +431,4 @@ func (p *Clairvoyant) Log() *PolicyLog {
 		size++
 	}
 	return p.log
-}
-
-// recorder is a wrapper type useful for logging policy performance. Because hit
-// ratio tracking adds substantial overhead (either by atomically incrementing
-// counters or using policy-level mutexes), this struct allows us to only incur
-// that overhead when we want to analyze the hit ratio performance.
-type recorder struct {
-	data   store
-	policy Policy
-	log    *PolicyLog
-}
-
-func NewRecorder(policy Policy, data store) Policy {
-	return &recorder{
-		data:   data,
-		policy: policy,
-		log:    &PolicyLog{},
-	}
-}
-
-func (r *recorder) Push(keys []uint64) bool {
-	return r.policy.Push(keys)
-}
-
-func (r *recorder) Add(key uint64, cost int64) ([]uint64, bool) {
-	if _, ok := r.data.Get(key); ok {
-		r.log.Hit()
-	} else {
-		r.log.Miss()
-	}
-	victims, added := r.policy.Add(key, cost)
-	if victims != nil {
-		r.log.Evict()
-	}
-	return victims, added
-}
-
-func (r *recorder) Has(key uint64) bool {
-	return r.policy.Has(key)
-}
-
-func (r *recorder) Del(key uint64) {
-	r.policy.Del(key)
-}
-
-func (r *recorder) Cap() int64 {
-	return r.policy.Cap()
-}
-
-func (r *recorder) Log() *PolicyLog {
-	return r.log
-}
-
-// PolicyLog is the struct for hit ratio statistics. Note that there is some
-// cost to maintaining the counters, so it's best to wrap Policies via the
-// Recorder type when hit ratio analysis is needed.
-type PolicyLog struct {
-	hits      int64
-	miss      int64
-	evictions int64
-}
-
-func (p *PolicyLog) Hit() {
-	atomic.AddInt64(&p.hits, 1)
-}
-
-func (p *PolicyLog) Miss() {
-	atomic.AddInt64(&p.miss, 1)
-}
-
-func (p *PolicyLog) Evict() {
-	atomic.AddInt64(&p.evictions, 1)
-}
-
-func (p *PolicyLog) GetHits() int64 {
-	return atomic.LoadInt64(&p.hits)
-}
-
-func (p *PolicyLog) GetMisses() int64 {
-	return atomic.LoadInt64(&p.miss)
-}
-
-func (p *PolicyLog) GetEvictions() int64 {
-	return atomic.LoadInt64(&p.evictions)
-}
-
-func (p *PolicyLog) Ratio() float64 {
-	hits, misses := atomic.LoadInt64(&p.hits), atomic.LoadInt64(&p.miss)
-	return float64(hits) / float64(hits+misses)
-}
-
-func (p *PolicyLog) String() string {
-	return fmt.Sprintf("Hits: %d Miss: %d Evicts: %d", p.GetHits(), p.GetMisses(), p.GetEvictions())
 }
