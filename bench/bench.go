@@ -25,9 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
-
-	"github.com/dgraph-io/ristretto"
 )
 
 var (
@@ -325,16 +324,16 @@ func NewResult(res testing.BenchmarkResult, coll *LogCollection) *Result {
 
 type LogCollection struct {
 	sync.Mutex
-	Logs []*ristretto.PolicyLog
+	Logs []*policyLog
 }
 
 func NewLogCollection() *LogCollection {
 	return &LogCollection{
-		Logs: make([]*ristretto.PolicyLog, 0),
+		Logs: make([]*policyLog, 0),
 	}
 }
 
-func (c *LogCollection) Append(plog *ristretto.PolicyLog) {
+func (c *LogCollection) Append(plog *policyLog) {
 	c.Lock()
 	defer c.Unlock()
 	c.Logs = append(c.Logs, plog)
@@ -358,4 +357,40 @@ func (c *LogCollection) Misses() int64 {
 		sum += c.Logs[i].GetMisses()
 	}
 	return sum
+}
+
+type policyLog struct {
+	hits      int64
+	misses    int64
+	evictions int64
+}
+
+func (p *policyLog) Hit() {
+	atomic.AddInt64(&p.hits, 1)
+}
+
+func (p *policyLog) Miss() {
+	atomic.AddInt64(&p.misses, 1)
+}
+
+func (p *policyLog) Evict() {
+	atomic.AddInt64(&p.evictions, 1)
+}
+
+func (p *policyLog) GetMisses() int64 {
+	return atomic.LoadInt64(&p.misses)
+}
+
+func (p *policyLog) GetHits() int64 {
+	return atomic.LoadInt64(&p.hits)
+}
+
+func (p *policyLog) GetEvictions() int64 {
+	return atomic.LoadInt64(&p.evictions)
+}
+
+func (p *policyLog) Ratio() float64 {
+	hits := atomic.LoadInt64(&p.hits)
+	misses := atomic.LoadInt64(&p.misses)
+	return float64(hits) / float64(hits+misses)
 }

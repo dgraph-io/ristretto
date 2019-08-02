@@ -32,18 +32,19 @@ type Cache interface {
 	Get(string) (interface{}, bool)
 	Set(string, interface{})
 	Del(string)
-	Log() *ristretto.PolicyLog
+	Log() *policyLog
 }
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
+	track bool
+	log   *policyLog
 }
 
 func NewBenchRistretto(capacity int, track bool) Cache {
 	c, err := ristretto.NewCache(&ristretto.Config{
 		NumCounters: int64(capacity * 10),
 		MaxCost:     int64(capacity),
-		Log:         track,
 		BufferItems: 64,
 	})
 	if err != nil {
@@ -51,6 +52,8 @@ func NewBenchRistretto(capacity int, track bool) Cache {
 	}
 	return &BenchRistretto{
 		cache: c,
+		track: track,
+		log:   &policyLog{},
 	}
 }
 
@@ -59,6 +62,13 @@ func (c *BenchRistretto) Get(key string) (interface{}, bool) {
 }
 
 func (c *BenchRistretto) Set(key string, value interface{}) {
+	if c.track {
+		if _, ok := c.cache.Get(key); ok {
+			c.log.Hit()
+		} else {
+			c.log.Miss()
+		}
+	}
 	c.cache.Set(key, value, 1)
 }
 
@@ -66,21 +76,21 @@ func (c *BenchRistretto) Del(key string) {
 	c.cache.Del(key)
 }
 
-func (c *BenchRistretto) Log() *ristretto.PolicyLog {
-	return c.cache.Log()
+func (c *BenchRistretto) Log() *policyLog {
+	return c.log
 }
 
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
-	log   *ristretto.PolicyLog
+	log   *policyLog
 	track bool
 }
 
 func NewBenchBaseMutex(capacity int, track bool) Cache {
 	return &BenchBaseMutex{
 		cache: lru.New(capacity),
-		log:   &ristretto.PolicyLog{},
+		log:   &policyLog{},
 		track: track,
 	}
 }
@@ -108,13 +118,13 @@ func (c *BenchBaseMutex) Del(key string) {
 	c.cache.Remove(key)
 }
 
-func (c *BenchBaseMutex) Log() *ristretto.PolicyLog {
+func (c *BenchBaseMutex) Log() *policyLog {
 	return c.log
 }
 
 type BenchBigCache struct {
 	cache *bigcache.BigCache
-	log   *ristretto.PolicyLog
+	log   *policyLog
 	track bool
 }
 
@@ -133,7 +143,7 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 		MaxEntriesInWindow: capacity,
 		MaxEntrySize:       500,
 		Verbose:            true,
-		HardMaxCacheSize:   0,
+		HardMaxCacheSize:   capacity,
 		Logger:             nil,
 	})
 	if err != nil {
@@ -141,7 +151,7 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 	}
 	return &BenchBigCache{
 		cache: cache,
-		log:   &ristretto.PolicyLog{},
+		log:   &policyLog{},
 		track: track,
 	}
 }
@@ -173,13 +183,13 @@ func (c *BenchBigCache) Del(key string) {
 	}
 }
 
-func (c *BenchBigCache) Log() *ristretto.PolicyLog {
+func (c *BenchBigCache) Log() *policyLog {
 	return c.log
 }
 
 type BenchFastCache struct {
 	cache *fastcache.Cache
-	log   *ristretto.PolicyLog
+	log   *policyLog
 	track bool
 }
 
@@ -187,7 +197,7 @@ func NewBenchFastCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 32MB, then fastcache sets it to 32MB
 	return &BenchFastCache{
 		cache: fastcache.New(capacity),
-		log:   &ristretto.PolicyLog{},
+		log:   &policyLog{},
 		track: track,
 	}
 }
@@ -219,13 +229,13 @@ func (c *BenchFastCache) Del(key string) {
 	c.cache.Del([]byte(key))
 }
 
-func (c *BenchFastCache) Log() *ristretto.PolicyLog {
+func (c *BenchFastCache) Log() *policyLog {
 	return c.log
 }
 
 type BenchFreeCache struct {
 	cache *freecache.Cache
-	log   *ristretto.PolicyLog
+	log   *policyLog
 	track bool
 }
 
@@ -233,7 +243,7 @@ func NewBenchFreeCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 512KB, then freecache sets it to 512KB
 	return &BenchFreeCache{
 		cache: freecache.NewCache(capacity),
-		log:   &ristretto.PolicyLog{},
+		log:   &policyLog{},
 		track: track,
 	}
 }
@@ -248,7 +258,7 @@ func (c *BenchFreeCache) Get(key string) (interface{}, bool) {
 
 func (c *BenchFreeCache) Set(key string, value interface{}) {
 	if c.track {
-		if value, _ := c.cache.Get([]byte(key)); value != nil {
+		if value, ok := c.cache.Get([]byte(key)); value != nil || ok {
 			c.log.Hit()
 		} else {
 			c.log.Miss()
@@ -263,13 +273,13 @@ func (c *BenchFreeCache) Del(key string) {
 	c.cache.Del([]byte(key))
 }
 
-func (c *BenchFreeCache) Log() *ristretto.PolicyLog {
+func (c *BenchFreeCache) Log() *policyLog {
 	return c.log
 }
 
 type BenchGoburrow struct {
 	cache goburrow.Cache
-	log   *ristretto.PolicyLog
+	log   *policyLog
 	track bool
 }
 
@@ -278,7 +288,7 @@ func NewBenchGoburrow(capacity int, track bool) Cache {
 		cache: goburrow.New(
 			goburrow.WithMaximumSize(capacity),
 		),
-		log:   &ristretto.PolicyLog{},
+		log:   &policyLog{},
 		track: track,
 	}
 }
@@ -302,6 +312,6 @@ func (c *BenchGoburrow) Del(key string) {
 	c.cache.Invalidate(key)
 }
 
-func (c *BenchGoburrow) Log() *ristretto.PolicyLog {
+func (c *BenchGoburrow) Log() *policyLog {
 	return c.log
 }
