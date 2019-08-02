@@ -96,6 +96,7 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			{"hits-lirs-gli ", HitsLIRS("gli")},
 			{"hits-lirs-loop", HitsLIRS("loop")},
 			{"hits-arc-p3   ", HitsARC("p3")},
+			{"hits-arc-p8   ", HitsARC("p8")},
 		}...)
 	}
 	if kind == "speed" || kind == "full" {
