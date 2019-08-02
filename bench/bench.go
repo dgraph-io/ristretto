@@ -94,8 +94,10 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			{"hits-zipf     ", HitsZipf},
 			{"hits-lirs-gli ", HitsLIRS("gli")},
 			{"hits-lirs-loop", HitsLIRS("loop")},
+			{"hits-arc-ds1  ", HitsARC("ds1")},
 			{"hits-arc-p3   ", HitsARC("p3")},
 			{"hits-arc-p8   ", HitsARC("p8")},
+			{"hits-arc-s3   ", HitsARC("s3")},
 		}...)
 	}
 	if kind == "speed" || kind == "full" {
@@ -138,6 +140,7 @@ func getBenchCaches(include string) []*benchCache {
 	}
 	if include == "all" {
 		caches = append(caches, []*benchCache{
+			//{"optimal    ", NewBenchOptimal},
 			{"base-mutex ", NewBenchBaseMutex},
 			{"goburrow   ", NewBenchGoburrow},
 			{"bigcache   ", NewBenchBigCache},
