@@ -261,6 +261,7 @@ func (p *metrics) String() string {
 		t := metricType(i)
 		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.Get(t))
 	}
-	fmt.Fprintf(&buf, "gets-total: %d", p.Get(hit)+p.Get(miss))
+	fmt.Fprintf(&buf, "gets-total: %d ", p.Get(hit)+p.Get(miss))
+	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
 	return string(buf.Bytes())
 }
