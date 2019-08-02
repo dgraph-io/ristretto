@@ -109,9 +109,9 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	c.buffer.Push(hash)
 	val, ok := c.data.Get(hash)
 	if ok {
-		c.stats.Add(hit, 1)
+		c.stats.Add(hit, hash, 1)
 	} else {
-		c.stats.Add(miss, 1)
+		c.stats.Add(miss, hash, 1)
 	}
 	return val, ok
 }
@@ -137,7 +137,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 		return true
 	default:
 		// Drop the set on the floor to avoid blocking.
-		c.stats.Add(dropSets, 1)
+		c.stats.Add(dropSets, hash, 1)
 		return false
 	}
 }
@@ -225,12 +225,12 @@ func newMetrics() *metrics {
 	return s
 }
 
-func (p *metrics) Add(t metricType, delta uint64) {
+func (p *metrics) Add(t metricType, hash, delta uint64) {
 	if p == nil {
 		return
 	}
 	valp := p.all[t]
-	idx := z.FastRand() % 256
+	idx := (hash % 28) * 9 // Leave 64B space between two counters.
 	atomic.AddUint64(&valp[idx], delta)
 }
 

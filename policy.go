@@ -86,12 +86,15 @@ func (p *defaultPolicy) processItems() {
 }
 
 func (p *defaultPolicy) Push(keys []uint64) bool {
+	if len(keys) == 0 {
+		return true
+	}
 	select {
 	case p.itemsCh <- keys:
-		p.stats.Add(keepGets, uint64(len(keys)))
+		p.stats.Add(keepGets, keys[0], uint64(len(keys)))
 		return true
 	default:
-		p.stats.Add(dropGets, uint64(len(keys)))
+		p.stats.Add(dropGets, keys[0], uint64(len(keys)))
 		return false
 	}
 }
@@ -142,7 +145,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		}
 		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
-			p.stats.Add(rejectSets, 1)
+			p.stats.Add(rejectSets, key, 1)
 			return victims, false
 		}
 		// delete the victim from metadata
@@ -211,16 +214,16 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 func (p *sampledLFU) del(key uint64) {
 	cost := p.keyCosts[key]
 
-	p.stats.Add(keyEvict, 1)
-	p.stats.Add(costEvict, uint64(cost))
+	p.stats.Add(keyEvict, key, 1)
+	p.stats.Add(costEvict, key, uint64(cost))
 
 	p.used -= cost
 	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
-	p.stats.Add(keyAdd, 1)
-	p.stats.Add(costAdd, uint64(cost))
+	p.stats.Add(keyAdd, key, 1)
+	p.stats.Add(costAdd, key, uint64(cost))
 
 	p.keyCosts[key] = cost
 	p.used += cost
@@ -230,7 +233,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	if prev, exists := p.keyCosts[key]; exists {
 		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
 		// if the updated cost causes the size to grow beyond maxCost.
-		p.stats.Add(keyUpdate, 1)
+		p.stats.Add(keyUpdate, key, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
@@ -385,10 +388,10 @@ func (p *Clairvoyant) Log() *metrics {
 	for i, key := range p.future {
 		// check if already exists
 		if _, exists := data[key]; exists {
-			p.log.Add(hit, 1)
+			p.log.Add(hit, key, 1)
 			continue
 		}
-		p.log.Add(miss, 1)
+		p.log.Add(miss, key, 1)
 		// check if eviction is needed
 		if size == p.capacity {
 			// eviction is needed
@@ -402,7 +405,7 @@ func (p *Clairvoyant) Log() *metrics {
 					// there's no good distances because the key isn't used
 					// again in the future, so we can just stop here and delete
 					// it, and skip over the rest
-					p.log.Add(keyEvict, 1)
+					p.log.Add(keyEvict, key, 1)
 					delete(data, k)
 					size--
 					goto add
@@ -418,7 +421,7 @@ func (p *Clairvoyant) Log() *metrics {
 				c++
 			}
 			// delete the item furthest away
-			p.log.Add(keyEvict, 1)
+			p.log.Add(keyEvict, key, 1)
 			delete(data, maxKey)
 			size--
 		}
