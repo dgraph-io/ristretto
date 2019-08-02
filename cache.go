@@ -165,8 +165,8 @@ const (
 	keyEvict
 
 	// The following 2 keep track of cost of keys added and evicted.
-	costAdded
-	costEvicted
+	costAdd
+	costEvict
 
 	// The following keep track of how many sets were dropped or rejected later.
 	dropSets
@@ -235,9 +235,9 @@ func stringFor(t metricType) string {
 		return "keys-updated"
 	case keyEvict:
 		return "keys-evicted"
-	case costAdded:
+	case costAdd:
 		return "cost-added"
-	case costEvicted:
+	case costEvict:
 		return "cost-evicted"
 	case dropSets:
 		return "sets-dropped"
