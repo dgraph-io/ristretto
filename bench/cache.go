@@ -64,14 +64,53 @@ func (c *BenchOptimal) Set(key string, value interface{}) {
 func (c *BenchOptimal) Del(key string) {}
 
 func (c *BenchOptimal) Log() *policyLog {
-	hits, miss := uint64(0), uint64(0)
+	hits, misses, evictions := int64(0), int64(0), int64(0)
 	look := make(map[string]struct{}, c.capacity)
-	data := &minHeap{}
+	data := &optimalHeap{}
 	heap.Init(data)
-	// TODO
+	for _, key := range c.access {
+		if _, has := look[key]; has {
+			hits++
+			continue
+		}
+		if uint64(data.Len()) >= c.capacity {
+			victim := heap.Pop(data)
+			delete(look, victim.(*optimalItem).key)
+			evictions++
+		}
+		misses++
+		look[key] = struct{}{}
+		heap.Push(data, &optimalItem{key, c.hits[key]})
+	}
+	return &policyLog{
+		hits:      hits,
+		misses:    misses,
+		evictions: evictions,
+	}
 }
 
-type minHeap struct{}
+type optimalItem struct {
+	key  string
+	hits uint64
+}
+
+type optimalHeap []*optimalItem
+
+func (h optimalHeap) Len() int           { return len(h) }
+func (h optimalHeap) Less(i, j int) bool { return h[i].hits < h[j].hits }
+func (h optimalHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *optimalHeap) Push(x interface{}) {
+	*h = append(*h, x.(*optimalItem))
+}
+
+func (h *optimalHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
