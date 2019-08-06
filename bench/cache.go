@@ -17,8 +17,8 @@
 package main
 
 import (
+	"container/heap"
 	"log"
-	"math"
 	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -37,116 +37,41 @@ type Cache interface {
 }
 
 type BenchOptimal struct {
-	sync.Mutex
-	time     int64
-	log      *policyLog
-	access   map[string][]int64
-	capacity int64
-	future   []string
+	capacity uint64
+	hits     map[string]uint64
+	access   []string
 }
 
 func NewBenchOptimal(capacity int, track bool) Cache {
 	return &BenchOptimal{
-		log:      &policyLog{},
-		capacity: int64(capacity),
-		access:   make(map[string][]int64, capacity),
+		capacity: uint64(capacity),
+		hits:     make(map[string]uint64, 0),
+		access:   make([]string, 0),
 	}
-}
-
-func (c *BenchOptimal) distance(start int64, times []int64) (int64, bool) {
-	good, min := false, int64(math.MaxInt64)
-	for i := range times {
-		if times[i] > start {
-			good = true
-		}
-		if times[i] < min {
-			min = times[i] - start
-		}
-	}
-	return min, good
-}
-
-func (c *BenchOptimal) record(key string) {
-	c.time++
-	if c.access[key] == nil {
-		c.access[key] = make([]int64, 0)
-	}
-	c.access[key] = append(c.access[key], c.time)
-	c.future = append(c.future, key)
 }
 
 func (c *BenchOptimal) Get(key string) (interface{}, bool) {
-	c.Lock()
-	defer c.Unlock()
-	c.record(key)
+	c.hits[key]++
+	c.access = append(c.access, key)
 	return nil, false
 }
 
 func (c *BenchOptimal) Set(key string, value interface{}) {
-	c.Lock()
-	defer c.Unlock()
-	c.record(key)
+	c.hits[key]++
+	c.access = append(c.access, key)
 }
 
-func (c *BenchOptimal) Del(key string) {
-	c.Lock()
-	defer c.Unlock()
-	delete(c.access, key)
-}
+func (c *BenchOptimal) Del(key string) {}
 
 func (c *BenchOptimal) Log() *policyLog {
-	c.Lock()
-	defer c.Unlock()
-	// data serves as the "pseudocache" with the ability to see into the future
-	data := make(map[string]struct{}, c.capacity)
-	size := int64(0)
-	for i, key := range c.future {
-		// check if already exists
-		if _, exists := data[key]; exists {
-			c.log.Hit()
-			continue
-		}
-		c.log.Miss()
-		// check if eviction is needed
-		if size == c.capacity {
-			// eviction is needed
-			//
-			// collect item distances
-			good := false
-			distance := make(map[string]int64, c.capacity)
-			for k := range data {
-				distance[k], good = c.distance(int64(i), c.access[k])
-				if !good {
-					// there's no good distances because the key isn't used
-					// again in the future, so we can just stop here and delete
-					// it, and skip over the rest
-					c.log.Evict()
-					delete(data, k)
-					size--
-					goto add
-				}
-			}
-			// find the largest distance
-			maxDistance, maxKey, p := int64(0), "", 0
-			for k, d := range distance {
-				if p == 0 || d > maxDistance {
-					maxKey = k
-					maxDistance = d
-				}
-				p++
-			}
-			// delete the item furthest away
-			c.log.Evict()
-			delete(data, maxKey)
-			size--
-		}
-	add:
-		// add the item
-		data[key] = struct{}{}
-		size++
-	}
-	return c.log
+	hits, miss := uint64(0), uint64(0)
+	look := make(map[string]struct{}, c.capacity)
+	data := &minHeap{}
+	heap.Init(data)
+	// TODO
 }
+
+type minHeap struct{}
 
 type BenchRistretto struct {
 	cache *ristretto.Cache
