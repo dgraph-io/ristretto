@@ -233,7 +233,6 @@ func NewBenchBigCache(capacity int, track bool) Cache {
 func (c *BenchBigCache) Get(key string) (interface{}, bool) {
 	value, err := c.cache.Get(key)
 	if err != nil {
-		panic(err)
 		return nil, false
 	}
 	return value, true

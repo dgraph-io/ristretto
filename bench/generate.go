@@ -29,6 +29,8 @@ import (
 const (
 	// CAPACITY is the cache size in number of elements
 	capacity = 131072
+	// TODO
+	iterations = capacity * 8
 	// W is the number of elements in the "sample size" as mentioned in the
 	// TinyLFU paper, where W/C = 16. W denotes the sample size, and C is the
 	// cache size (denoted by *CAPA).
@@ -41,12 +43,10 @@ const (
 	zipfV = 10
 )
 
-func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func(b *testing.B) {
-	return func(b *testing.B) {
+func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func() {
+	return func() {
 		cache := bench.Create(true)
-		b.SetBytes(1)
-		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for n := 0; n < iterations; n++ {
 			key, err := keys()
 			if err != nil {
 				if err == sim.ErrDone {
@@ -63,12 +63,12 @@ func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func(b *
 }
 
 // HitsZipf records the hit ratio using a Zipfian distribution.
-func HitsZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+func HitsZipf(bench *Benchmark, coll *LogCollection) func() {
 	return NewHits(bench, coll, sim.NewZipfian(zipfS, zipfV, w))
 }
 
-func HitsLIRS(pre string) func(*Benchmark, *LogCollection) func(b *testing.B) {
-	return func(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+func HitsLIRS(pre string) func(*Benchmark, *LogCollection) func() {
+	return func(bench *Benchmark, coll *LogCollection) func() {
 		file, err := os.Open("./trace/" + pre + ".lirs.gz")
 		if err != nil {
 			panic(err)
@@ -81,8 +81,8 @@ func HitsLIRS(pre string) func(*Benchmark, *LogCollection) func(b *testing.B) {
 	}
 }
 
-func HitsARC(pre string) func(*Benchmark, *LogCollection) func(b *testing.B) {
-	return func(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
+func HitsARC(pre string) func(*Benchmark, *LogCollection) func() {
+	return func(bench *Benchmark, coll *LogCollection) func() {
 		file, err := os.Open("./trace/" + pre + ".arc.gz")
 		if err != nil {
 			panic(err)
@@ -113,7 +113,12 @@ func GetSame(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 func GetZipf(bench *Benchmark, coll *LogCollection) func(b *testing.B) {
 	return func(b *testing.B) {
 		cache := bench.Create(false)
-		keys := sim.StringCollection(sim.NewZipfian(zipfS, zipfV, capacity), capacity)
+		keys := sim.StringCollection(
+			sim.NewZipfian(zipfS, zipfV, capacity), capacity,
+		)
+		for _, key := range keys {
+			cache.Set(key, []byte("*"))
+		}
 		b.SetParallelism(bench.Para)
 		b.SetBytes(1)
 		b.ResetTimer()
