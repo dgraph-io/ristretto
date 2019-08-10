@@ -19,6 +19,7 @@ package main
 import (
 	"container/heap"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -199,6 +200,13 @@ func (c *BenchBaseMutex) Log() *policyLog {
 	return c.log
 }
 
+func padString(s string, length int) string {
+	if len(s) >= length {
+		return s[:length]
+	}
+	return strings.Repeat("0", length-len(s)) + s
+}
+
 type BenchBigCache struct {
 	cache *bigcache.BigCache
 	log   *policyLog
@@ -206,19 +214,13 @@ type BenchBigCache struct {
 }
 
 func NewBenchBigCache(capacity int, track bool) Cache {
-	// NOTE: bigcache automatically allocates more memory, there's no way to set
-	//       a hard limit on the item/memory capacity
-	//
-	// create a bigcache instance with default config values except for the
-	// logger - we don't want them messing with our stdout
-	//
-	// https://github.com/allegro/bigcache/blob/master/config.go#L47
 	cache, err := bigcache.NewBigCache(bigcache.Config{
 		Shards:             256,
 		LifeWindow:         0,
 		MaxEntriesInWindow: capacity,
-		MaxEntrySize:       128,
+		MaxEntrySize:       1482,
 		Verbose:            false,
+		HardMaxCacheSize:   capacity * 1482 / 1024 / 1024,
 	})
 	if err != nil {
 		log.Panic(err)
@@ -239,14 +241,17 @@ func (c *BenchBigCache) Get(key string) (interface{}, bool) {
 }
 
 func (c *BenchBigCache) Set(key string, value interface{}) {
+	longKey := padString(key, 64)
+	longVal := []byte(padString(string(value.([]byte)), 1400))
 	if c.track {
-		if value, _ := c.cache.Get(key); value != nil {
+		if value, _ := c.cache.Get(longKey); value != nil {
 			c.log.Hit()
+			return
 		} else {
 			c.log.Miss()
 		}
 	}
-	if err := c.cache.Set(key, value.([]byte)); err != nil {
+	if err := c.cache.Set(longKey, longVal); err != nil {
 		log.Panic(err)
 	}
 }
@@ -270,7 +275,12 @@ type BenchFastCache struct {
 func NewBenchFastCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 32MB, then fastcache sets it to 32MB
 	return &BenchFastCache{
-		cache: fastcache.New(capacity),
+		//cache: fastcache.New(capacity * 16),
+		//
+		// TODO: should we be using this, since the true entry size is 1468?
+		//       that's how we're setting the capacity for freecache...
+		//
+		cache: fastcache.New(capacity * 1468),
 		log:   &policyLog{},
 		track: track,
 	}
@@ -284,19 +294,18 @@ func (c *BenchFastCache) Get(key string) (interface{}, bool) {
 	return value, false
 }
 
-func (c *BenchFastCache) GetFast(key string) interface{} {
-	return c.cache.Get(nil, []byte(key))
-}
-
 func (c *BenchFastCache) Set(key string, value interface{}) {
+	longKey := []byte(padString(key, 64))
+	longVal := []byte(padString(string(value.([]byte)), 1400))
 	if c.track {
-		if c.cache.Get(nil, []byte(key)) != nil {
+		if c.cache.Get(nil, longKey) != nil {
 			c.log.Hit()
+			return
 		} else {
 			c.log.Miss()
 		}
 	}
-	c.cache.Set([]byte(key), []byte("*"))
+	c.cache.Set(longKey, longVal)
 }
 
 func (c *BenchFastCache) Del(key string) {
@@ -316,7 +325,7 @@ type BenchFreeCache struct {
 func NewBenchFreeCache(capacity int, track bool) Cache {
 	// NOTE: if capacity is less than 512KB, then freecache sets it to 512KB
 	return &BenchFreeCache{
-		cache: freecache.NewCache(capacity),
+		cache: freecache.NewCache(capacity * 1488),
 		log:   &policyLog{},
 		track: track,
 	}
@@ -331,14 +340,17 @@ func (c *BenchFreeCache) Get(key string) (interface{}, bool) {
 }
 
 func (c *BenchFreeCache) Set(key string, value interface{}) {
+	longKey := []byte(padString(key, 64))
+	longVal := []byte(padString(string(value.([]byte)), 1400))
 	if c.track {
-		if value, _ := c.cache.Get([]byte(key)); value != nil {
+		if value, _ := c.cache.Get(longKey); value != nil {
 			c.log.Hit()
+			return
 		} else {
 			c.log.Miss()
 		}
 	}
-	if err := c.cache.Set([]byte(key), value.([]byte), 0); err != nil {
+	if err := c.cache.Set(longKey, longVal, 0); err != nil {
 		log.Panic(err)
 	}
 }

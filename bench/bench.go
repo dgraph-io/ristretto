@@ -148,7 +148,7 @@ func getBenchCaches(include, suite string) []*benchCache {
 			// BenchOptimal is not safe for concurrent access, so it's only
 			// included if the hit ratio suite is being ran.
 			caches = append(caches, []*benchCache{
-				{"optimal", NewBenchOptimal},
+				{"optimal    ", NewBenchOptimal},
 			}...)
 		}
 		caches = append(caches, []*benchCache{
