@@ -25,9 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
-
-	"github.com/dgraph-io/ristretto"
 )
 
 var (
@@ -48,7 +47,7 @@ var (
 		"suite",
 		"full",
 		`You can chose from the following options:
-		"full"  - hit ratio and speed performance
+		"all"   - hit ratio and speed performance
 		"hits"  - hit ratio
 		"speed" - throughput
 		`,
@@ -68,9 +67,9 @@ type Benchmark struct {
 	Name string
 	// Label is for denoting variations within implementations.
 	Label string
-	// Bencher is the function for generating testing.B benchmarks for running
-	// the actual iterations and collecting runtime information.
-	Bencher func(*Benchmark, *LogCollection) func(*testing.B)
+	// TODO - document and clean
+	HitsBencher  func(*Benchmark, *LogCollection) func()
+	SpeedBencher func(*Benchmark, *LogCollection) func(*testing.B)
 	// Para is the multiple of runtime.GOMAXPROCS(0) to use for this benchmark.
 	Para int
 	// Create is the lazily evaluated function for creating new instances of the
@@ -83,38 +82,48 @@ func (b *Benchmark) Log() {
 }
 
 type benchSuite struct {
-	label   string
-	bencher func(*Benchmark, *LogCollection) func(*testing.B)
+	label      string
+	benchHits  func(*Benchmark, *LogCollection) func()
+	benchSpeed func(*Benchmark, *LogCollection) func(*testing.B)
 }
 
 func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark {
 	suite := make([]*benchSuite, 0)
 	// create the bench suite from the suite param (SUITE flag)
-	if kind == "hits" || kind == "full" {
+	if kind == "hits" || kind == "all" {
 		suite = append(suite, []*benchSuite{
-			{"hits-uniform ", HitsUniform},
-			{"hits-zipf    ", HitsZipf},
+			{"hits-zipf     ", HitsZipf, nil},
+			{"hits-lirs-gli ", HitsLIRS("gli"), nil},
+			{"hits-lirs-loop", HitsLIRS("loop"), nil},
+			{"hits-arc-ds1  ", HitsARC("ds1"), nil},
+			{"hits-arc-p3   ", HitsARC("p3"), nil},
+			{"hits-arc-p8   ", HitsARC("p8"), nil},
+			{"hits-arc-s3   ", HitsARC("s3"), nil},
 		}...)
 	}
-	if kind == "speed" || kind == "full" {
+	if kind == "speed" || kind == "all" {
 		suite = append(suite, []*benchSuite{
-			{"get-same     ", GetSame},
-			{"get-zipf     ", GetZipf},
-			{"set-get      ", SetGet},
-			{"set-same     ", SetSame},
-			{"set-zipf     ", SetZipf},
-			{"set-get-zipf ", SetGetZipf},
+			{"get-same      ", nil, GetSame},
+			{"get-zipf      ", nil, GetZipf},
+			{"set-get       ", nil, SetGet},
+			{"set-same      ", nil, SetSame},
+			{"set-zipf      ", nil, SetZipf},
+			{"set-get-zipf  ", nil, SetGetZipf},
 		}...)
 	}
 	// create benchmarks from bench suite
 	benchmarks := make([]*Benchmark, len(suite))
 	for i := range benchmarks {
 		benchmarks[i] = &Benchmark{
-			Name:    cache.name,
-			Label:   suite[i].label,
-			Bencher: suite[i].bencher,
-			Para:    para,
-			Create:  func(hits bool) Cache { return cache.create(capa, hits) },
+			Name:   cache.name,
+			Label:  suite[i].label,
+			Para:   para,
+			Create: func(hits bool) Cache { return cache.create(capa, hits) },
+		}
+		if suite[i].benchHits != nil {
+			benchmarks[i].HitsBencher = suite[i].benchHits
+		} else if suite[i].benchSpeed != nil {
+			benchmarks[i].SpeedBencher = suite[i].benchSpeed
 		}
 	}
 	return benchmarks
@@ -126,8 +135,8 @@ type benchCache struct {
 }
 
 // getBenchCaches() returns a slice of benchCache's depending on the value of
-// the include param (which is the *CACHE flag passed from main).
-func getBenchCaches(include string) []*benchCache {
+// the include params (which is the cache/suite flags passed from main).
+func getBenchCaches(include, suite string) []*benchCache {
 	caches := []*benchCache{
 		{"ristretto  ", NewBenchRistretto},
 	}
@@ -135,6 +144,13 @@ func getBenchCaches(include string) []*benchCache {
 		return caches
 	}
 	if include == "all" {
+		if suite == "hits" {
+			// BenchOptimal is not safe for concurrent access, so it's only
+			// included if the hit ratio suite is being ran.
+			caches = append(caches, []*benchCache{
+				{"optimal    ", NewBenchOptimal},
+			}...)
+		}
 		caches = append(caches, []*benchCache{
 			{"base-mutex ", NewBenchBaseMutex},
 			{"goburrow   ", NewBenchGoburrow},
@@ -152,7 +168,7 @@ func init() {
 
 func main() {
 	var (
-		caches     = getBenchCaches(*flagCache)
+		caches     = getBenchCaches(*flagCache, *flagSuite)
 		logs       = make([]*Log, 0)
 		benchmarks = make([]*Benchmark, 0)
 	)
@@ -167,8 +183,13 @@ func main() {
 		benchmark.Log()
 		// collection of policy logs for hit ratio analysis
 		coll := NewLogCollection()
-		// run the benchmark and save the results
-		result := testing.Benchmark(benchmark.Bencher(benchmark, coll))
+
+		var result testing.BenchmarkResult
+		if benchmark.HitsBencher != nil {
+			benchmark.HitsBencher(benchmark, coll)()
+		} else if benchmark.SpeedBencher != nil {
+			result = testing.Benchmark(benchmark.SpeedBencher(benchmark, coll))
+		}
 		// append benchmark result to logs
 		logs = append(logs, &Log{benchmark, NewResult(result, coll)})
 		// clear GC after each benchmark to reduce random effects on the data
@@ -224,7 +245,7 @@ func save(logs []*Log) error {
 func Labels() []string {
 	return []string{
 		"name       ",
-		"label        ",
+		"label         ",
 		"go",
 		" mop/s",
 		" ns/op",
@@ -301,6 +322,12 @@ type Result struct {
 
 // NewResult extracts the data we're interested in from a BenchmarkResult.
 func NewResult(res testing.BenchmarkResult, coll *LogCollection) *Result {
+	result := &Result{}
+	if res.N == 0 {
+		result.Hits = coll.Hits()
+		result.Misses = coll.Misses()
+		return result
+	}
 	memops := strings.Trim(strings.Split(res.String(), "\t")[2], " MB/s")
 	opsraw, err := strconv.ParseFloat(memops, 64)
 	if err != nil {
@@ -322,16 +349,16 @@ func NewResult(res testing.BenchmarkResult, coll *LogCollection) *Result {
 
 type LogCollection struct {
 	sync.Mutex
-	Logs []*ristretto.PolicyLog
+	Logs []*policyLog
 }
 
 func NewLogCollection() *LogCollection {
 	return &LogCollection{
-		Logs: make([]*ristretto.PolicyLog, 0),
+		Logs: make([]*policyLog, 0),
 	}
 }
 
-func (c *LogCollection) Append(plog *ristretto.PolicyLog) {
+func (c *LogCollection) Append(plog *policyLog) {
 	c.Lock()
 	defer c.Unlock()
 	c.Logs = append(c.Logs, plog)
@@ -355,4 +382,40 @@ func (c *LogCollection) Misses() int64 {
 		sum += c.Logs[i].GetMisses()
 	}
 	return sum
+}
+
+type policyLog struct {
+	hits      int64
+	misses    int64
+	evictions int64
+}
+
+func (p *policyLog) Hit() {
+	atomic.AddInt64(&p.hits, 1)
+}
+
+func (p *policyLog) Miss() {
+	atomic.AddInt64(&p.misses, 1)
+}
+
+func (p *policyLog) Evict() {
+	atomic.AddInt64(&p.evictions, 1)
+}
+
+func (p *policyLog) GetMisses() int64 {
+	return atomic.LoadInt64(&p.misses)
+}
+
+func (p *policyLog) GetHits() int64 {
+	return atomic.LoadInt64(&p.hits)
+}
+
+func (p *policyLog) GetEvictions() int64 {
+	return atomic.LoadInt64(&p.evictions)
+}
+
+func (p *policyLog) Ratio() float64 {
+	hits := atomic.LoadInt64(&p.hits)
+	misses := atomic.LoadInt64(&p.misses)
+	return float64(hits) / float64(hits+misses)
 }
