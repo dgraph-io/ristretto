@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"testing"
+	"time"
 )
 
 const (
@@ -29,13 +30,13 @@ const (
 
 type BaseConsumer struct{}
 
-func (c *BaseConsumer) Push(items []uint64) {}
+func (c *BaseConsumer) Push(items []uint64) bool { return true }
 
 type TestConsumer struct {
 	push func([]uint64)
 }
 
-func (c *TestConsumer) Push(items []uint64) { c.push(items) }
+func (c *TestConsumer) Push(items []uint64) bool { c.push(items); return true }
 
 func TestRingLossy(t *testing.T) {
 	drainCount := 0
@@ -51,7 +52,8 @@ func TestRingLossy(t *testing.T) {
 	buffer.Push(2)
 	buffer.Push(3)
 	buffer.Push(4)
-	if drainCount != 1 {
+	time.Sleep(5 * time.Millisecond)
+	if drainCount == 0 {
 		t.Fatal("drain error")
 	}
 }

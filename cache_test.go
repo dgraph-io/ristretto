@@ -37,27 +37,31 @@ func newCache(config *Config, p PolicyCreator) *Cache {
 	if config.MaxCost == 0 && config.NumCounters != 0 {
 		config.MaxCost = config.NumCounters
 	}
-	data := newStore()
 	policy := p(config.NumCounters, config.MaxCost)
-	if config.Log {
-		policy = NewRecorder(policy, data)
-	}
-	return &Cache{
-		data:   data,
+	cache := &Cache{
+		data:   newStore(),
 		policy: policy,
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
 	}
+	if config.Metrics {
+		cache.collectMetrics()
+	}
+	return cache
 }
 
 func BenchmarkCacheOneGet(b *testing.B) {
-	c := newCache(&Config{
+	c, err := NewCache(&Config{
 		NumCounters: NUM_COUNTERS,
+		MaxCost:     NUM_COUNTERS,
 		BufferItems: BUFFER_ITEMS,
-		Log:         false,
-	}, newPolicy)
+		Metrics:     true,
+	})
+	if err != nil {
+		b.Fatalf("Error: %v", err)
+	}
 	c.Set("1", 1, 1)
 	b.SetBytes(1)
 	b.ResetTimer()
@@ -66,33 +70,40 @@ func BenchmarkCacheOneGet(b *testing.B) {
 			c.Get("1")
 		}
 	})
+	b.Logf("cache.Stats: %s\n", c.Metrics())
 }
 
-func BenchmarkCacheLong(b *testing.B) {
+func BenchmarkCacheGets(b *testing.B) {
 	cache, err := NewCache(&Config{
 		NumCounters: 64 << 20,
 		BufferItems: 1000,
-		Log:         true,
+		Metrics:     true,
 		MaxCost:     256 << 20,
 	})
 	if err != nil {
 		b.Fatal(err)
 	}
 
+	N := int32(512 << 10)
+	for idx := int32(0); idx < N; idx++ {
+		cache.Set(idx, idx, 1)
+	}
+	b.Logf("Set the cache\n")
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			idx := r.Int31() % (512 << 20)
+			idx := r.Int31() % N
 			if out, _ := cache.Get(idx); out != nil {
 				if out.(int32) != idx {
 					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
 				}
 			} else {
-				cache.Set(idx, idx, int64(idx>>10)+1)
+				// cache.Set(idx, idx, int64(idx>>10)+1)
 			}
 		}
 	})
-	b.Logf("Got Hit Ratio: %.2f\n", cache.Log().Ratio())
+	// TODO: Hit ratio should be 100%.
+	b.Logf("Cache Metrics: %s\n", cache.Metrics())
 }
 
 func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
@@ -101,8 +112,8 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 		cache := newCache(&Config{
 			NumCounters: NUM_COUNTERS,
 			BufferItems: BUFFER_ITEMS,
-			Log:         true,
 		}, p)
+		cache.collectMetrics()
 		// must iterate through SAMPLE_ITEMS because it's fixed and should be
 		// much larger than the MAX_ITEMS
 		for i := 0; i < SAMPLE_ITEMS; i++ {
@@ -115,7 +126,8 @@ func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
 			cache.Set(fmt.Sprintf("%d", key), i, 1)
 		}
 		// stats is the hit ratio stats for the cache instance
-		stats := cache.Log()
+		stats := cache.Metrics()
+		t.Logf("metrics: %s\n", stats)
 		// log the hit ratio
 		t.Logf("------------------- %d%%\n", uint64(stats.Ratio()*100))
 	}
@@ -181,10 +193,11 @@ func TestCacheSetGet(t *testing.T) {
 
 	for i := 0; i < 16; i++ {
 		key := fmt.Sprintf("%d", i)
-		if added := c.Set(key, i, 1); added {
+		if pushed := c.Set(key, i, 1); pushed {
 			value, found := c.Get(key)
-			if !found || value == nil || value.(int) != i {
-				t.Fatal("set/get error")
+			if found && (value == nil || value.(int) != i) {
+				// There's no guarantee that the key would definitely make it to cache.
+				t.Fatalf("set/get error for key: %s", key)
 			}
 		}
 	}
