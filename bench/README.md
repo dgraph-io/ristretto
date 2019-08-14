@@ -33,7 +33,22 @@ benchmarks. This is useful for simulating contention.
 #### 4. use the output.csv file
 
 The output CSV file is useful for creating charts and comparing implementations.
-Here's an example of the output when running the speed and hits suite:
+The column headers are used as follows:
+
+* `name`: the cache implementation (from `cache.go`)
+* `label`: the benchmark (from `generate.go`)
+* `go`: the number of goroutines running in parallel
+* `mop/s`: million operations per second (e.g. 9 mop/s = 9,000,000 operations
+  per second)
+* `ns/op`: nanoseconds per operation
+* `ac`: allocations per operation
+* `byt`: bytes allocated per operation
+* `hits`: total number of hits counted during the benchmark
+* `misses`: total number of misses counted during the benchmark
+* `ratio`: the percentage of `hits / (hits + misses)`
+
+
+Here's an example of the output when running the "all" (speed + hits) suite:
 
 ```
 name       , label         , go,  mop/s,  ns/op, ac, byt, hits    , misses  ,   ratio 
