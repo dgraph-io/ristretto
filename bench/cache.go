@@ -46,7 +46,7 @@ type BenchOptimal struct {
 func NewBenchOptimal(capacity int, track bool) Cache {
 	return &BenchOptimal{
 		capacity: uint64(capacity),
-		hits:     make(map[string]uint64, 0),
+		hits:     make(map[string]uint64),
 		access:   make([]string, 0),
 	}
 }
