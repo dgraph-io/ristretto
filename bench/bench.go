@@ -47,7 +47,7 @@ var (
 		"suite",
 		"full",
 		`You can chose from the following options:
-		"full"  - hit ratio and speed performance
+		"all"   - hit ratio and speed performance
 		"hits"  - hit ratio
 		"speed" - throughput
 		`,
@@ -90,7 +90,7 @@ type benchSuite struct {
 func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark {
 	suite := make([]*benchSuite, 0)
 	// create the bench suite from the suite param (SUITE flag)
-	if kind == "hits" || kind == "full" {
+	if kind == "hits" || kind == "all" {
 		suite = append(suite, []*benchSuite{
 			{"hits-zipf     ", HitsZipf, nil},
 			{"hits-lirs-gli ", HitsLIRS("gli"), nil},
@@ -101,7 +101,7 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 			{"hits-arc-s3   ", HitsARC("s3"), nil},
 		}...)
 	}
-	if kind == "speed" || kind == "full" {
+	if kind == "speed" || kind == "all" {
 		suite = append(suite, []*benchSuite{
 			{"get-same      ", nil, GetSame},
 			{"get-zipf      ", nil, GetZipf},
