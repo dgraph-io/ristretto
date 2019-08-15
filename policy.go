@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"container/list"
 	"math"
 	"sync"
 
@@ -431,4 +432,108 @@ func (p *Clairvoyant) Log() *metrics {
 		size++
 	}
 	return p.log
+}
+
+type lruPolicy struct {
+	sync.Mutex
+	admit   *tinyLFU
+	ptrs    map[uint64]*lruItem
+	vals    *list.List
+	maxCost int64
+	room    int64
+}
+
+type lruItem struct {
+	ptr  *list.Element
+	key  uint64
+	cost int64
+}
+
+func newLRUPolicy(numCounters, maxCost int64) Policy {
+	return &lruPolicy{
+		admit:   newTinyLFU(numCounters),
+		ptrs:    make(map[uint64]*lruItem, maxCost),
+		vals:    list.New(),
+		room:    maxCost,
+		maxCost: maxCost,
+	}
+}
+
+func (p *lruPolicy) Push(keys []uint64) bool {
+	if len(keys) == 0 {
+		return true
+	}
+	p.Lock()
+	defer p.Unlock()
+	for _, key := range keys {
+		// increment tinylfu counter
+		p.admit.Increment(key)
+		// move list item to front
+		if val, ok := p.ptrs[key]; ok {
+			// move accessed val to MRU position
+			p.vals.MoveToFront(val.ptr)
+		}
+	}
+	return true
+}
+
+func (p *lruPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
+	p.Lock()
+	defer p.Unlock()
+	if cost > p.maxCost {
+		return nil, false
+	}
+	if val, has := p.ptrs[key]; has {
+		p.vals.MoveToFront(val.ptr)
+		return nil, true
+	}
+	var victims []uint64
+	incHits := p.admit.Estimate(key)
+	if p.room >= 0 {
+		goto add
+	}
+	for p.room < 0 {
+		lru := p.vals.Back()
+		victim := lru.Value.(*lruItem)
+		if incHits < p.admit.Estimate(victim.key) {
+			return victims, false
+		}
+		// delete victim from metadata
+		p.vals.Remove(victim.ptr)
+		delete(p.ptrs, victim.key)
+		victims = append(victims, victim.key)
+		// adjust room
+		p.room += victim.cost
+	}
+add:
+	item := &lruItem{key: key, cost: cost}
+	item.ptr = p.vals.PushFront(item)
+	p.ptrs[key] = item
+	p.room -= cost
+	return victims, true
+}
+
+func (p *lruPolicy) Has(key uint64) bool {
+	p.Lock()
+	defer p.Unlock()
+	_, has := p.ptrs[key]
+	return has
+}
+
+func (p *lruPolicy) Del(key uint64) {
+	p.Lock()
+	defer p.Unlock()
+	if val, ok := p.ptrs[key]; ok {
+		p.vals.Remove(val.ptr)
+		delete(p.ptrs, key)
+	}
+}
+
+func (p *lruPolicy) Cap() int64 {
+	p.Lock()
+	defer p.Unlock()
+	return int64(p.vals.Len())
+}
+
+func (p *lruPolicy) CollectMetrics(stats *metrics) {
 }

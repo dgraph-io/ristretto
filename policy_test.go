@@ -39,7 +39,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 		})
 		t.Run("uniform-add", func(t *testing.T) {
 			policy := create(iterations, iterations)
-			for i := int64(0); i < iterations; i++ {
+			for i := int64(0); i < iterations+1; i++ {
 				policy.Add(uint64(i), 1)
 			}
 			if victims, added := policy.Add(999999, 1); victims == nil || !added {
@@ -60,7 +60,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 		})
 		t.Run("variable-add", func(t *testing.T) {
 			policy := create(iterations, iterations*4)
-			for i := int64(0); i < iterations; i++ {
+			for i := int64(0); i < iterations+1; i++ {
 				policy.Add(uint64(i), 4)
 			}
 			if victims, added := policy.Add(999999, 1); victims == nil || !added {
@@ -71,7 +71,7 @@ func GeneratePolicyTest(create PolicyCreator) func(*testing.T) {
 }
 
 func TestPolicy(t *testing.T) {
-	policies := []PolicyCreator{newPolicy}
+	policies := []PolicyCreator{newPolicy, newLRUPolicy}
 	for _, policy := range policies {
 		GeneratePolicyTest(policy)(t)
 	}
