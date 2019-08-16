@@ -17,206 +17,149 @@
 package ristretto
 
 import (
-	"fmt"
-	"math/rand"
+	"container/heap"
 	"testing"
-	"time"
 
 	"github.com/dgraph-io/ristretto/bench/sim"
 )
 
-const (
-	NUM_COUNTERS = 256
-	BUFFER_ITEMS = NUM_COUNTERS / 4
-	SAMPLE_ITEMS = NUM_COUNTERS * 8
-	ZIPF_V       = 1.01
-	ZIPF_S       = 2
-)
+type TestCache interface {
+	Get(interface{}) (interface{}, bool)
+	Set(interface{}, interface{}, int64) bool
+}
 
-func newCache(config *Config, p PolicyCreator) *Cache {
-	if config.MaxCost == 0 && config.NumCounters != 0 {
-		config.MaxCost = config.NumCounters
-	}
-	policy := p(config.NumCounters, config.MaxCost)
-	cache := &Cache{
-		data:   newStore(),
-		policy: policy,
-		buffer: newRingBuffer(ringLossy, &ringConfig{
-			Consumer: policy,
-			Capacity: config.BufferItems,
-		}),
-	}
-	if config.Metrics {
-		cache.collectMetrics()
+const capacity = 1000
+
+func newCache(metrics bool) *Cache {
+	cache, err := NewCache(&Config{
+		NumCounters: capacity * 10,
+		MaxCost:     capacity,
+		BufferItems: 64,
+		Metrics:     metrics,
+	})
+	if err != nil {
+		panic(err)
 	}
 	return cache
 }
 
-func BenchmarkCacheOneGet(b *testing.B) {
-	c, err := NewCache(&Config{
-		NumCounters: NUM_COUNTERS,
-		MaxCost:     NUM_COUNTERS,
-		BufferItems: BUFFER_ITEMS,
-		Metrics:     true,
-	})
-	if err != nil {
-		b.Fatalf("Error: %v", err)
-	}
-	c.Set("1", 1, 1)
-	b.SetBytes(1)
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			c.Get("1")
-		}
-	})
-	b.Logf("cache.Stats: %s\n", c.Metrics())
-}
-
-func BenchmarkCacheGets(b *testing.B) {
-	cache, err := NewCache(&Config{
-		NumCounters: 64 << 20,
-		BufferItems: 1000,
-		Metrics:     true,
-		MaxCost:     256 << 20,
-	})
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	N := int32(512 << 10)
-	for idx := int32(0); idx < N; idx++ {
-		cache.Set(idx, idx, 1)
-	}
-	b.Logf("Set the cache\n")
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			idx := r.Int31() % N
-			if out, _ := cache.Get(idx); out != nil {
-				if out.(int32) != idx {
-					b.Fatalf("Wanted: %d. Got: %d\n", idx, out)
-				}
-			} else {
-				// cache.Set(idx, idx, int64(idx>>10)+1)
+func newBenchmark(bencher func(uint64)) func(b *testing.B) {
+	return func(b *testing.B) {
+		b.SetBytes(1)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for i := uint64(0); pb.Next(); i++ {
+				bencher(i)
 			}
-		}
-	})
-	// TODO: Hit ratio should be 100%.
-	b.Logf("Cache Metrics: %s\n", cache.Metrics())
+		})
+	}
 }
 
-func GenerateCacheTest(p PolicyCreator, k sim.Simulator) func(*testing.T) {
+func BenchmarkCacheGetOne(b *testing.B) {
+	cache := newCache(false)
+	cache.Set(1, nil, 1)
+	newBenchmark(func(i uint64) { cache.Get(1) })(b)
+}
+
+func BenchmarkCacheSetOne(b *testing.B) {
+	cache := newCache(false)
+	newBenchmark(func(i uint64) { cache.Set(1, nil, 1) })(b)
+}
+
+func BenchmarkCacheSetUni(b *testing.B) {
+	cache := newCache(false)
+	newBenchmark(func(i uint64) { cache.Set(i, nil, 1) })(b)
+}
+
+func newRatioTest(cache TestCache) func(t *testing.T) {
 	return func(t *testing.T) {
-		// create the cache with the provided policy and constant params
-		cache := newCache(&Config{
-			NumCounters: NUM_COUNTERS,
-			BufferItems: BUFFER_ITEMS,
-		}, p)
-		cache.collectMetrics()
-		// must iterate through SAMPLE_ITEMS because it's fixed and should be
-		// much larger than the MAX_ITEMS
-		for i := 0; i < SAMPLE_ITEMS; i++ {
-			// generate a key from the simulator
-			key, err := k()
+		keys := sim.NewZipfian(1.0001, 1, capacity*10)
+		for i := 0; i < capacity*10; i++ {
+			key, err := keys()
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
 			}
-			// must be a set operation for hit ratio logging
-			cache.Set(fmt.Sprintf("%d", key), i, 1)
-		}
-		// stats is the hit ratio stats for the cache instance
-		stats := cache.Metrics()
-		t.Logf("metrics: %s\n", stats)
-		// log the hit ratio
-		t.Logf("------------------- %d%%\n", uint64(stats.Ratio()*100))
-	}
-}
-
-type (
-	policyTest struct {
-		label   string
-		creator PolicyCreator
-	}
-	accessTest struct {
-		label  string
-		access sim.Simulator
-	}
-)
-
-func TestCache(t *testing.T) {
-	// policies is a slice of all policies to test (see policy.go)
-	policies := []policyTest{
-		{"clairvoyant", newClairvoyant},
-		{"    default", newPolicy},
-	}
-	// accesses is a slice of all access distributions to test (see sim package)
-	accesses := []accessTest{
-		{"uniform    ", sim.NewUniform(SAMPLE_ITEMS)},
-		{"zipfian    ", sim.NewZipfian(ZIPF_V, ZIPF_S, SAMPLE_ITEMS)},
-	}
-	for _, access := range accesses {
-		for _, policy := range policies {
-			t.Logf("%s-%s", policy.label, access.label)
-			GenerateCacheTest(policy.creator, access.access)(t)
-		}
-	}
-}
-
-func TestCacheBasic(t *testing.T) {
-	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if added := c.Set("1", 1, 1); !added {
-		t.Fatal("set error")
-	}
-	if value, found := c.Get("1"); found && value.(int) != 1 {
-		t.Fatal("get error")
-	}
-}
-
-func TestCacheSetGet(t *testing.T) {
-	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     4,
-		BufferItems: 4,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for i := 0; i < 16; i++ {
-		key := fmt.Sprintf("%d", i)
-		if pushed := c.Set(key, i, 1); pushed {
-			value, found := c.Get(key)
-			if found && (value == nil || value.(int) != i) {
-				// There's no guarantee that the key would definitely make it to cache.
-				t.Fatalf("set/get error for key: %s", key)
+			if _, ok := cache.Get(key); !ok {
+				cache.Set(key, nil, 1)
 			}
 		}
 	}
 }
 
-func TestCacheSize(t *testing.T) {
-	c, err := NewCache(&Config{
-		NumCounters: 16,
-		MaxCost:     16 * 4,
-		BufferItems: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestCacheHits(t *testing.T) {
+	cache := newCache(true)
+	newRatioTest(cache)(t)
+	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio())
+	optimal := NewClairvoyant(capacity)
+	newRatioTest(optimal)(t)
+	t.Logf("  optimal: %.2f\n", optimal.Log())
+}
 
-	for i := 0; i < 8; i++ {
-		c.Set(fmt.Sprintf("%d", i), i, 4)
-		if c.policy.Cap() < 0 {
-			t.Fatal("size overflow")
-		}
+type Clairvoyant struct {
+	capacity uint64
+	hits     map[uint64]uint64
+	access   []uint64
+}
+
+func NewClairvoyant(capacity uint64) *Clairvoyant {
+	return &Clairvoyant{
+		capacity: capacity,
+		hits:     make(map[uint64]uint64),
+		access:   make([]uint64, 0),
 	}
+}
+
+func (c *Clairvoyant) Get(key interface{}) (interface{}, bool) {
+	c.hits[key.(uint64)]++
+	c.access = append(c.access, key.(uint64))
+	return nil, false
+}
+
+func (c *Clairvoyant) Set(key, value interface{}, cost int64) bool {
+	return false
+}
+
+func (c *Clairvoyant) Log() float64 {
+	hits, misses, evictions := uint64(0), uint64(0), uint64(0)
+	look := make(map[uint64]struct{}, c.capacity)
+	data := &clairvoyantHeap{}
+	heap.Init(data)
+	for _, key := range c.access {
+		if _, has := look[key]; has {
+			hits++
+			continue
+		}
+		if uint64(data.Len()) >= c.capacity {
+			victim := heap.Pop(data)
+			delete(look, victim.(*clairvoyantItem).key)
+			evictions++
+		}
+		misses++
+		look[key] = struct{}{}
+		heap.Push(data, &clairvoyantItem{key, c.hits[key]})
+	}
+	return float64(hits) / float64(hits+misses)
+}
+
+type clairvoyantItem struct {
+	key  uint64
+	hits uint64
+}
+
+type clairvoyantHeap []*clairvoyantItem
+
+func (h clairvoyantHeap) Len() int           { return len(h) }
+func (h clairvoyantHeap) Less(i, j int) bool { return h[i].hits < h[j].hits }
+func (h clairvoyantHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *clairvoyantHeap) Push(x interface{}) {
+	*h = append(*h, x.(*clairvoyantItem))
+}
+
+func (h *clairvoyantHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }
