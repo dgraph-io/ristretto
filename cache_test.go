@@ -45,13 +45,19 @@ func newCache(metrics bool) *Cache {
 
 func newBenchmark(bencher func(uint64)) func(b *testing.B) {
 	return func(b *testing.B) {
+		b.SetParallelism(1)
 		b.SetBytes(1)
 		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for i := uint64(0); pb.Next(); i++ {
-				bencher(i)
-			}
-		})
+		/*
+			b.RunParallel(func(pb *testing.PB) {
+				for i := uint64(0); pb.Next(); i++ {
+					bencher(i)
+				}
+			})
+		*/
+		for n := uint64(0); n < uint64(b.N); n++ {
+			bencher(n)
+		}
 	}
 }
 
@@ -73,8 +79,8 @@ func BenchmarkCacheSetUni(b *testing.B) {
 
 func newRatioTest(cache TestCache) func(t *testing.T) {
 	return func(t *testing.T) {
-		keys := sim.NewZipfian(1.0001, 1, capacity*10)
-		for i := 0; i < capacity*10; i++ {
+		keys := sim.NewZipfian(1.0001, 1, capacity*100)
+		for i := 0; i < capacity*1000; i++ {
 			key, err := keys()
 			if err != nil {
 				t.Fatal(err)
@@ -89,7 +95,9 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 func TestCacheHits(t *testing.T) {
 	cache := newCache(true)
 	newRatioTest(cache)(t)
-	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio())
+	metrics := cache.Metrics()
+	t.Logf(" ristretto: %.2f\n", metrics.Ratio())
+	t.Logf("- dropped: %.2f\n", float64(metrics.Get(dropSets))/float64(metrics.Get(dropSets)+metrics.Get(keyAdd)+metrics.Get(keyUpdate)))
 	optimal := NewClairvoyant(capacity)
 	newRatioTest(optimal)(t)
 	t.Logf("  optimal: %.2f\n", optimal.Log())
