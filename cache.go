@@ -83,7 +83,7 @@ func NewCache(config *Config) (*Cache, error) {
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
-			Stripes:  0, // Don't care about the stripes in ringLossy.
+			Stripes:  64, // Don't care about the stripes in ringLossy.
 		}),
 		setCh: make(chan *item, 32*1024),
 	}
@@ -140,6 +140,10 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 		c.stats.Add(dropSets, hash, 1)
 		return false
 	}
+	/*
+		c.setCh <- &item{key: hash, val: val, cost: cost}
+		return true
+	*/
 }
 
 func (c *Cache) Del(key interface{}) {

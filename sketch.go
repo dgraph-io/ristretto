@@ -34,12 +34,12 @@ import (
 // [1]: https://github.com/dgryski/go-tinylfu/blob/master/cm4.go
 type cmSketch struct {
 	rows [cmDepth]cmRow
-	mask uint64
+	mask uint32
 }
 
 const (
 	// cmDepth is the number of counter copies to store (think of it as rows)
-	cmDepth = 1
+	cmDepth = 4
 )
 
 func newCmSketch(numCounters int64) *cmSketch {
@@ -50,7 +50,7 @@ func newCmSketch(numCounters int64) *cmSketch {
 	numCounters = next2Power(numCounters)
 	// sketch with FNV-64a hashing algorithm
 	sketch := &cmSketch{
-		mask: uint64(numCounters - 1),
+		mask: uint32(numCounters - 1),
 	}
 	// initialize rows of counters
 	for i := 0; i < cmDepth; i++ {
@@ -61,18 +61,20 @@ func newCmSketch(numCounters int64) *cmSketch {
 
 // Increment increments the count(ers) for the specified key.
 func (s *cmSketch) Increment(hashed uint64) {
+	l, r := uint32(hashed), uint32(hashed>>32)
 	for i := range s.rows {
 		// increment the counter on each row
-		s.rows[i].increment(hashed & s.mask)
+		s.rows[i].increment((l + uint32(i)*r) & s.mask)
 	}
 }
 
 // Estimate returns the value of the specified key.
 func (s *cmSketch) Estimate(hashed uint64) int64 {
+	l, r := uint32(hashed), uint32(hashed>>32)
 	min := byte(255)
 	for i := range s.rows {
 		// find the smallest counter value from all the rows
-		if v := s.rows[i].get(hashed & s.mask); v < min {
+		if v := s.rows[i].get((l + uint32(i)*r) & s.mask); v < min {
 			min = v
 		}
 	}
@@ -103,11 +105,11 @@ func newCmRow(numCounters int64) cmRow {
 	return make(cmRow, numCounters/2)
 }
 
-func (r cmRow) get(n uint64) byte {
+func (r cmRow) get(n uint32) byte {
 	return byte(r[n/2]>>((n&1)*4)) & 0x0f
 }
 
-func (r cmRow) increment(n uint64) {
+func (r cmRow) increment(n uint32) {
 	// index of the counter
 	i := n / 2
 	// shift distance (even 0, odd 4)
