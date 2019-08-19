@@ -71,11 +71,11 @@ func NewCache(config *Config) (*Cache, error) {
 		return nil, errors.New("BufferItems can't be zero.")
 	}
 
-	// Data is the hash map for the entire cache, it's initialized outside of
+	// data is the hash map for the entire cache, it's initialized outside of
 	// the cache struct declaration because it may need to be passed to the
 	// policy in some cases
 	data := newStore()
-	// initialize the policy (with a recorder wrapping if logging is enabled)
+	// initialize the policy
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
 		data:   data,
@@ -83,15 +83,16 @@ func NewCache(config *Config) (*Cache, error) {
 		buffer: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
-			Stripes:  64, // Don't care about the stripes in ringLossy.
+			Stripes:  0, // Don't care about the stripes in ringLossy.
 		}),
 		setCh: make(chan *item, 32*1024),
 	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	// We can possibly make this configurable. But having 2 goroutines processing this seems
-	// sufficient for now.
+	// We can possibly make this configurable. But having 2 goroutines
+	// processing this seems sufficient for now.
+	//
 	// TODO: Allow a way to stop these goroutines.
 	for i := 0; i < 2; i++ {
 		go cache.processItems()
@@ -140,10 +141,6 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 		c.stats.Add(dropSets, hash, 1)
 		return false
 	}
-	/*
-		c.setCh <- &item{key: hash, val: val, cost: cost}
-		return true
-	*/
 }
 
 func (c *Cache) Del(key interface{}) {
@@ -152,7 +149,7 @@ func (c *Cache) Del(key interface{}) {
 	c.data.Del(hash)
 }
 
-func (c *Cache) Metrics() *metrics {
+func (c *Cache) metrics() *metrics {
 	return c.stats
 }
 

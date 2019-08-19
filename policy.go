@@ -26,7 +26,7 @@ import (
 const (
 	// lfuSample is the number of items to sample when looking at eviction
 	// candidates. 5 seems to be the most optimal number [citation needed].
-	lfuSample = 5
+	lfuSample = 15
 )
 
 // Policy is the interface encapsulating eviction/admission behavior.
@@ -102,20 +102,21 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	p.Lock()
 	defer p.Unlock()
-
 	// can't add an item bigger than entire cache
 	if cost > p.evict.maxCost {
 		return nil, false
 	}
+	// we don't need to go any further if the item is already in the cache
 	if has := p.evict.updateIfHas(key, cost); has {
 		return nil, true
 	}
-
-	// We do not have this key.
-	// Calculate how much room do we have in the cache.
+	// if we got this far, this key doesn't exist in the cache
+	//
+	// calculate the remaining room in the cache (usually bytes)
 	room := p.evict.roomLeft(cost)
 	if room >= 0 {
-		// There's room in the cache.
+		// there's enough room in the cache to store the new item without
+		// overflowing, so we can do that now and stop here
 		p.evict.add(key, cost)
 		return nil, true
 	}
@@ -127,8 +128,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
-
-	// Victims contains keys that have already been evicted
+	// as items are evicted they will be appended to victims
 	var victims []uint64
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
@@ -142,6 +142,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
 				minKey, minHits, minId = pair.key, hits, i
 			}
+			break
 		}
 		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
