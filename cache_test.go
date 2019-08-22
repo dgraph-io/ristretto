@@ -149,6 +149,16 @@ func TestCacheSetGet(t *testing.T) {
 	}
 }
 
+func TestCacheSetNil(t *testing.T) {
+	cache := newCache(false)
+	cache.Set(1, nil, 1)
+	// must wait for the set buffer
+	time.Sleep(time.Second / 1000)
+	if value, ok := cache.Get(1); !ok || value != nil {
+		t.Fatal("cache value should exist and be nil")
+	}
+}
+
 // Clairvoyant is a mock cache providing us with optimal hit ratios to compare
 // with Ristretto's. It looks ahead and evicts the absolute least valuable item,
 // which we try to approximate in a real cache.

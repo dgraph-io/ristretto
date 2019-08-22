@@ -29,8 +29,8 @@ const (
 	lfuSample = 15
 )
 
-// Policy is the interface encapsulating eviction/admission behavior.
-type Policy interface {
+// policy is the interface encapsulating eviction/admission behavior.
+type policy interface {
 	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
@@ -46,7 +46,7 @@ type Policy interface {
 	CollectMetrics(stats *metrics)
 }
 
-func newPolicy(numCounters, maxCost int64) Policy {
+func newPolicy(numCounters, maxCost int64) policy {
 	p := &defaultPolicy{
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
