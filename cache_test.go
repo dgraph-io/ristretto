@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"container/heap"
+	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -157,6 +158,29 @@ func TestCacheSetNil(t *testing.T) {
 	if value, ok := cache.Get(1); !ok || value != nil {
 		t.Fatal("cache value should exist and be nil")
 	}
+}
+
+func TestCacheSetDrops(t *testing.T) {
+	n, size := 24, capacity*10
+	sample := uint64(n * size)
+	cache := newCache(true)
+	keys := sim.Collection(sim.NewUniform(sample), sample)
+	start, finish := &sync.WaitGroup{}, &sync.WaitGroup{}
+	for i := 0; i < n; i++ {
+		start.Add(1)
+		finish.Add(1)
+		go func(i int) {
+			start.Done()
+			start.Wait()
+			for j := i * size; j < (i*size)+size; j++ {
+				cache.Set(keys[j], 0, 1)
+			}
+			finish.Done()
+		}(i)
+	}
+	finish.Wait()
+	dropped := cache.metrics().Get(dropSets)
+	fmt.Println(float64(dropped) / float64(sample))
 }
 
 // Clairvoyant is a mock cache providing us with optimal hit ratios to compare
