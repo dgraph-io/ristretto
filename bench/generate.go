@@ -28,7 +28,7 @@ import (
 
 const (
 	// CAPACITY is the cache size in number of elements
-	capacity = 10000
+	capacity = 100000
 	// TODO
 	iterations = capacity * 10
 	// W is the number of elements in the "sample size" as mentioned in the

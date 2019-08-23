@@ -19,6 +19,7 @@ package ristretto
 import (
 	"container/heap"
 	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -149,6 +150,7 @@ func TestCacheSetGet(t *testing.T) {
 	}
 }
 
+// TestCacheSetNil makes sure nil values are working properly.
 func TestCacheSetNil(t *testing.T) {
 	cache := newCache(false)
 	cache.Set(1, nil, 1)
@@ -159,6 +161,10 @@ func TestCacheSetNil(t *testing.T) {
 	}
 }
 
+// TestCacheSetDrops simulates a period of high contention and reports the
+// percentage of Sets that are dropped. For most use cases, it would be rare to
+// have more than 4 goroutines calling Set in parallel. Nevertheless, this is a
+// useful stress test.
 func TestCacheSetDrops(t *testing.T) {
 	for goroutines := 1; goroutines <= 50; goroutines++ {
 		n, size := goroutines, capacity*10
@@ -171,6 +177,7 @@ func TestCacheSetDrops(t *testing.T) {
 			finish.Add(1)
 			go func(i int) {
 				start.Done()
+				// wait for all goroutines to be ready
 				start.Wait()
 				for j := i * size; j < (i*size)+size; j++ {
 					cache.Set(keys[j], 0, 1)
@@ -182,6 +189,7 @@ func TestCacheSetDrops(t *testing.T) {
 		dropped := cache.metrics().Get(dropSets)
 		t.Logf("%d goroutines: %.2f%% dropped \n",
 			goroutines, float64(float64(dropped)/float64(sample))*100)
+		runtime.GC()
 	}
 }
 

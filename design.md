@@ -2,13 +2,13 @@
 
 Ristretto has five requirements to consider when making design decisions.
 
-1. Concurrent: safe for concurrent use out-of-the-box.
-2. Memory Bounded: able to set a hard limit on memory usage.
-3. Horizontal Scaling: throughput performance should increase linearly as 
+1. **Concurrent**: safe for concurrent use out-of-the-box.
+2. **Memory Bounded**: able to set a hard limit on memory usage.
+3. **Horizontal Scaling**: throughput performance should increase linearly as 
    hardware capabilities (number of cores and threads) increase.
-4. Contention Mitigation: perform well under non-random key access distributions
+4. **Contention Mitigation**: perform well under non-random key access distributions
    (e.g. [Zipf](https://en.wikipedia.org/wiki/Zipf%27s_law)).
-5. Hit Ratio: at least as high as non-concurrent
+5. **Hit Ratio**: at least as high as non-concurrent
    [implementations](https://github.com/dgryski/go-tinylfu) of TinyLFU.
 
 These requirements have emerged from a thorough
