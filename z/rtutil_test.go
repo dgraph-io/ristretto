@@ -8,11 +8,11 @@ import (
 	"github.com/dgryski/go-farm"
 )
 
-func BenchmarkAESHash(b *testing.B) {
+func BenchmarkMemHash(b *testing.B) {
 	buf := make([]byte, 64)
 	rand.Read(buf)
 	for i := 0; i < b.N; i++ {
-		AESHash(buf)
+		MemHash(buf)
 	}
 }
 
