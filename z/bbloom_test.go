@@ -110,5 +110,4 @@ func BenchmarkM_Has(b *testing.B) {
 			bf.Has(hash)
 		}
 	}
-
 }
