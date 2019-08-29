@@ -45,6 +45,8 @@ type Cache struct {
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
+	// stop is a signal channel used for closing goroutines and channels.
+	stop chan struct{}
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -106,6 +108,7 @@ func NewCache(config *Config) (*Cache, error) {
 		}),
 		// TODO: size configuration for this? like BufferItems but for setBuf?
 		setBuf: make(chan *item, 32*1024),
+		stop:   make(chan struct{}),
 	}
 	if config.Metrics {
 		cache.collectMetrics()
@@ -161,17 +164,30 @@ func (c *Cache) Del(key interface{}) {
 	c.store.Del(hash)
 }
 
+// Close stops all goroutines and closes all channels.
+func (c *Cache) Close() { c.stop <- struct{}{} }
+
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	for item := range c.setBuf {
-		victims, added := c.policy.Add(item.key, item.cost)
-		if added {
-			// item was accepted by the policy, so add to the hashmap
-			c.store.Set(item.key, item.val)
-		}
-		// delete victims that are no longer worthy of being in the cache
-		for _, victim := range victims {
-			c.store.Del(victim)
+	for {
+		select {
+		case item := <-c.setBuf:
+			if item == nil {
+				continue
+			}
+			victims, added := c.policy.Add(item.key, item.cost)
+			if added {
+				// item was accepted by the policy, so add to the hashmap
+				c.store.Set(item.key, item.val)
+			}
+			// delete victims that are no longer worthy of being in the cache
+			for _, victim := range victims {
+				c.store.Del(victim)
+			}
+		case <-c.stop:
+			close(c.setBuf)
+			return
+		default:
 		}
 	}
 }

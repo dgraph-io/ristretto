@@ -29,8 +29,6 @@ import (
 const (
 	// CAPACITY is the cache size in number of elements
 	capacity = 100000
-	// TODO
-	iterations = capacity * 10
 	// W is the number of elements in the "sample size" as mentioned in the
 	// TinyLFU paper, where W/C = 16. W denotes the sample size, and C is the
 	// cache size (denoted by *CAPA).
@@ -46,7 +44,7 @@ const (
 func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func() {
 	return func() {
 		cache := bench.Create(true)
-		for n := 0; n < iterations; n++ {
+		for {
 			key, err := keys()
 			if err != nil {
 				if err == sim.ErrDone {
@@ -56,6 +54,7 @@ func NewHits(bench *Benchmark, coll *LogCollection, keys sim.Simulator) func() {
 			}
 			cache.Set(fmt.Sprintf("%d", key), []byte("*"))
 		}
+		cache.Close()
 		if stats := cache.Log(); stats != nil {
 			coll.Append(stats)
 		}

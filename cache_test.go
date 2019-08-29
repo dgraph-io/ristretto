@@ -166,7 +166,7 @@ func TestCacheSetNil(t *testing.T) {
 // have more than 4 goroutines calling Set in parallel. Nevertheless, this is a
 // useful stress test.
 func TestCacheSetDrops(t *testing.T) {
-	for goroutines := 1; goroutines <= 50; goroutines++ {
+	for goroutines := 1; goroutines <= 16; goroutines++ {
 		n, size := goroutines, capacity*10
 		sample := uint64(n * size)
 		cache := newCache(true)

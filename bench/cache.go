@@ -35,6 +35,7 @@ type Cache interface {
 	Set(string, interface{})
 	Del(string)
 	Log() *policyLog
+	Close()
 }
 
 type BenchOptimal struct {
@@ -89,6 +90,8 @@ func (c *BenchOptimal) Log() *policyLog {
 		evictions: evictions,
 	}
 }
+
+func (c *BenchOptimal) Close() {}
 
 type optimalItem struct {
 	key  string
@@ -158,6 +161,10 @@ func (c *BenchRistretto) Log() *policyLog {
 	return c.log
 }
 
+func (c *BenchRistretto) Close() {
+	c.cache.Close()
+}
+
 type BenchBaseMutex struct {
 	sync.Mutex
 	cache *lru.Cache
@@ -199,6 +206,8 @@ func (c *BenchBaseMutex) Del(key string) {
 func (c *BenchBaseMutex) Log() *policyLog {
 	return c.log
 }
+
+func (c *BenchBaseMutex) Close() {}
 
 func padString(s string, length int) string {
 	if len(s) >= length {
@@ -266,6 +275,8 @@ func (c *BenchBigCache) Log() *policyLog {
 	return c.log
 }
 
+func (c *BenchBigCache) Close() {}
+
 type BenchFastCache struct {
 	cache *fastcache.Cache
 	log   *policyLog
@@ -316,6 +327,8 @@ func (c *BenchFastCache) Log() *policyLog {
 	return c.log
 }
 
+func (c *BenchFastCache) Close() {}
+
 type BenchFreeCache struct {
 	cache *freecache.Cache
 	log   *policyLog
@@ -363,6 +376,8 @@ func (c *BenchFreeCache) Log() *policyLog {
 	return c.log
 }
 
+func (c *BenchFreeCache) Close() {}
+
 type BenchGoburrow struct {
 	cache goburrow.Cache
 	log   *policyLog
@@ -401,3 +416,5 @@ func (c *BenchGoburrow) Del(key string) {
 func (c *BenchGoburrow) Log() *policyLog {
 	return c.log
 }
+
+func (c *BenchGoburrow) Close() {}
