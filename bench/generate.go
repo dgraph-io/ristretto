@@ -28,7 +28,7 @@ import (
 
 const (
 	// CAPACITY is the cache size in number of elements
-	capacity = 100000
+	capacity = 1000000
 	// W is the number of elements in the "sample size" as mentioned in the
 	// TinyLFU paper, where W/C = 16. W denotes the sample size, and C is the
 	// cache size (denoted by *CAPA).
