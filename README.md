@@ -1,9 +1,12 @@
 # Ristretto
 
-Ristretto is a fast, efficient, memory bounded cache library. To read more about
-the technical details, check out [design.md](./design.md).
+[![GoDoc](https://img.shields.io/badge/api-reference-blue.svg)](https://godoc.org/github.com/dgraph-io/ristretto)
+[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-green.svg)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
 
-## Usage
+Ristretto is a fast, concurrent cache library using a [TinyLFU](https://arxiv.org/abs/1512.00727)
+admission policy and Sampled LFU eviction policy.
+
+## Example
 
 ```go
 package main
@@ -45,35 +48,52 @@ func main() {
 }
 ```
 
-### Config
-
 ## Benchmarks
 
-Our benchmark suite is in the `bench` subdirectory package. We try to use a
-variety of workload traces to best get an understanding of Ristretto's
-performance compared to other Go cache implementations.
+For commentary and notes about these benchmarks, check out the blog post (TBA).
 
-The two sides of the "performance" coin are throughput and efficiency. Often
-times they are inversely correlated. Ristretto achieves a balance by only
-sacrificing efficiency in times of high contention (by dropping items), in order
-to keep throughput high.
+### Hit Ratios
+
+#### Search
+
+This trace is described as "disk read accesses initiated by a large commercial
+search engine in response to various web search requests."
+
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Search%20(ARC-S3).svg?sanitize=true)
+
+#### Database
+
+This trace is described as "a database server running at a commercial site
+running an ERP application on top of a commercial database."
+
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg?sanitize=true)
+
+#### Looping
+
+This trace demonstrates a looping access pattern.
+
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg?sanitize=true)
+
+#### CODASYL
+
+This trace is described as "references to a CODASYL database for a one hour
+period."
+
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg?sanitize=true)
 
 ### Throughput
 
-### Efficiency (Hit Ratio)
+All throughput benchmarks were ran on an Intel Core i7-8700K (3.7GHz) with 16gb
+of RAM.
 
-The following benchmarks were both made using ARC trace files.
+#### Mixed
 
-> Nimrod Megiddo and Dharmendra S. Modha, "ARC: A Self-Tuning, Low Overhead Replacement Cache," USENIX Conference on File and Storage Technologies (FAST 03), San Francisco, CA, pp. 115-130, March 31-April 2, 2003. 
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Mixed.svg?sanitize=true)
 
-#### Search (S3)
+#### Read
 
-<p align="center">
-    <img src="https://i.imgur.com/jljJa8w.png" />
-</p>
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Read%20(Zipfian).svg?sanitize=true)
 
-#### Database (DS1)
+#### Write
 
-<p align="center">
-    <img src="https://i.imgur.com/VjKZb0p.png" />
-</p>
+![](https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Write%20(Zipfian).svg?sanitize=true)
