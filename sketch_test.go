@@ -90,7 +90,7 @@ func BenchmarkCM(b *testing.B) {
 
 func TestDoorkeeper(t *testing.T) {
 	d := z.NewBloomFilter(float64(1374), 0.01)
-	hash := z.AESHashString("*")
+	hash := z.MemHashString("*")
 	if d.Has(hash) {
 		t.Fatal("item exists but was never added")
 	}
