@@ -31,7 +31,7 @@ func TestM_NumberOfWrongs(t *testing.T) {
 
 	cnt := 0
 	for i := range wordlist1 {
-		hash := AESHash(wordlist1[i])
+		hash := MemHash(wordlist1[i])
 		if !bf.AddIfNotHas(hash) {
 			cnt++
 		}
@@ -47,7 +47,7 @@ func TestM_JSON(t *testing.T) {
 
 	cnt := 0
 	for i := range wordlist1 {
-		hash := AESHash(wordlist1[i])
+		hash := MemHash(wordlist1[i])
 		if !bf.AddIfNotHas(hash) {
 			cnt++
 		}
@@ -60,7 +60,7 @@ func TestM_JSON(t *testing.T) {
 
 	cnt2 := 0
 	for i := range wordlist1 {
-		hash := AESHash(wordlist1[i])
+		hash := MemHash(wordlist1[i])
 		if !bf2.AddIfNotHas(hash) {
 			cnt2++
 		}
@@ -81,7 +81,7 @@ func BenchmarkM_New(b *testing.B) {
 func BenchmarkM_Clear(b *testing.B) {
 	bf = NewBloomFilter(float64(n*10), float64(7))
 	for i := range wordlist1 {
-		hash := AESHash(wordlist1[i])
+		hash := MemHash(wordlist1[i])
 		bf.Add(hash)
 	}
 	b.ResetTimer()
@@ -95,7 +95,7 @@ func BenchmarkM_Add(b *testing.B) {
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			hash := AESHash(wordlist1[i])
+			hash := MemHash(wordlist1[i])
 			bf.Add(hash)
 		}
 	}
@@ -106,9 +106,8 @@ func BenchmarkM_Has(b *testing.B) {
 	b.ResetTimer()
 	for r := 0; r < b.N; r++ {
 		for i := range wordlist1 {
-			hash := AESHash(wordlist1[i])
+			hash := MemHash(wordlist1[i])
 			bf.Has(hash)
 		}
 	}
-
 }
