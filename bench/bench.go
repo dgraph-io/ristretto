@@ -93,12 +93,12 @@ func NewBenchmarks(kind string, para, capa int, cache *benchCache) []*Benchmark 
 	if kind == "hits" || kind == "all" {
 		suite = append(suite, []*benchSuite{
 			{"hits-zipf     ", HitsZipf, nil},
-			{"hits-lirs-gli ", HitsLIRS("gli"), nil},
 			{"hits-lirs-loop", HitsLIRS("loop"), nil},
 			{"hits-arc-ds1  ", HitsARC("ds1"), nil},
 			{"hits-arc-p3   ", HitsARC("p3"), nil},
 			{"hits-arc-p8   ", HitsARC("p8"), nil},
 			{"hits-arc-s3   ", HitsARC("s3"), nil},
+			{"hits-arc-ds1  ", HitsARC("ds1"), nil},
 		}...)
 	}
 	if kind == "speed" || kind == "all" {

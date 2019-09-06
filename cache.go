@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// Ristretto is a fast, fixed size, in-memory cache with a dual focus on
+// throughput and hit ratio performance. You can easily add Ristretto to an
+// existing system and keep the most valuable data where you need it.
 package ristretto
 
 import (
@@ -25,42 +28,65 @@ import (
 	"github.com/dgraph-io/ristretto/z"
 )
 
-// Cache ties everything together. The three main components are:
-//
-//     1) The hash map: this is the Map interface.
-//     2) The admission and eviction policy: this is the Policy interface.
-//     3) The bp-wrapper buffer: this is the Buffer struct.
-//
-// All three of these components work together to try and keep the most valuable
-// key-value pairs in the hash map. Value is determined by the Policy, and
-// BP-Wrapper keeps the Policy fast (by batching metadata updates).
+// Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
+// policy and a Sampled LFU eviction policy. You can use the same Cache instance
+// from as many goroutines as you want.
 type Cache struct {
-	data   store
-	policy Policy
-	buffer *ringBuffer
-	setCh  chan *item
-	stats  *metrics
+	// store is the central concurrent hashmap where key-value items are stored
+	store store
+	// policy determines what gets let in to the cache and what gets kicked out
+	policy policy
+	// getBuf is a custom ring buffer implementation that gets pushed to when
+	// keys are read
+	getBuf *ringBuffer
+	// setBuf is a buffer allowing us to batch/drop Sets during times of high
+	// contention
+	setBuf chan *item
+	// stats contains a running log of important statistics like hits, misses,
+	// and dropped items
+	stats *metrics
 }
 
+// Config is passed to NewCache for creating new Cache instances.
+type Config struct {
+	// NumCounters determines the number of counters (keys) to keep that hold
+	// access frequency information. It's generally a good idea to have more
+	// counters than the max cache capacity, as this will improve eviction
+	// accuracy and subsequent hit ratios.
+	//
+	// For example, if you expect your cache to hold 1,000,000 items when full,
+	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
+	// keeping 10,000,000 counters would require 5MB of memory.
+	NumCounters int64
+	// MaxCost can be considered as the cache capacity, in whatever units you
+	// choose to use.
+	//
+	// For example, if you want the cache to have a max capacity of 100MB, you
+	// would set MaxCost to 100,000,000 and pass an item's number of bytes as
+	// the `cost` parameter for calls to Set. If new items are accepted, the
+	// eviction process will take care of making room for the new item and not
+	// overflowing the MaxCost value.
+	MaxCost int64
+	// BufferItems determines the size of Get buffers.
+	//
+	// Unless you have a rare use case, using `64` as the BufferItems value
+	// results in good performance.
+	BufferItems int64
+	// Metrics determines whether cache statistics are kept during the cache's
+	// lifetime. There *is* some overhead to keeping statistics, so you should
+	// only set this flag to true when testing or throughput performance isn't a
+	// major factor.
+	Metrics bool
+}
+
+// item is passed to setBuf so items can eventually be added to the cache
 type item struct {
 	key  uint64
 	val  interface{}
 	cost int64
 }
 
-type Config struct {
-	// NumCounters is the number of keys whose frequency of access should be
-	// tracked via TinyLFU.
-	// Each counter is worth 4-bits, so TinyLFU can store 2 counters per byte.
-	NumCounters int64
-	// MaxCost is the cost capacity of the Cache.
-	MaxCost int64
-	// BufferItems is max number of items in access batches (BP-Wrapper).
-	BufferItems int64
-	// If set to true, cache would collect useful metrics about usage.
-	Metrics bool
-}
-
+// NewCache returns a new Cache instance and any configuration errors, if any.
 func NewCache(config *Config) (*Cache, error) {
 	switch {
 	case config.NumCounters == 0:
@@ -70,28 +96,23 @@ func NewCache(config *Config) (*Cache, error) {
 	case config.BufferItems == 0:
 		return nil, errors.New("BufferItems can't be zero.")
 	}
-
-	// Data is the hash map for the entire cache, it's initialized outside of
-	// the cache struct declaration because it may need to be passed to the
-	// policy in some cases
-	data := newStore()
-	// initialize the policy (with a recorder wrapping if logging is enabled)
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		data:   data,
+		store:  newStore(),
 		policy: policy,
-		buffer: newRingBuffer(ringLossy, &ringConfig{
+		getBuf: newRingBuffer(ringLossy, &ringConfig{
 			Consumer: policy,
 			Capacity: config.BufferItems,
-			Stripes:  0, // Don't care about the stripes in ringLossy.
 		}),
-		setCh: make(chan *item, 32*1024),
+		// TODO: size configuration for this? like BufferItems but for setBuf?
+		setBuf: make(chan *item, 32*1024),
 	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	// We can possibly make this configurable. But having 2 goroutines processing this seems
-	// sufficient for now.
+	// We can possibly make this configurable. But having 2 goroutines
+	// processing this seems sufficient for now.
+	//
 	// TODO: Allow a way to stop these goroutines.
 	for i := 0; i < 2; i++ {
 		go cache.processItems()
@@ -99,15 +120,13 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
-func (c *Cache) collectMetrics() {
-	c.stats = newMetrics()
-	c.policy.CollectMetrics(c.stats)
-}
-
+// Get returns the value (if any) and a boolean representing whether the
+// value was found or not. The value can be nil and the boolean can be true at
+// the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	hash := z.KeyToHash(key)
-	c.buffer.Push(hash)
-	val, ok := c.data.Get(hash)
+	c.getBuf.Push(hash)
+	val, ok := c.store.Get(hash)
 	if ok {
 		c.stats.Add(hit, hash, 1)
 	} else {
@@ -116,39 +135,56 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return val, ok
 }
 
-func (c *Cache) processItems() {
-	for item := range c.setCh {
-		victims, added := c.policy.Add(item.key, item.cost)
-		if added {
-			c.data.Set(item.key, item.val)
-		}
-		for _, victim := range victims {
-			c.data.Del(victim)
-		}
-	}
-}
-
+// Set attempts to add the key-value item to the cache. If it returns false,
+// then the Set was dropped and the key-value item isn't added to the cache. If
+// it returns true, there's still a chance it could be dropped by the policy if
+// its determined that the key-value item isn't worth keeping, but otherwise the
+// item will be added and other items will be evicted in order to make room.
 func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	hash := z.KeyToHash(key)
-	// We should not set the key value to c.data here. Otherwise, if we drop the item on the floor,
-	// we would have an orphan key whose cost is not being tracked.
+	// attempt to add the (possibly) new item to the setBuf where it will later
+	// be processed by the policy and evaluated
 	select {
-	case c.setCh <- &item{key: hash, val: val, cost: cost}:
+	case c.setBuf <- &item{key: hash, val: val, cost: cost}:
 		return true
 	default:
-		// Drop the set on the floor to avoid blocking.
+		// drop the set and avoid blocking
 		c.stats.Add(dropSets, hash, 1)
 		return false
 	}
 }
 
+// Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
 	hash := z.KeyToHash(key)
 	c.policy.Del(hash)
-	c.data.Del(hash)
+	c.store.Del(hash)
 }
 
-func (c *Cache) Metrics() *metrics {
+// Close stops all goroutines and closes all channels.
+func (c *Cache) Close() {}
+
+// processItems is ran by goroutines processing the Set buffer.
+func (c *Cache) processItems() {
+	for item := range c.setBuf {
+		victims, added := c.policy.Add(item.key, item.cost)
+		if added {
+			// item was accepted by the policy, so add to the hashmap
+			c.store.Set(item.key, item.val)
+		}
+		// delete victims that are no longer worthy of being in the cache
+		for _, victim := range victims {
+			c.store.Del(victim)
+		}
+	}
+}
+
+func (c *Cache) collectMetrics() {
+	c.stats = newMetrics()
+	c.policy.CollectMetrics(c.stats)
+}
+
+func (c *Cache) metrics() *metrics {
 	return c.stats
 }
 
