@@ -143,7 +143,6 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
 				minKey, minHits, minId = pair.key, hits, i
 			}
-			break
 		}
 		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
@@ -231,6 +230,7 @@ func (p *sampledLFU) add(key uint64, cost int64) {
 	p.used += cost
 }
 
+// TODO: Move this to the store itself. So, it can be used by public Set.
 func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	if prev, exists := p.keyCosts[key]; exists {
 		// Update the cost of the existing key. For simplicity, don't worry about evicting anything

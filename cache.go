@@ -142,6 +142,9 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // item will be added and other items will be evicted in order to make room.
 func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	hash := z.KeyToHash(key)
+	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
+	// to push the key in setBuf.
+
 	// attempt to add the (possibly) new item to the setBuf where it will later
 	// be processed by the policy and evaluated
 	select {
