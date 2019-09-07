@@ -27,7 +27,7 @@ import (
 const (
 	// lfuSample is the number of items to sample when looking at eviction
 	// candidates. 5 seems to be the most optimal number [citation needed].
-	lfuSample = 15
+	lfuSample = 5
 )
 
 // policy is the interface encapsulating eviction/admission behavior.
