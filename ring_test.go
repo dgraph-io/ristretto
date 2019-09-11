@@ -58,6 +58,35 @@ func TestRingLossy(t *testing.T) {
 	}
 }
 
+func TestRingLossless(t *testing.T) {
+	drainCount := 0
+	found := make(map[uint64]struct{})
+	buffer := newRingBuffer(ringLossless, &ringConfig{
+		Consumer: &TestConsumer{
+			push: func(items []uint64) {
+				drainCount++
+				for _, item := range items {
+					found[item] = struct{}{}
+				}
+			},
+		},
+		Capacity: 4,
+		Stripes:  2,
+	})
+	buffer.Push(1)
+	buffer.Push(2)
+	buffer.Push(3)
+	buffer.Push(4)
+	buffer.Push(5)
+	buffer.Push(6)
+	buffer.Push(7)
+	buffer.Push(8)
+	time.Sleep(5 * time.Millisecond)
+	if drainCount != 2 || len(found) != 8 {
+		t.Fatal("drain error")
+	}
+}
+
 func BenchmarkRingLossy(b *testing.B) {
 	buffer := newRingBuffer(ringLossy, &ringConfig{
 		Consumer: &BaseConsumer{},

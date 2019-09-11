@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"container/list"
 	"math"
 	"sync"
 
@@ -29,8 +30,8 @@ const (
 	lfuSample = 5
 )
 
-// Policy is the interface encapsulating eviction/admission behavior.
-type Policy interface {
+// policy is the interface encapsulating eviction/admission behavior.
+type policy interface {
 	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
@@ -46,7 +47,7 @@ type Policy interface {
 	CollectMetrics(stats *metrics)
 }
 
-func newPolicy(numCounters, maxCost int64) Policy {
+func newPolicy(numCounters, maxCost int64) policy {
 	p := &defaultPolicy{
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
@@ -102,20 +103,21 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	p.Lock()
 	defer p.Unlock()
-
 	// can't add an item bigger than entire cache
 	if cost > p.evict.maxCost {
 		return nil, false
 	}
+	// we don't need to go any further if the item is already in the cache
 	if has := p.evict.updateIfHas(key, cost); has {
 		return nil, true
 	}
-
-	// We do not have this key.
-	// Calculate how much room do we have in the cache.
+	// if we got this far, this key doesn't exist in the cache
+	//
+	// calculate the remaining room in the cache (usually bytes)
 	room := p.evict.roomLeft(cost)
 	if room >= 0 {
-		// There's room in the cache.
+		// there's enough room in the cache to store the new item without
+		// overflowing, so we can do that now and stop here
 		p.evict.add(key, cost)
 		return nil, true
 	}
@@ -127,8 +129,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
-
-	// Victims contains keys that have already been evicted
+	// as items are evicted they will be appended to victims
 	var victims []uint64
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
@@ -229,6 +230,7 @@ func (p *sampledLFU) add(key uint64, cost int64) {
 	p.used += cost
 }
 
+// TODO: Move this to the store itself. So, it can be used by public Set.
 func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	if prev, exists := p.keyCosts[key]; exists {
 		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
@@ -294,141 +296,113 @@ func (p *tinyLFU) reset() {
 	p.freq.Reset()
 }
 
-// Clairvoyant is a Policy meant to be theoretically optimal (see [1]). Normal
-// Push and Add operations just maintain a history log. The real work is done
-// when Log is called, and it "looks into the future" to evict the best
-// candidates (the furthest away).
+// lruPolicy is different than the default policy in that it uses exact LRU
+// eviction rather than Sampled LFU eviction, which may be useful for certain
+// workloads (ARC-OLTP for example; LRU heavy workloads).
 //
-// [1]: https://bit.ly/2WTPdJ9
-//
-// This Policy is primarily for benchmarking purposes (as a baseline).
-type Clairvoyant struct {
+// TODO: - cost based eviction (multiple evictions for one new item, etc.)
+//       - sampled LRU
+type lruPolicy struct {
 	sync.Mutex
-	time     int64
-	log      *metrics
-	access   map[uint64][]int64
-	capacity int64
-	future   []uint64
+	admit   *tinyLFU
+	ptrs    map[uint64]*lruItem
+	vals    *list.List
+	maxCost int64
+	room    int64
 }
 
-func newClairvoyant(numCounters, maxCost int64) Policy {
-	return &Clairvoyant{
-		capacity: numCounters,
-		access:   make(map[uint64][]int64, numCounters),
+type lruItem struct {
+	ptr  *list.Element
+	key  uint64
+	cost int64
+}
+
+func newLRUPolicy(numCounters, maxCost int64) policy {
+	return &lruPolicy{
+		admit:   newTinyLFU(numCounters),
+		ptrs:    make(map[uint64]*lruItem, maxCost),
+		vals:    list.New(),
+		room:    maxCost,
+		maxCost: maxCost,
 	}
 }
 
-func (p *Clairvoyant) CollectMetrics(stats *metrics) {
-	p.log = stats
-}
-
-// distance finds the "time distance" from the start position to the minimum
-// time value - this is used to judge eviction candidates.
-func (p *Clairvoyant) distance(start int64, times []int64) (int64, bool) {
-	good, min := false, int64(0)
-	for i := range times {
-		if times[i] > start {
-			good = true
-		}
-		if i == 0 || times[i] < min {
-			min = times[i] - start
-		}
+func (p *lruPolicy) Push(keys []uint64) bool {
+	if len(keys) == 0 {
+		return true
 	}
-	return min, good
-}
-
-func (p *Clairvoyant) record(key uint64) {
-	p.time++
-	if p.access[key] == nil {
-		p.access[key] = make([]int64, 0)
-	}
-	p.access[key] = append(p.access[key], p.time)
-	p.future = append(p.future, key)
-}
-
-func (p *Clairvoyant) Push(keys []uint64) bool {
 	p.Lock()
 	defer p.Unlock()
 	for _, key := range keys {
-		p.record(key)
+		// increment tinylfu counter
+		p.admit.Increment(key)
+		// move list item to front
+		if val, ok := p.ptrs[key]; ok {
+			// move accessed val to MRU position
+			p.vals.MoveToFront(val.ptr)
+		}
 	}
 	return true
 }
 
-func (p *Clairvoyant) Add(key uint64, cost int64) ([]uint64, bool) {
+func (p *lruPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	p.Lock()
 	defer p.Unlock()
-	p.record(key)
-	return nil, true
-}
-
-func (p *Clairvoyant) Has(key uint64) bool {
-	p.Lock()
-	defer p.Unlock()
-	_, exists := p.access[key]
-	return exists
-}
-
-func (p *Clairvoyant) Del(key uint64) {
-	p.Lock()
-	defer p.Unlock()
-	delete(p.access, key)
-}
-
-func (p *Clairvoyant) Cap() int64 {
-	return 0
-}
-
-func (p *Clairvoyant) Log() *metrics {
-	p.Lock()
-	defer p.Unlock()
-	// data serves as the "pseudocache" with the ability to see into the future
-	data := make(map[uint64]struct{}, p.capacity)
-	size := int64(0)
-	for i, key := range p.future {
-		// check if already exists
-		if _, exists := data[key]; exists {
-			p.log.Add(hit, key, 1)
-			continue
-		}
-		p.log.Add(miss, key, 1)
-		// check if eviction is needed
-		if size == p.capacity {
-			// eviction is needed
-			//
-			// collect item distances
-			good := false
-			distance := make(map[uint64]int64, p.capacity)
-			for k := range data {
-				distance[k], good = p.distance(int64(i), p.access[k])
-				if !good {
-					// there's no good distances because the key isn't used
-					// again in the future, so we can just stop here and delete
-					// it, and skip over the rest
-					p.log.Add(keyEvict, key, 1)
-					delete(data, k)
-					size--
-					goto add
-				}
-			}
-			// find the largest distance
-			maxDistance, maxKey, c := int64(0), uint64(0), 0
-			for k, d := range distance {
-				if c == 0 || d > maxDistance {
-					maxKey = k
-					maxDistance = d
-				}
-				c++
-			}
-			// delete the item furthest away
-			p.log.Add(keyEvict, key, 1)
-			delete(data, maxKey)
-			size--
-		}
-	add:
-		// add the item
-		data[key] = struct{}{}
-		size++
+	if cost > p.maxCost {
+		return nil, false
 	}
-	return p.log
+	if val, has := p.ptrs[key]; has {
+		p.vals.MoveToFront(val.ptr)
+		return nil, true
+	}
+	var victims []uint64
+	incHits := p.admit.Estimate(key)
+	if p.room >= 0 {
+		goto add
+	}
+	for p.room < 0 {
+		lru := p.vals.Back()
+		victim := lru.Value.(*lruItem)
+		if incHits < p.admit.Estimate(victim.key) {
+			return victims, false
+		}
+		// delete victim from metadata
+		p.vals.Remove(victim.ptr)
+		delete(p.ptrs, victim.key)
+		victims = append(victims, victim.key)
+		// adjust room
+		p.room += victim.cost
+	}
+add:
+	item := &lruItem{key: key, cost: cost}
+	item.ptr = p.vals.PushFront(item)
+	p.ptrs[key] = item
+	p.room -= cost
+	return victims, true
+}
+
+func (p *lruPolicy) Has(key uint64) bool {
+	p.Lock()
+	defer p.Unlock()
+	_, has := p.ptrs[key]
+	return has
+}
+
+func (p *lruPolicy) Del(key uint64) {
+	p.Lock()
+	defer p.Unlock()
+	if val, ok := p.ptrs[key]; ok {
+		p.vals.Remove(val.ptr)
+		delete(p.ptrs, key)
+	}
+}
+
+func (p *lruPolicy) Cap() int64 {
+	p.Lock()
+	defer p.Unlock()
+	return int64(p.vals.Len())
+}
+
+// TODO
+func (p *lruPolicy) CollectMetrics(stats *metrics) {
 }

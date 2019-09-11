@@ -18,6 +18,8 @@ package ristretto
 
 import (
 	"testing"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
 // sketch is a collection of approximate frequency counters.
@@ -84,4 +86,25 @@ func GenerateSketchBenchmark(create func() TestSketch) func(b *testing.B) {
 
 func BenchmarkCM(b *testing.B) {
 	GenerateSketchBenchmark(func() TestSketch { return newCmSketch(16) })(b)
+}
+
+func TestDoorkeeper(t *testing.T) {
+	d := z.NewBloomFilter(float64(1374), 0.01)
+	hash := z.MemHashString("*")
+	if d.Has(hash) {
+		t.Fatal("item exists but was never added")
+	}
+	if d.AddIfNotHas(hash) != true {
+		t.Fatal("item didn't exist so Set() should return true")
+	}
+	if d.AddIfNotHas(hash) != false {
+		t.Fatal("item did exist so Set() should return false")
+	}
+	if !d.Has(hash) {
+		t.Fatal("item was added but Has() is false")
+	}
+	d.Clear()
+	if d.Has(hash) {
+		t.Fatal("doorkeeper was reset but Has() returns true")
+	}
 }
