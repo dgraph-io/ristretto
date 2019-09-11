@@ -48,9 +48,9 @@ func main() {
 }
 ```
 
-## Benchmarks
+### Benchmarks
 
-For commentary and notes about these benchmarks, check out the blog post (TBA).
+The benchmarks can be found in https://github.com/dgraph-io/benchmarks/tree/master/ristretto-bench
 
 ### Hit Ratios
 
