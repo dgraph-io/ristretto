@@ -50,7 +50,7 @@ func main() {
 
 ### Benchmarks
 
-The benchmarks can be found in https://github.com/dgraph-io/benchmarks/tree/master/ristretto-bench
+The benchmarks can be found in https://github.com/dgraph-io/benchmarks/tree/master/cachebench/ristretto
 
 ### Hit Ratios
 
