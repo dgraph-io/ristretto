@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/benchmarks/cachebench/ristretto/sim"
+	"github.com/dgraph-io/ristretto/sim"
 )
 
 // TestCache is used to pass instances of Ristretto and Clairvoyant around and
