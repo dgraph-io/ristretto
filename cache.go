@@ -163,6 +163,8 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	}
 }
 
+// TODO: Add a public Update function, which would update a key only if present.
+
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
 	if c == nil {
