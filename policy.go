@@ -213,7 +213,10 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 }
 
 func (p *sampledLFU) del(key uint64) {
-	cost := p.keyCosts[key]
+	cost, ok := p.keyCosts[key]
+	if !ok {
+		return
+	}
 
 	p.stats.Add(keyEvict, key, 1)
 	p.stats.Add(costEvict, key, uint64(cost))

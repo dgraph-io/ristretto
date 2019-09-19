@@ -124,6 +124,9 @@ func NewCache(config *Config) (*Cache, error) {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
+	if c == nil {
+		return nil, false
+	}
 	hash := z.KeyToHash(key)
 	c.getBuf.Push(hash)
 	val, ok := c.store.Get(hash)
@@ -141,6 +144,9 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // its determined that the key-value item isn't worth keeping, but otherwise the
 // item will be added and other items will be evicted in order to make room.
 func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
+	if c == nil {
+		return false
+	}
 	hash := z.KeyToHash(key)
 	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
 	// to push the key in setBuf.
@@ -159,6 +165,9 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
+	if c == nil {
+		return
+	}
 	hash := z.KeyToHash(key)
 	c.policy.Del(hash)
 	c.store.Del(hash)
