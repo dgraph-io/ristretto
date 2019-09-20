@@ -32,7 +32,7 @@ import (
 type TestCache interface {
 	Get(interface{}) (interface{}, bool)
 	Set(interface{}, interface{}, int64) bool
-	metrics() *metrics
+	Metrics() *metrics
 }
 
 // capacity is the cache capacity to be used across all tests and benchmarks.
@@ -110,8 +110,8 @@ func TestCacheRatios(t *testing.T) {
 	optimal := NewClairvoyant(capacity)
 	newRatioTest(cache)(t)
 	newRatioTest(optimal)(t)
-	t.Logf("ristretto: %.2f\n", cache.metrics().Ratio())
-	t.Logf("- optimal: %.2f\n", optimal.metrics().Ratio())
+	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio())
+	t.Logf("- optimal: %.2f\n", optimal.Metrics().Ratio())
 }
 
 func TestCacheSetGet(t *testing.T) {
@@ -145,7 +145,7 @@ func TestCacheSetGet(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if ratio := cache.metrics().Ratio(); ratio != 1.0 {
+	if ratio := cache.Metrics().Ratio(); ratio != 1.0 {
 		t.Fatalf("expected 1.00 but got %.2f\n", ratio)
 	}
 }
@@ -186,7 +186,7 @@ func TestCacheSetDrops(t *testing.T) {
 			}(i)
 		}
 		finish.Wait()
-		dropped := cache.metrics().Get(dropSets)
+		dropped := cache.Metrics().Get(dropSets)
 		t.Logf("%d goroutines: %.2f%% dropped \n",
 			goroutines, float64(float64(dropped)/float64(sample))*100)
 		runtime.GC()
@@ -224,7 +224,7 @@ func (c *Clairvoyant) Set(key, value interface{}, cost int64) bool {
 	return false
 }
 
-func (c *Clairvoyant) metrics() *metrics {
+func (c *Clairvoyant) Metrics() *metrics {
 	stat := newMetrics()
 	look := make(map[uint64]struct{}, c.capacity)
 	data := &clairvoyantHeap{}

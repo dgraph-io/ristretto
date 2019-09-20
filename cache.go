@@ -198,7 +198,8 @@ func (c *Cache) collectMetrics() {
 	c.policy.CollectMetrics(c.stats)
 }
 
-func (c *Cache) metrics() *metrics {
+// Metrics returns statistics about cache performance.
+func (c *Cache) Metrics() *metrics {
 	return c.stats
 }
 
