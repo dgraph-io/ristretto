@@ -108,7 +108,7 @@ func TestCacheOnEvict(t *testing.T) {
 	cache, err := NewCache(&Config{
 		NumCounters: 1000,
 		MaxCost:     100,
-		BufferItems: 64,
+		BufferItems: 1,
 		OnEvict: func(key uint64, value interface{}, cost int64) {
 			evictions++
 		},
@@ -116,10 +116,11 @@ func TestCacheOnEvict(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 256; i++ {
 		cache.Set(i, i, 1)
 	}
-	if evictions == 0 {
+	time.Sleep(time.Second / 100)
+	if evictions != 156 {
 		t.Fatal("onEvict not being called")
 	}
 }
