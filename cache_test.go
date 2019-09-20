@@ -103,6 +103,27 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 	}
 }
 
+func TestCacheOnEvict(t *testing.T) {
+	evictions := 0
+	cache, err := NewCache(&Config{
+		NumCounters: 1000,
+		MaxCost:     100,
+		BufferItems: 64,
+		OnEvict: func(key uint64, value interface{}, cost int64) {
+			evictions++
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < 10000; i++ {
+		cache.Set(i, i, 1)
+	}
+	if evictions == 0 {
+		t.Fatal("onEvict not being called")
+	}
+}
+
 // TestCacheRatios gives us a rough idea of the hit ratio relative to the
 // theoretical optimum. Useful for quickly seeing the effects of changes.
 func TestCacheRatios(t *testing.T) {
