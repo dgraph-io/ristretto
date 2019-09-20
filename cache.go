@@ -45,6 +45,8 @@ type Cache struct {
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
+	// onEvict is called for item evictions
+	onEvict func(uint64, interface{}, int64)
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -77,6 +79,9 @@ type Config struct {
 	// only set this flag to true when testing or throughput performance isn't a
 	// major factor.
 	Metrics bool
+	// OnEvict is called for every eviction and passes the hashed key, value,
+	// and cost to the function.
+	OnEvict func(key uint64, value interface{}, cost int64)
 }
 
 // item is passed to setBuf so items can eventually be added to the cache
@@ -105,7 +110,8 @@ func NewCache(config *Config) (*Cache, error) {
 			Capacity: config.BufferItems,
 		}),
 		// TODO: size configuration for this? like BufferItems but for setBuf?
-		setBuf: make(chan *item, 32*1024),
+		setBuf:  make(chan *item, 32*1024),
+		onEvict: config.OnEvict,
 	}
 	if config.Metrics {
 		cache.collectMetrics()
@@ -188,7 +194,12 @@ func (c *Cache) processItems() {
 		}
 		// delete victims that are no longer worthy of being in the cache
 		for _, victim := range victims {
+			// delete from hashmap
 			c.store.Del(victim)
+			// eviction callback
+			if c.onEvict != nil {
+				c.onEvict(item.key, item.val, item.cost)
+			}
 		}
 	}
 }
@@ -198,7 +209,8 @@ func (c *Cache) collectMetrics() {
 	c.policy.CollectMetrics(c.stats)
 }
 
-func (c *Cache) metrics() *metrics {
+// Metrics returns statistics about cache performance.
+func (c *Cache) Metrics() *metrics {
 	return c.stats
 }
 
