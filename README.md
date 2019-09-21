@@ -6,6 +6,11 @@
 Ristretto is a fast, concurrent cache library using a [TinyLFU](https://arxiv.org/abs/1512.00727)
 admission policy and Sampled LFU eviction policy.
 
+The motivation to build Ristretto comes from the need for a contention-free
+cache in [Dgraph][].
+
+[Dgraph]: https://github.com/dgraph-io/dgraph
+
 ## Example
 
 ```go
