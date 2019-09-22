@@ -42,6 +42,8 @@ type Cache struct {
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention
 	setBuf chan *item
+	// closeCh is a channel to stop goroutines which is running processingItems.
+	closeCh chan struct{}
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
@@ -119,6 +121,7 @@ func NewCache(config *Config) (*Cache, error) {
 		}),
 		// TODO: size configuration for this? like BufferItems but for setBuf?
 		setBuf:    make(chan *item, 32*1024),
+		closeCh:   make(chan struct{}),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
 	}
@@ -127,8 +130,6 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	// We can possibly make this configurable. But having 2 goroutines
 	// processing this seems sufficient for now.
-	//
-	// TODO: Allow a way to stop these goroutines.
 	for i := 0; i < 2; i++ {
 		go cache.processItems()
 	}
@@ -200,25 +201,34 @@ func (c *Cache) Del(key interface{}) {
 }
 
 // Close stops all goroutines and closes all channels.
-func (c *Cache) Close() {}
+func (c *Cache) Close() {
+	close(c.closeCh)
+	c.policy.Close()
+	close(c.setBuf)
+}
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	for item := range c.setBuf {
-		victims, added := c.policy.Add(item.key, item.cost)
-		if added {
-			// item was accepted by the policy, so add to the hashmap
-			c.store.Set(item.key, item.val)
-		}
-		// delete victims that are no longer worthy of being in the cache
-		for _, victim := range victims {
-			// eviction callback
-			if c.onEvict != nil {
-				victim.val, _ = c.store.Get(victim.key)
-				c.onEvict(victim.key, victim.val, victim.cost)
+	for {
+		select {
+		case item := <-c.setBuf:
+			victims, added := c.policy.Add(item.key, item.cost)
+			if added {
+				// item was accepted by the policy, so add to the hashmap
+				c.store.Set(item.key, item.val)
 			}
-			// delete from hashmap
-			c.store.Del(victim.key)
+			// delete victims that are no longer worthy of being in the cache
+			for _, victim := range victims {
+				// eviction callback
+				if c.onEvict != nil {
+					victim.val, _ = c.store.Get(victim.key)
+					c.onEvict(victim.key, victim.val, victim.cost)
+				}
+				// delete from hashmap
+				c.store.Del(victim.key)
+			}
+		case <-c.closeCh:
+			return
 		}
 	}
 }
