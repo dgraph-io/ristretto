@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"container/list"
+	"context"
 	"math"
 	"sync"
 
@@ -48,13 +49,16 @@ type policy interface {
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
+	return newPolicyContext(context.Background(), numCounters, maxCost)
+}
+
+func newPolicyContext(ctx context.Context, numCounters, maxCost int64) policy {
 	p := &defaultPolicy{
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
 		itemsCh: make(chan []uint64, 3),
 	}
-	// TODO: Add a way to stop the goroutine.
-	go p.processItems()
+	go p.processItems(ctx)
 	return p
 }
 
@@ -78,11 +82,16 @@ type policyPair struct {
 	cost int64
 }
 
-func (p *defaultPolicy) processItems() {
-	for items := range p.itemsCh {
-		p.Lock()
-		p.admit.Push(items)
-		p.Unlock()
+func (p *defaultPolicy) processItems(ctx context.Context) {
+	for {
+		select {
+		case items := <-p.itemsCh:
+			p.Lock()
+			p.admit.Push(items)
+			p.Unlock()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

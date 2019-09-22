@@ -21,6 +21,7 @@ package ristretto
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -93,6 +94,11 @@ type item struct {
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
 func NewCache(config *Config) (*Cache, error) {
+	return NewCacheContext(context.Background(), config)
+}
+
+// NewCacheContext returns a new Cache instance and any configuration errors, if any.
+func NewCacheContext(ctx context.Context, config *Config) (*Cache, error) {
 	switch {
 	case config.NumCounters == 0:
 		return nil, errors.New("NumCounters can't be zero.")
@@ -118,10 +124,8 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	// We can possibly make this configurable. But having 2 goroutines
 	// processing this seems sufficient for now.
-	//
-	// TODO: Allow a way to stop these goroutines.
 	for i := 0; i < 2; i++ {
-		go cache.processItems()
+		go cache.processItems(ctx)
 	}
 	return cache, nil
 }
@@ -185,22 +189,27 @@ func (c *Cache) Del(key interface{}) {
 func (c *Cache) Close() {}
 
 // processItems is ran by goroutines processing the Set buffer.
-func (c *Cache) processItems() {
-	for item := range c.setBuf {
-		victims, added := c.policy.Add(item.key, item.cost)
-		if added {
-			// item was accepted by the policy, so add to the hashmap
-			c.store.Set(item.key, item.val)
-		}
-		// delete victims that are no longer worthy of being in the cache
-		for _, victim := range victims {
-			// eviction callback
-			if c.onEvict != nil {
-				victim.val, _ = c.store.Get(victim.key)
-				c.onEvict(victim.key, victim.val, victim.cost)
+func (c *Cache) processItems(ctx context.Context) {
+	for {
+		select {
+		case item := <-c.setBuf:
+			victims, added := c.policy.Add(item.key, item.cost)
+			if added {
+				// item was accepted by the policy, so add to the hashmap
+				c.store.Set(item.key, item.val)
 			}
-			// delete from hashmap
-			c.store.Del(victim.key)
+			// delete victims that are no longer worthy of being in the cache
+			for _, victim := range victims {
+				// eviction callback
+				if c.onEvict != nil {
+					victim.val, _ = c.store.Get(victim.key)
+					c.onEvict(victim.key, victim.val, victim.cost)
+				}
+				// delete from hashmap
+				c.store.Del(victim.key)
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
