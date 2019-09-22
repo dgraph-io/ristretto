@@ -36,7 +36,7 @@ type policy interface {
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added. If it returns true, the key should be stored in cache.
-	Add(uint64, int64) ([]uint64, bool)
+	Add(uint64, int64) ([]*item, bool)
 	// Has returns true if the key exists in the Policy.
 	Has(uint64) bool
 	// Del deletes the key from the Policy.
@@ -100,7 +100,7 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 	}
 }
 
-func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
+func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	p.Lock()
 	defer p.Unlock()
 	// can't add an item bigger than entire cache
@@ -130,18 +130,18 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
 	// as items are evicted they will be appended to victims
-	var victims []uint64
+	victims := make([]*item, 0)
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
 		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
-		minKey, minHits, minId := uint64(0), int64(math.MaxInt64), 0
+		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
 		for i, pair := range sample {
 			// look up hit count for sample key
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
-				minKey, minHits, minId = pair.key, hits, i
+				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
 			}
 		}
 		// If the incoming item isn't worth keeping in the policy, reject.
@@ -155,7 +155,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
-		victims = append(victims, minKey)
+		victims = append(victims, &item{minKey, nil, minCost})
 	}
 	p.evict.add(key, cost)
 	return victims, true
@@ -348,7 +348,7 @@ func (p *lruPolicy) Push(keys []uint64) bool {
 	return true
 }
 
-func (p *lruPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
+func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	p.Lock()
 	defer p.Unlock()
 	if cost > p.maxCost {
@@ -358,7 +358,7 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		p.vals.MoveToFront(val.ptr)
 		return nil, true
 	}
-	var victims []uint64
+	victims := make([]*item, 0)
 	incHits := p.admit.Estimate(key)
 	if p.room >= 0 {
 		goto add
@@ -372,7 +372,7 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]uint64, bool) {
 		// delete victim from metadata
 		p.vals.Remove(victim.ptr)
 		delete(p.ptrs, victim.key)
-		victims = append(victims, victim.key)
+		victims = append(victims, &item{victim.key, nil, victim.cost})
 		// adjust room
 		p.room += victim.cost
 	}
