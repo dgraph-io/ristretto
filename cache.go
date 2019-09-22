@@ -194,12 +194,13 @@ func (c *Cache) processItems() {
 		}
 		// delete victims that are no longer worthy of being in the cache
 		for _, victim := range victims {
-			// delete from hashmap
-			c.store.Del(victim)
 			// eviction callback
 			if c.onEvict != nil {
-				c.onEvict(item.key, item.val, item.cost)
+				victim.val, _ = c.store.Get(victim.key)
+				c.onEvict(victim.key, victim.val, victim.cost)
 			}
+			// delete from hashmap
+			c.store.Del(victim.key)
 		}
 	}
 }

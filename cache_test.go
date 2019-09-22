@@ -104,13 +104,16 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 }
 
 func TestCacheOnEvict(t *testing.T) {
-	evictions := 0
+	mu := &sync.Mutex{}
+	evictions := make(map[uint64]int)
 	cache, err := NewCache(&Config{
 		NumCounters: 1000,
 		MaxCost:     100,
 		BufferItems: 1,
 		OnEvict: func(key uint64, value interface{}, cost int64) {
-			evictions++
+			mu.Lock()
+			defer mu.Unlock()
+			evictions[key] = value.(int)
 		},
 	})
 	if err != nil {
@@ -120,8 +123,13 @@ func TestCacheOnEvict(t *testing.T) {
 		cache.Set(i, i, 1)
 	}
 	time.Sleep(time.Second / 100)
-	if evictions != 156 {
+	if len(evictions) != 156 {
 		t.Fatal("onEvict not being called")
+	}
+	for k, v := range evictions {
+		if k != uint64(v) {
+			t.Fatal("onEvict key-val mismatch")
+		}
 	}
 }
 
