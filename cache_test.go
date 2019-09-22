@@ -105,7 +105,7 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 
 func TestCacheOnEvict(t *testing.T) {
 	mu := &sync.Mutex{}
-	evictions := make(map[uint64]int, 0)
+	evictions := make(map[uint64]int)
 	cache, err := NewCache(&Config{
 		NumCounters: 1000,
 		MaxCost:     100,
