@@ -133,6 +133,29 @@ func TestCacheOnEvict(t *testing.T) {
 	}
 }
 
+func TestCacheKeyToHash(t *testing.T) {
+	cache, err := NewCache(&Config{
+		NumCounters: 1000,
+		MaxCost:     100,
+		BufferItems: 1,
+		KeyToHash: func(key interface{}) uint64 {
+			i, ok := key.(int)
+			if !ok {
+				panic("failed to type assert")
+			}
+			return uint64(i + 2)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < 10; i++ {
+		if uint64(i+2) != cache.keyHash(i) {
+			t.Fatal("keyToHash hash mismatch")
+		}
+	}
+}
+
 // TestCacheRatios gives us a rough idea of the hit ratio relative to the
 // theoretical optimum. Useful for quickly seeing the effects of changes.
 func TestCacheRatios(t *testing.T) {
