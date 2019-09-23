@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/dgraph-io/ristretto/sim"
 )
 
@@ -130,6 +132,32 @@ func TestCacheOnEvict(t *testing.T) {
 		if k != uint64(v) {
 			t.Fatal("onEvict key-val mismatch")
 		}
+	}
+}
+
+func TestCacheKeyToHash(t *testing.T) {
+	cache, err := NewCache(&Config{
+		NumCounters: 1000,
+		MaxCost:     100,
+		BufferItems: 1,
+		KeyToHash: func(key interface{}) uint64 {
+			i, ok := key.(int)
+			if !ok {
+				panic("unable to type assert")
+			}
+			return uint64(i + 2)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	intList := make([]int, 0, 10)
+	for i := 0; i < 10; i++ {
+		intList = append(intList, i)
+	}
+
+	for i := 0; i < 10; i++ {
+		require.Equal(t, uint64(i+2), cache.keyHash(i))
 	}
 }
 

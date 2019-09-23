@@ -47,6 +47,10 @@ type Cache struct {
 	stats *metrics
 	// onEvict is called for item evictions
 	onEvict func(uint64, interface{}, int64)
+	// KeyToHash function is used to customize the key hashing algorithm.
+	// Each key will be hashed using the provided function. If keyToHash value
+	// is not set, the default keyToHash function is used.
+	keyToHash func(interface{}) uint64
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -82,6 +86,10 @@ type Config struct {
 	// OnEvict is called for every eviction and passes the hashed key, value,
 	// and cost to the function.
 	OnEvict func(key uint64, value interface{}, cost int64)
+	// KeyToHash function is used to customize the key hashing algorithm.
+	// Each key will be hashed using the provided function. If keyToHash value
+	// is not set, the default keyToHash function is used.
+	KeyToHash func(key interface{}) uint64
 }
 
 // item is passed to setBuf so items can eventually be added to the cache
@@ -110,8 +118,9 @@ func NewCache(config *Config) (*Cache, error) {
 			Capacity: config.BufferItems,
 		}),
 		// TODO: size configuration for this? like BufferItems but for setBuf?
-		setBuf:  make(chan *item, 32*1024),
-		onEvict: config.OnEvict,
+		setBuf:    make(chan *item, 32*1024),
+		onEvict:   config.OnEvict,
+		keyToHash: config.KeyToHash,
 	}
 	if config.Metrics {
 		cache.collectMetrics()
@@ -133,7 +142,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil {
 		return nil, false
 	}
-	hash := z.KeyToHash(key)
+	hash := c.keyHash(key)
 	c.getBuf.Push(hash)
 	val, ok := c.store.Get(hash)
 	if ok {
@@ -142,6 +151,15 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 		c.stats.Add(miss, hash, 1)
 	}
 	return val, ok
+}
+
+// keyHash generates the hash for a given key using the cutom keyToHash function, if provided.
+// Otherwise it generates the hash using the z.KeyToHash funcion.
+func (c *Cache) keyHash(key interface{}) uint64 {
+	if c.keyToHash != nil {
+		return c.keyToHash(key)
+	}
+	return z.KeyToHash(key)
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -153,7 +171,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	if c == nil {
 		return false
 	}
-	hash := z.KeyToHash(key)
+	hash := c.keyHash(key)
 	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
 	// to push the key in setBuf.
 
@@ -176,7 +194,7 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	hash := z.KeyToHash(key)
+	hash := c.keyHash(key)
 	c.policy.Del(hash)
 	c.store.Del(hash)
 }
