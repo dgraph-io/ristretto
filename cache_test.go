@@ -123,6 +123,8 @@ func TestCacheOnEvict(t *testing.T) {
 		cache.Set(i, i, 1)
 	}
 	time.Sleep(time.Second / 100)
+	mu.Lock()
+	defer mu.Unlock()
 	if len(evictions) != 156 {
 		t.Fatal("onEvict not being called")
 	}
