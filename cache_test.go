@@ -203,13 +203,13 @@ func TestCacheSetDrops(t *testing.T) {
 		sample := uint64(n * size)
 		cache := newCache(true)
 		keys := sim.Collection(sim.NewUniform(sample), sample)
-		start, finish := &sync.WaitGroup{}, &sync.WaitGroup{}
+		ready, start, finish := &sync.WaitGroup{}, &sync.WaitGroup{}, &sync.WaitGroup{}
+		start.Add(1)
+		ready.Add(n)
 		for i := 0; i < n; i++ {
-			start.Add(1)
 			finish.Add(1)
 			go func(i int) {
-				start.Done()
-				// wait for all goroutines to be ready
+				ready.Done()
 				start.Wait()
 				for j := i * size; j < (i*size)+size; j++ {
 					cache.Set(keys[j], 0, 1)
@@ -217,6 +217,11 @@ func TestCacheSetDrops(t *testing.T) {
 				finish.Done()
 			}(i)
 		}
+
+		// wait for all goroutines to be ready
+		ready.Wait()
+		start.Done()
+
 		finish.Wait()
 		dropped := cache.Metrics().Get(dropSets)
 		t.Logf("%d goroutines: %.2f%% dropped \n",
