@@ -149,10 +149,6 @@ func TestCacheKeyToHash(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	intList := make([]int, 0, 10)
-	for i := 0; i < 10; i++ {
-		intList = append(intList, i)
-	}
 	for i := 0; i < 10; i++ {
 		if uint64(i+2) != cache.keyHash(i) {
 			t.Fatal("keyToHash hash mismatch")
