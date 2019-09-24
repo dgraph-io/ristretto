@@ -48,11 +48,13 @@ func TestRingLossy(t *testing.T) {
 		},
 		Capacity: 4,
 	})
-	buffer.Push(1)
-	buffer.Push(2)
-	buffer.Push(3)
-	buffer.Push(4)
-	time.Sleep(5 * time.Millisecond)
+	for i := 0; i < 100; i++ {
+		buffer.Push(uint64(i))
+	}
+	// ideally we'd be able to check for a certain "drop percentage" here, but
+	// that may vary per platform and testing configuration. for example: if
+	// drainCount == 20 then we have 100% accuracy, but it's most likely around
+	// 13-20 due to dropping and unfilled rings.
 	if drainCount == 0 {
 		t.Fatal("drain error")
 	}
