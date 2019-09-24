@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -39,9 +40,15 @@ type Cache struct {
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read
 	getBuf *ringBuffer
-	// setBuf is a buffer allowing us to batch/drop Sets during times of high
+	// setBufLock protects setBuf channel when closing cache
+	setBufLock sync.RWMutex
+	// setBuf is a buffer allowing us to batch/drop Sets during times of high.
+	// when closing cache, setBuf is set to nil
 	// contention
 	setBuf chan *item
+	// processCh is identical to setBuf and used to read items in 'processItems' goroutines
+	// when closing cache, processCh is closed to release those goroutines
+	processCh chan *item
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
@@ -110,6 +117,7 @@ func NewCache(config *Config) (*Cache, error) {
 		return nil, errors.New("BufferItems can't be zero.")
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
+	setBuf := make(chan *item, 32*1024)
 	cache := &Cache{
 		store:  newStore(),
 		policy: policy,
@@ -118,7 +126,8 @@ func NewCache(config *Config) (*Cache, error) {
 			Capacity: config.BufferItems,
 		}),
 		// TODO: size configuration for this? like BufferItems but for setBuf?
-		setBuf:    make(chan *item, 32*1024),
+		setBuf:   setBuf ,
+		processCh: setBuf,
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
 	}
@@ -177,10 +186,13 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 
 	// attempt to add the (possibly) new item to the setBuf where it will later
 	// be processed by the policy and evaluated
+	c.setBufLock.RLock()
 	select {
 	case c.setBuf <- &item{key: hash, val: val, cost: cost}:
+		c.setBufLock.RUnlock()
 		return true
 	default:
+		c.setBufLock.RUnlock()
 		// drop the set and avoid blocking
 		c.stats.Add(dropSets, hash, 1)
 		return false
@@ -200,11 +212,16 @@ func (c *Cache) Del(key interface{}) {
 }
 
 // Close stops all goroutines and closes all channels.
-func (c *Cache) Close() {}
+func (c *Cache) Close() {
+	c.setBufLock.Lock()
+	c.setBuf = nil
+	c.setBufLock.Unlock()
+	close(c.processCh)
+}
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	for item := range c.setBuf {
+	for item := range c.processCh {
 		victims, added := c.policy.Add(item.key, item.cost)
 		if added {
 			// item was accepted by the policy, so add to the hashmap
