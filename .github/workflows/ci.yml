@@ -1,0 +1,16 @@
+name: CI Workflow
+on: [push, pull_request]
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-go@v1
+        with:
+          go-version: "1.12.9"
+      - run: go fmt ./...
+      - run: go test -v -race ./...
