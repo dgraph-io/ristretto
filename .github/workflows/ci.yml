@@ -11,8 +11,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v1
-        with:
-          fetch-depth: 1
       - uses: actions/setup-go@v1
         with:
           go-version: ${{ matrix.go-version }}
