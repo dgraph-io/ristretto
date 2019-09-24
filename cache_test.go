@@ -103,6 +103,15 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 	}
 }
 
+func TestCacheSetDel(t *testing.T) {
+	cache := newCache(true)
+	cache.Set(1, 1, 1)
+	cache.Del(1)
+	if _, ok := cache.Get(1); ok {
+		t.Fatal("value shouldn't exist")
+	}
+}
+
 func TestCacheOnEvict(t *testing.T) {
 	mu := &sync.Mutex{}
 	evictions := make(map[uint64]int)

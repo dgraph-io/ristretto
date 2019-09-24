@@ -97,6 +97,7 @@ type item struct {
 	key  uint64
 	val  interface{}
 	cost int64
+	del  bool
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -187,16 +188,12 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	}
 }
 
-// TODO: Add a public Update function, which would update a key only if present.
-
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	hash := c.keyHash(key)
-	c.policy.Del(hash)
-	c.store.Del(hash)
+	c.setBuf <- &item{key: c.keyHash(key), del: true}
 }
 
 // Close stops all goroutines and closes all channels.
@@ -205,6 +202,11 @@ func (c *Cache) Close() {}
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
 	for item := range c.setBuf {
+		if item.del {
+			c.policy.Del(item.key)
+			c.store.Del(item.key)
+			continue
+		}
 		victims, added := c.policy.Add(item.key, item.cost)
 		if added {
 			// item was accepted by the policy, so add to the hashmap

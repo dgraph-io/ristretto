@@ -155,7 +155,12 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
-		victims = append(victims, &item{minKey, nil, minCost})
+		victims = append(victims, &item{
+			key:  minKey,
+			val:  nil,
+			cost: minCost,
+			del:  false,
+		})
 	}
 	p.evict.add(key, cost)
 	return victims, true
@@ -372,7 +377,12 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// delete victim from metadata
 		p.vals.Remove(victim.ptr)
 		delete(p.ptrs, victim.key)
-		victims = append(victims, &item{victim.key, nil, victim.cost})
+		victims = append(victims, &item{
+			key:  victim.key,
+			val:  nil,
+			cost: victim.cost,
+			del:  false,
+		})
 		// adjust room
 		p.room += victim.cost
 	}
