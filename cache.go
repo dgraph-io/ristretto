@@ -232,6 +232,9 @@ func (c *Cache) collectMetrics() {
 
 // Metrics returns statistics about cache performance.
 func (c *Cache) Metrics() *metrics {
+	if c == nil {
+		return nil
+	}
 	return c.stats
 }
 
