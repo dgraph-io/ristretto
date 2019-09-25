@@ -132,6 +132,8 @@ func TestCacheOnEvict(t *testing.T) {
 		cache.Set(i, i, 1)
 	}
 	time.Sleep(time.Second / 100)
+	mu.Lock()
+	defer mu.Unlock()
 	if len(evictions) != 156 {
 		t.Fatal("onEvict not being called")
 	}
@@ -234,9 +236,9 @@ func TestCacheSetDrops(t *testing.T) {
 		cache := newCache(true)
 		keys := sim.Collection(sim.NewUniform(sample), sample)
 		start, finish := &sync.WaitGroup{}, &sync.WaitGroup{}
+		start.Add(n)
+		finish.Add(n)
 		for i := 0; i < n; i++ {
-			start.Add(1)
-			finish.Add(1)
 			go func(i int) {
 				start.Done()
 				// wait for all goroutines to be ready
