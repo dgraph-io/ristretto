@@ -178,6 +178,95 @@ func TestCacheRatios(t *testing.T) {
 	t.Logf("- optimal: %.2f\n", optimal.Metrics().Ratio())
 }
 
+var newCacheInvalidConfigTests = []struct {
+	conf Config
+	desc string
+}{
+	{
+		conf: Config{
+			NumCounters: 0,
+			MaxCost:     1,
+			BufferItems: 1,
+		},
+		desc: "NumCounters is 0",
+	},
+	{
+		conf: Config{
+			NumCounters: 1,
+			MaxCost:     0,
+			BufferItems: 1,
+		},
+		desc: "MaxCost is 0",
+	},
+	{
+		conf: Config{
+			NumCounters: 1,
+			MaxCost:     1,
+			BufferItems: 0,
+		},
+		desc: "BufferItems is 0",
+	},
+}
+
+func TestNewCacheInvalidConfig(t *testing.T) {
+	for _, tc := range newCacheInvalidConfigTests {
+		_, err := NewCache(&tc.conf)
+
+		if err == nil {
+			t.Fatalf("%s: NewCache should return an error", tc.desc)
+		}
+	}
+
+}
+
+func TestCacheNil(t *testing.T) {
+	var cache *Cache
+
+	r := cache.Set("key", "value", 1)
+	if r != false {
+		t.Fatal("Calling Set on nil Cache should return false")
+	}
+
+	_, r = cache.Get("key")
+	if r != false {
+		t.Fatal("Calling Get on nil Cache should return false")
+	}
+}
+
+func TestCacheDel(t *testing.T) {
+	cache := newCache(true)
+	// fill the cache with data
+	for key := 0; key < capacity; key++ {
+		cache.Set(key, key, 1)
+	}
+	// wait for the Sets to be processed so that all values are in the cache
+	// before we begin Gets, otherwise the hit ratio would be bad
+	time.Sleep(time.Second / 100)
+
+	wg := &sync.WaitGroup{}
+	// launch goroutines to concurrently Del keys
+	for b := 0; b < capacity/100; b++ {
+		wg.Add(1)
+		go func(b int) {
+			for i := 100 * b; i < 100 * b + 100; i++ {
+				cache.Del(i)
+			}
+			wg.Done()
+		}(b)
+	}
+	wg.Wait()
+
+	for key := 0; key < capacity; key++ {
+		if _, ok := cache.Get(key); ok {
+			t.Fatalf("cache key %d should not be exist\n", key)
+		}
+	}
+
+	if ratio := cache.Metrics().Ratio(); ratio != 0.0 {
+		t.Fatalf("expected 0.00 but got %.2f\n", ratio)
+	}
+}
+
 func TestCacheSetGet(t *testing.T) {
 	cache := newCache(true)
 	// fill the cache with data
