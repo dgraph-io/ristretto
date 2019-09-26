@@ -387,9 +387,9 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		p.room += victim.cost
 	}
 add:
-	item := &lruItem{key: key, cost: cost}
-	item.ptr = p.vals.PushFront(item)
-	p.ptrs[key] = item
+	lItem := &lruItem{key: key, cost: cost}
+	lItem.ptr = p.vals.PushFront(lItem)
+	p.ptrs[key] = lItem
 	p.room -= cost
 	return victims, true
 }
