@@ -1,5 +1,5 @@
 # Ristretto
-
+![Build Status](https://github.com/dgraph-io/ristretto/workflows/CI%20Workflow/badge.svg)
 [![GoDoc](https://img.shields.io/badge/api-reference-blue.svg)](https://godoc.org/github.com/dgraph-io/ristretto)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-green.svg)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
 
