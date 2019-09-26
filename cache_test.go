@@ -161,7 +161,7 @@ func TestCacheKeyToHash(t *testing.T) {
 		panic(err)
 	}
 	for i := 0; i < 10; i++ {
-		if uint64(i+2) != cache.keyHash(i) {
+		if uint64(i+2) != cache.keyToHash(i) {
 			t.Fatal("keyToHash hash mismatch")
 		}
 	}

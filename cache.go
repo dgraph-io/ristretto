@@ -123,6 +123,9 @@ func NewCache(config *Config) (*Cache, error) {
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
 	}
+	if cache.keyToHash == nil {
+		cache.keyToHash = z.KeyToHash
+	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
@@ -143,7 +146,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil {
 		return nil, false
 	}
-	hash := c.keyHash(key)
+	hash := c.keyToHash(key)
 	c.getBuf.Push(hash)
 	val, ok := c.store.Get(hash)
 	if ok {
@@ -152,15 +155,6 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 		c.stats.Add(miss, hash, 1)
 	}
 	return val, ok
-}
-
-// keyHash generates the hash for a given key using the cutom keyToHash function, if provided.
-// Otherwise it generates the hash using the z.KeyToHash funcion.
-func (c *Cache) keyHash(key interface{}) uint64 {
-	if c.keyToHash != nil {
-		return c.keyToHash(key)
-	}
-	return z.KeyToHash(key)
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -172,7 +166,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	if c == nil {
 		return false
 	}
-	hash := c.keyHash(key)
+	hash := c.keyToHash(key)
 	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
 	// to push the key in setBuf.
 
@@ -193,7 +187,7 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	c.setBuf <- &item{key: c.keyHash(key), del: true}
+	c.setBuf <- &item{key: c.keyToHash(key), del: true}
 }
 
 // Close stops all goroutines and closes all channels.
