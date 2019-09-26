@@ -248,13 +248,16 @@ func TestCacheDel(t *testing.T) {
 	for b := 0; b < capacity/100; b++ {
 		wg.Add(1)
 		go func(b int) {
-			for i := 100 * b; i < 100 * b + 100; i++ {
+			for i := 100 * b; i < 100*b+100; i++ {
 				cache.Del(i)
 			}
 			wg.Done()
 		}(b)
 	}
 	wg.Wait()
+
+	// wait for Dels to be processed (they pass through the same buffer as Set)
+	time.Sleep(time.Second / 100)
 
 	for key := 0; key < capacity; key++ {
 		if _, ok := cache.Get(key); ok {
