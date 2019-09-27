@@ -92,9 +92,9 @@ type Config struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	KeyToHash func(key interface{}) uint64
-	// Coster is called when a new item passed to Set has a cost of 0. The
-	// output of Coster is set as the cost of the new item before it is sent
-	// to the Policy and stored.
+	// Coster evaluates a value and outputs a corresponding cost. This function
+	// is ran after Set is called for a new item or an item update with a cost
+	// param of 0.
 	Coster func(value interface{}) int64
 }
 
@@ -177,6 +177,10 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // it returns true, there's still a chance it could be dropped by the policy if
 // its determined that the key-value item isn't worth keeping, but otherwise the
 // item will be added and other items will be evicted in order to make room.
+//
+// To dynamically evaluate the items cost using the Config.Coster function, set
+// the cost parameter to 0 and Coster will be ran when needed in order to find
+// the items true cost.
 func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	if c == nil {
 		return false
