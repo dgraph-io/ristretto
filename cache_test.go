@@ -160,6 +160,8 @@ func TestCacheUpdate(t *testing.T) {
 			t.Fatal("keyUpdate value inconsistent")
 		}
 	}
+	// wait for keyUpdates to go through
+	time.Sleep(time.Second / 100)
 	if cache.Metrics().Get(keyUpdate) == 0 {
 		t.Fatal("keyUpdates not being processed")
 	}
