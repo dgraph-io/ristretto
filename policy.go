@@ -45,6 +45,8 @@ type policy interface {
 	Cap() int64
 	// Optionally, set stats object to track how policy is performing.
 	CollectMetrics(stats *metrics)
+	// Clear zeroes out all counters and clears hashmaps.
+	Clear()
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
@@ -185,6 +187,13 @@ func (p *defaultPolicy) Cap() int64 {
 	return int64(p.evict.maxCost - p.evict.used)
 }
 
+func (p *defaultPolicy) Clear() {
+	p.Lock()
+	defer p.Unlock()
+	p.admit.clear()
+	p.evict.clear()
+}
+
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
 	keyCosts map[uint64]int64
@@ -251,6 +260,13 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 	return false
 }
 
+func (p *sampledLFU) clear() {
+	p.used = 0
+	for k, _ := range p.keyCosts {
+		delete(p.keyCosts, k)
+	}
+}
+
 // tinyLFU is an admission helper that keeps track of access frequency using
 // tiny (4-bit) counters in the form of a count-min sketch.
 // tinyLFU is NOT thread safe.
@@ -302,6 +318,12 @@ func (p *tinyLFU) reset() {
 	p.door.Clear()
 	// halves count-min counters
 	p.freq.Reset()
+}
+
+func (p *tinyLFU) clear() {
+	p.incrs = 0
+	p.door.Clear()
+	p.freq.Clear()
 }
 
 // lruPolicy is different than the default policy in that it uses exact LRU
@@ -419,3 +441,6 @@ func (p *lruPolicy) Cap() int64 {
 // TODO
 func (p *lruPolicy) CollectMetrics(stats *metrics) {
 }
+
+// TODO
+func (p *lruPolicy) Clear() {}

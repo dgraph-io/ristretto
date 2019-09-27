@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -118,7 +119,6 @@ func NewCache(config *Config) (*Cache, error) {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		// TODO: size configuration for this? like BufferItems but for setBuf?
 		setBuf:    make(chan *item, 32*1024),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
@@ -193,7 +193,17 @@ func (c *Cache) Del(key interface{}) {
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {}
 
+// Clear empties the hashmap and zeroes all policy counters. Note that this is
+// not an atomic operation (but that shouldn't be a problem as it's assumed that
+// Set/Get calls won't be occuring until after this).
 func (c *Cache) Clear() {
+	c.policy.Clear()
+	c.store.Clear()
+	// only reset metrics if they're enabled
+	if c.stats != nil {
+		c.collectMetrics()
+	}
+	runtime.GC()
 }
 
 // processItems is ran by goroutines processing the Set buffer.
