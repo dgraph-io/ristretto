@@ -34,32 +34,13 @@ type store interface {
 	Set(uint64, interface{})
 	// Del deletes the key-value pair from the Map.
 	Del(uint64)
+	// Clear clears all contents of the store.
+	Clear()
 }
 
 // newStore returns the default store implementation.
 func newStore() store {
-	// return newSyncMap()
 	return newShardedMap()
-}
-
-type syncMap struct {
-	*sync.Map
-}
-
-func newSyncMap() store {
-	return &syncMap{&sync.Map{}}
-}
-
-func (m *syncMap) Get(key uint64) (interface{}, bool) {
-	return m.Load(key)
-}
-
-func (m *syncMap) Set(key uint64, value interface{}) {
-	m.Store(key, value)
-}
-
-func (m *syncMap) Del(key uint64) {
-	m.Delete(key)
 }
 
 const numShards uint64 = 256
@@ -91,6 +72,12 @@ func (sm *shardedMap) Del(key uint64) {
 	sm.shards[idx].Del(key)
 }
 
+func (sm *shardedMap) Clear() {
+	for i := uint64(0); i < numShards; i++ {
+		sm.shards[i].Clear()
+	}
+}
+
 type lockedMap struct {
 	sync.RWMutex
 	data map[uint64]interface{}
@@ -117,4 +104,12 @@ func (m *lockedMap) Del(key uint64) {
 	m.Lock()
 	defer m.Unlock()
 	delete(m.data, key)
+}
+
+func (m *lockedMap) Clear() {
+	m.Lock()
+	defer m.Unlock()
+	for k, _ := range m.data {
+		delete(m.data, k)
+	}
 }

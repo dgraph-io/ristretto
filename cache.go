@@ -193,6 +193,9 @@ func (c *Cache) Del(key interface{}) {
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {}
 
+func (c *Cache) Clear() {
+}
+
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
 	for item := range c.setBuf {
