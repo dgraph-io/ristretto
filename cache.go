@@ -23,10 +23,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
+)
+
+const (
+	// TODO: find the optimal value for this or make it configurable
+	setBufSize = 32 * 1024
 )
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
@@ -52,6 +56,8 @@ type Cache struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	keyToHash func(interface{}) uint64
+	// stop is used to stop the processItems goroutine
+	stop chan struct{}
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -119,9 +125,10 @@ func NewCache(config *Config) (*Cache, error) {
 			Consumer: policy,
 			Capacity: config.BufferItems,
 		}),
-		setBuf:    make(chan *item, 32*1024),
+		setBuf:    make(chan *item, setBufSize),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
+		stop:      make(chan struct{}),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -129,13 +136,10 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	// We can possibly make this configurable. But having 2 goroutines
-	// processing this seems sufficient for now.
-	//
-	// TODO: Allow a way to stop these goroutines.
-	for i := 0; i < 2; i++ {
-		go cache.processItems()
-	}
+	// NOTE: benchmarks seem to show that performance decreases the more
+	//       goroutines we have running cache.processItems(), so 1 should
+	//       usually be sufficient
+	go cache.processItems()
 	return cache, nil
 }
 
@@ -197,37 +201,48 @@ func (c *Cache) Close() {}
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occuring until after this).
 func (c *Cache) Clear() {
+	// wait to stop processItems goroutine
+	c.stop <- struct{}{}
+	// drain remaining items in setBuf
+	c.setBuf = make(chan *item, setBufSize)
+	// restart processItems goroutine
+	go c.processItems()
+	// clear value hashmap and policy data
 	c.policy.Clear()
 	c.store.Clear()
 	// only reset metrics if they're enabled
 	if c.stats != nil {
 		c.collectMetrics()
 	}
-	runtime.GC()
 }
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	for item := range c.setBuf {
-		if item.del {
-			c.policy.Del(item.key)
-			c.store.Del(item.key)
-			continue
-		}
-		victims, added := c.policy.Add(item.key, item.cost)
-		if added {
-			// item was accepted by the policy, so add to the hashmap
-			c.store.Set(item.key, item.val)
-		}
-		// delete victims that are no longer worthy of being in the cache
-		for _, victim := range victims {
-			// eviction callback
-			if c.onEvict != nil {
-				victim.val, _ = c.store.Get(victim.key)
-				c.onEvict(victim.key, victim.val, victim.cost)
+	for {
+		select {
+		case item := <-c.setBuf:
+			if item.del {
+				c.policy.Del(item.key)
+				c.store.Del(item.key)
+				continue
 			}
-			// delete from hashmap
-			c.store.Del(victim.key)
+			victims, added := c.policy.Add(item.key, item.cost)
+			if added {
+				// item was accepted by the policy, so add to the hashmap
+				c.store.Set(item.key, item.val)
+			}
+			// delete victims that are no longer worthy of being in the cache
+			for _, victim := range victims {
+				// eviction callback
+				if c.onEvict != nil {
+					victim.val, _ = c.store.Get(victim.key)
+					c.onEvict(victim.key, victim.val, victim.cost)
+				}
+				// delete from hashmap
+				c.store.Del(victim.key)
+			}
+		case <-c.stop:
+			return
 		}
 	}
 }

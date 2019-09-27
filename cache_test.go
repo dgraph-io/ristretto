@@ -108,8 +108,10 @@ func TestCacheClear(t *testing.T) {
 	for i := 0; i < capacity; i++ {
 		cache.Set(i, i, 1)
 	}
-	time.Sleep(time.Second / 100)
 	cache.Clear()
+	if len(cache.setBuf) != 0 {
+		t.Fatal("setBuf not cleared")
+	}
 	for i := 0; i < capacity; i++ {
 		if _, ok := cache.Get(i); ok {
 			t.Fatal("clear operation failed")
@@ -119,7 +121,7 @@ func TestCacheClear(t *testing.T) {
 	for i := 0; i < capacity; i++ {
 		cache.Set(i, i, 1)
 	}
-	time.Sleep(time.Second)
+	time.Sleep(time.Second / 100)
 	for i := 0; i < capacity; i++ {
 		if _, found := cache.Get(i); !found {
 			t.Fatal("value should exist")

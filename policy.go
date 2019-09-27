@@ -262,9 +262,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 
 func (p *sampledLFU) clear() {
 	p.used = 0
-	for k := range p.keyCosts {
-		delete(p.keyCosts, k)
-	}
+	p.keyCosts = make(map[uint64]int64)
 }
 
 // tinyLFU is an admission helper that keeps track of access frequency using
