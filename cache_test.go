@@ -21,10 +21,12 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dgraph-io/ristretto/sim"
+	"github.com/dgraph-io/ristretto/z"
 )
 
 // TestCache is used to pass instances of Ristretto and Clairvoyant around and
@@ -109,6 +111,57 @@ func TestCacheSetDel(t *testing.T) {
 	cache.Del(1)
 	if _, ok := cache.Get(1); ok {
 		t.Fatal("value shouldn't exist")
+	}
+}
+
+func TestCacheCoster(t *testing.T) {
+	costerRuns := uint64(0)
+	cache, err := NewCache(&Config{
+		NumCounters: 1000,
+		MaxCost:     500,
+		BufferItems: 64,
+		Coster: func(value interface{}) int64 {
+			atomic.AddUint64(&costerRuns, 1)
+			return 5
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < 100; i++ {
+		cache.Set(i, i, 0)
+	}
+	time.Sleep(time.Second / 100)
+	for i := 0; i < 100; i++ {
+		if cache.policy.Cost(z.KeyToHash(i)) != 5 {
+			t.Fatal("coster not being ran")
+		}
+	}
+	if costerRuns != 100 {
+		t.Fatal("coster not being ran")
+	}
+}
+
+// TestCacheUpdate verifies that a Set call on an existing key immediately
+// updates the value and cost for that key without using/polluting the Set
+// buffer(s).
+func TestCacheUpdate(t *testing.T) {
+	cache := newCache(true)
+	cache.Set(1, 1, 1)
+	// wait for new-item Set to go through
+	time.Sleep(time.Second / 100)
+	// do 100 updates
+	for i := 0; i < 100; i++ {
+		// update the same key (1) with incrementing value and cost, so we can
+		// verify that they are immediately updated and not going through
+		// channels
+		cache.Set(1, i, int64(i))
+		if val, ok := cache.Get(1); !ok || val.(int) != i {
+			t.Fatal("keyUpdate value inconsistent")
+		}
+	}
+	if cache.Metrics().Get(keyUpdate) == 0 {
+		t.Fatal("keyUpdates not being processed")
 	}
 }
 
