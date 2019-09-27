@@ -181,10 +181,6 @@ of RAM.
 
 ## FAQ
 
-### How do you handle potential hash collisions?
-
-TODO
-
 ### How are you achieving this performance? What shortcuts are you taking?
 
 We go into detail in the [Ristretto blog post](https://blog.dgraph.io/post/introducing-ristretto-high-perf-go-cache/), but in short: our throughput performance can be attributed to a mix of batching and eventual consistency. Our hit ratio performance is mostly due to an excellent [admission policy](https://arxiv.org/abs/1512.00727) and SampledLFU eviction policy.
@@ -194,7 +190,3 @@ As for "shortcuts," the only thing Ristretto does that could be construed as one
 ### Is Ristretto distributed?
 
 No, it's just like any other Go library that you can import into your project and use in a single process. 
-
-### How is Ristretto being used in Dgraph?
-
-TODO
