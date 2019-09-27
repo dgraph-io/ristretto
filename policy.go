@@ -365,9 +365,6 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	}
 	victims := make([]*item, 0)
 	incHits := p.admit.Estimate(key)
-	if p.room >= 0 {
-		goto add
-	}
 	for p.room < 0 {
 		lru := p.vals.Back()
 		victim := lru.Value.(*lruItem)
@@ -386,10 +383,9 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// adjust room
 		p.room += victim.cost
 	}
-add:
-	item := &lruItem{key: key, cost: cost}
-	item.ptr = p.vals.PushFront(item)
-	p.ptrs[key] = item
+	newItem := &lruItem{key: key, cost: cost}
+	newItem.ptr = p.vals.PushFront(newItem)
+	p.ptrs[key] = newItem
 	p.room -= cost
 	return victims, true
 }
