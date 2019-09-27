@@ -109,7 +109,7 @@ func (m *lockedMap) Del(key uint64) {
 func (m *lockedMap) Clear() {
 	m.Lock()
 	defer m.Unlock()
-	for k, _ := range m.data {
+	for k := range m.data {
 		delete(m.data, k)
 	}
 }

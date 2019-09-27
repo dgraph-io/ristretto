@@ -262,7 +262,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
 
 func (p *sampledLFU) clear() {
 	p.used = 0
-	for k, _ := range p.keyCosts {
+	for k := range p.keyCosts {
 		delete(p.keyCosts, k)
 	}
 }
