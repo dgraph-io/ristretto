@@ -97,6 +97,7 @@ type item struct {
 	key  uint64
 	val  interface{}
 	cost int64
+	del  bool
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -122,6 +123,9 @@ func NewCache(config *Config) (*Cache, error) {
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
 	}
+	if cache.keyToHash == nil {
+		cache.keyToHash = z.KeyToHash
+	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
@@ -142,7 +146,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil {
 		return nil, false
 	}
-	hash := c.keyHash(key)
+	hash := c.keyToHash(key)
 	c.getBuf.Push(hash)
 	val, ok := c.store.Get(hash)
 	if ok {
@@ -151,15 +155,6 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 		c.stats.Add(miss, hash, 1)
 	}
 	return val, ok
-}
-
-// keyHash generates the hash for a given key using the cutom keyToHash function, if provided.
-// Otherwise it generates the hash using the z.KeyToHash funcion.
-func (c *Cache) keyHash(key interface{}) uint64 {
-	if c.keyToHash != nil {
-		return c.keyToHash(key)
-	}
-	return z.KeyToHash(key)
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -171,7 +166,7 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	if c == nil {
 		return false
 	}
-	hash := c.keyHash(key)
+	hash := c.keyToHash(key)
 	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
 	// to push the key in setBuf.
 
@@ -187,16 +182,12 @@ func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
 	}
 }
 
-// TODO: Add a public Update function, which would update a key only if present.
-
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	hash := c.keyHash(key)
-	c.policy.Del(hash)
-	c.store.Del(hash)
+	c.setBuf <- &item{key: c.keyToHash(key), del: true}
 }
 
 // Close stops all goroutines and closes all channels.
@@ -205,6 +196,11 @@ func (c *Cache) Close() {}
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
 	for item := range c.setBuf {
+		if item.del {
+			c.policy.Del(item.key)
+			c.store.Del(item.key)
+			continue
+		}
 		victims, added := c.policy.Add(item.key, item.cost)
 		if added {
 			// item was accepted by the policy, so add to the hashmap
@@ -230,6 +226,9 @@ func (c *Cache) collectMetrics() {
 
 // Metrics returns statistics about cache performance.
 func (c *Cache) Metrics() *metrics {
+	if c == nil {
+		return nil
+	}
 	return c.stats
 }
 

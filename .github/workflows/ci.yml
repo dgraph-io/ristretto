@@ -3,14 +3,16 @@ on: [push, pull_request]
 
 jobs:
   ci:
+    strategy:
+      matrix:
+        go-version: [1.12.x, 1.13.x]
+        platform: [ubuntu-latest]   
     name: CI
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v1
-        with:
-          fetch-depth: 1
       - uses: actions/setup-go@v1
         with:
-          go-version: "1.12.9"
+          go-version: ${{ matrix.go-version }}
       - run: go fmt ./...
       - run: go test -v -race ./...

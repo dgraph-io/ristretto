@@ -20,47 +20,57 @@ import (
 	"testing"
 )
 
-func TestPolicy(t *testing.T) {
-	t.Run("uniform-push", func(t *testing.T) {
-		policy := newPolicy(1024, 1024)
-		values := make([]uint64, 1024)
-		for i := range values {
-			values[i] = uint64(i)
-		}
-		policy.Add(0, 1)
-		policy.Push(values)
-		if !policy.Has(0) || policy.Has(999999) {
-			t.Fatal("add/push error")
-		}
-	})
-	t.Run("uniform-add", func(t *testing.T) {
-		policy := newPolicy(1024, 1024)
-		for i := int64(0); i < 1024; i++ {
-			policy.Add(uint64(i), 1)
-		}
-		if victims, added := policy.Add(999999, 1); victims == nil || !added {
-			t.Fatal("add/eviction error")
-		}
-	})
-	t.Run("variable-push", func(t *testing.T) {
-		policy := newPolicy(1024, 1024*4)
-		values := make([]uint64, 1024)
-		for i := range values {
-			values[i] = uint64(i)
-		}
-		policy.Add(0, 1)
-		policy.Push(values)
-		if !policy.Has(0) || policy.Has(999999) {
-			t.Fatal("add/push error")
-		}
-	})
-	t.Run("variable-add", func(t *testing.T) {
-		policy := newPolicy(1024, 1024*4)
-		for i := int64(0); i < 1024; i++ {
-			policy.Add(uint64(i), 4)
-		}
-		if victims, added := policy.Add(999999, 1); victims == nil || !added {
-			t.Fatal("add/eviction error")
-		}
-	})
+func GeneratePolicyTest(p func(int64, int64) policy) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("uniform-push", func(t *testing.T) {
+			policy := p(1024, 1024)
+			values := make([]uint64, 1024)
+			for i := range values {
+				values[i] = uint64(i)
+			}
+			policy.Add(0, 1)
+			policy.Push(values)
+			if !policy.Has(0) || policy.Has(999999) {
+				t.Fatal("add/push error")
+			}
+		})
+		t.Run("uniform-add", func(t *testing.T) {
+			policy := p(1024, 1024)
+			for i := int64(0); i < 1024; i++ {
+				policy.Add(uint64(i), 1)
+			}
+			if vics, added := policy.Add(999999, 1); vics == nil || !added {
+				t.Fatal("add/eviction error")
+			}
+		})
+		t.Run("variable-push", func(t *testing.T) {
+			policy := p(1024, 1024*4)
+			values := make([]uint64, 1024)
+			for i := range values {
+				values[i] = uint64(i)
+			}
+			policy.Add(0, 1)
+			policy.Push(values)
+			if !policy.Has(0) || policy.Has(999999) {
+				t.Fatal("add/push error")
+			}
+		})
+		t.Run("variable-add", func(t *testing.T) {
+			policy := p(1024, 1024*4)
+			for i := int64(0); i < 1024; i++ {
+				policy.Add(uint64(i), 4)
+			}
+			if vics, added := policy.Add(999999, 1); vics == nil || !added {
+				t.Fatal("add/eviction error")
+			}
+		})
+	}
+}
+
+func TestLFUPolicy(t *testing.T) {
+	GeneratePolicyTest(newPolicy)(t)
+}
+
+func TestLRUPolicy(t *testing.T) {
+	GeneratePolicyTest(newLRUPolicy)(t)
 }
