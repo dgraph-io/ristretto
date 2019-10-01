@@ -47,8 +47,6 @@ type Cache struct {
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention
 	setBuf chan *item
-	// closeCh is a channel to stop goroutines which is running processingItems.
-	closeCh chan struct{}
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
@@ -225,10 +223,10 @@ func (c *Cache) Del(key interface{}) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
-  // block until processItems goroutine is returned
-  c.stop <- struct{}{}
+	// block until processItems goroutine is returned
+	c.stop <- struct{}{}
 	close(c.stop)
-  close(c.setBuf)
+	close(c.setBuf)
 	c.policy.Close()
 }
 

@@ -221,8 +221,8 @@ func (p *defaultPolicy) Clear() {
 }
 
 func (p *defaultPolicy) Close() {
-  // block until p.processItems goroutine is returned
-  p.stop <- struct{}{}
+	// block until p.processItems goroutine is returned
+	p.stop <- struct{}{}
 	close(p.stop)
 	close(p.itemsCh)
 }
