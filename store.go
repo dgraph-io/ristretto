@@ -34,6 +34,8 @@ type store interface {
 	Set(uint64, interface{})
 	// Del deletes the key-value pair from the Map.
 	Del(uint64)
+	// Clear clears all contents of the store.
+	Clear()
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
 	Update(uint64, interface{}) bool
@@ -71,6 +73,12 @@ func (sm *shardedMap) Set(key uint64, value interface{}) {
 func (sm *shardedMap) Del(key uint64) {
 	idx := key % numShards
 	sm.shards[idx].Del(key)
+}
+
+func (sm *shardedMap) Clear() {
+	for i := uint64(0); i < numShards; i++ {
+		sm.shards[i].Clear()
+	}
 }
 
 func (sm *shardedMap) Update(key uint64, value interface{}) bool {
@@ -114,4 +122,10 @@ func (m *lockedMap) Update(key uint64, value interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func (m *lockedMap) Clear() {
+	m.Lock()
+	defer m.Unlock()
+	m.data = make(map[uint64]interface{})
 }

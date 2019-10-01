@@ -75,6 +75,21 @@ func GenerateTest(create func() store) func(*testing.T) {
 				t.Fatal("del error")
 			}
 		})
+		t.Run("clear", func(t *testing.T) {
+			m := create()
+			// set a lot of values
+			for i := uint64(0); i < 1000; i++ {
+				m.Set(i, i)
+			}
+			// clear
+			m.Clear()
+			// check if any of the values exist
+			for i := uint64(0); i < 1000; i++ {
+				if _, ok := m.Get(i); ok {
+					t.Fatal("clear operation failed")
+				}
+      }
+    })
 		t.Run("update", func(t *testing.T) {
 			m := create()
 			m.Set(1, 1)

@@ -105,11 +105,46 @@ func newRatioTest(cache TestCache) func(t *testing.T) {
 	}
 }
 
+func TestCacheClear(t *testing.T) {
+	cache := newCache(true)
+	for i := 0; i < capacity; i++ {
+		cache.Set(i, i, 1)
+	}
+	cache.Clear()
+	if len(cache.setBuf) != 0 {
+		t.Fatal("setBuf not cleared")
+	}
+	for i := 0; i < capacity; i++ {
+		if _, ok := cache.Get(i); ok {
+			t.Fatal("clear operation failed")
+		}
+	}
+	// verify that we can still Set/Get items with the new buffers
+	for i := 0; i < capacity; i++ {
+		cache.Set(i, i, 1)
+	}
+	time.Sleep(time.Second / 100)
+	for i := 0; i < capacity; i++ {
+		if _, found := cache.Get(i); !found {
+			t.Fatal("value should exist")
+		}
+	}
+	// 0.5 and not 1.0 because we tried Getting each item twice
+	if cache.Metrics().Ratio() != 0.5 {
+		t.Fatal("incorrect hit ratio")
+	}
+}
+
 func TestCacheSetDel(t *testing.T) {
 	cache := newCache(true)
 	cache.Set(1, 1, 1)
 	cache.Del(1)
-	if _, ok := cache.Get(1); ok {
+	found := false
+	// make sure the item is eventually deleted
+	for i := 0; i < 10; i++ {
+		_, found = cache.Get(1)
+	}
+	if found {
 		t.Fatal("value shouldn't exist")
 	}
 }
