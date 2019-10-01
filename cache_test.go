@@ -115,13 +115,13 @@ func TestCacheSetDel(t *testing.T) {
 }
 
 func TestCacheCoster(t *testing.T) {
-	costerRuns := uint64(0)
+	costRuns := uint64(0)
 	cache, err := NewCache(&Config{
 		NumCounters: 1000,
 		MaxCost:     500,
 		BufferItems: 64,
-		Coster: func(value interface{}) int64 {
-			atomic.AddUint64(&costerRuns, 1)
+		Cost: func(value interface{}) int64 {
+			atomic.AddUint64(&costRuns, 1)
 			return 5
 		},
 	})
@@ -137,7 +137,7 @@ func TestCacheCoster(t *testing.T) {
 			t.Fatal("coster not being ran")
 		}
 	}
-	if costerRuns != 100 {
+	if costRuns != 100 {
 		t.Fatal("coster not being ran")
 	}
 }

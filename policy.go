@@ -257,6 +257,8 @@ func (p *sampledLFU) add(key uint64, cost int64) {
 
 func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 	if prev, found := p.keyCosts[key]; found {
+		// update the cost of an existing key, but don't worry about evicting,
+		// evictions will be handled the next time a new item is added
 		p.stats.Add(keyUpdate, key, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost

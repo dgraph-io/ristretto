@@ -51,8 +51,8 @@ type Cache struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	keyToHash func(interface{}) uint64
-	// coster calculates cost from a value
-	coster func(value interface{}) int64
+	// cost calculates cost from a value
+	cost func(value interface{}) int64
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -92,10 +92,10 @@ type Config struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	KeyToHash func(key interface{}) uint64
-	// Coster evaluates a value and outputs a corresponding cost. This function
+	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
-	Coster func(value interface{}) int64
+	Cost func(value interface{}) int64
 }
 
 type itemFlag byte
@@ -136,7 +136,7 @@ func NewCache(config *Config) (*Cache, error) {
 		setBuf:    make(chan *item, 32*1024),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
-		coster:    config.Coster,
+		cost:      config.Cost,
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -144,13 +144,7 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	// We can possibly make this configurable. But having 2 goroutines
-	// processing this seems sufficient for now.
-	//
-	// TODO: Allow a way to stop these goroutines.
-	for i := 0; i < 2; i++ {
-		go cache.processItems()
-	}
+	go cache.processItems()
 	return cache, nil
 }
 
@@ -185,7 +179,12 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	if c == nil {
 		return false
 	}
-	i := &item{itemNew, c.keyToHash(key), value, cost}
+	i := &item{
+		flag:  itemNew,
+		key:   c.keyToHash(key),
+		value: value,
+		cost:  cost,
+	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
 	if c.store.Update(i.key, i.value) {
@@ -206,7 +205,10 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	c.setBuf <- &item{itemDelete, c.keyToHash(key), nil, 0}
+	c.setBuf <- &item{
+		flag: itemDelete,
+		key:  c.keyToHash(key),
+	}
 }
 
 // Close stops all goroutines and closes all channels.
@@ -216,10 +218,8 @@ func (c *Cache) Close() {}
 func (c *Cache) processItems() {
 	for i := range c.setBuf {
 		// calculate item cost value if new or update
-		if (i.flag == itemNew || i.flag == itemUpdate) && i.cost == 0 {
-			if c.coster != nil {
-				i.cost = c.coster(i.value)
-			}
+		if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
+			i.cost = c.cost(i.value)
 		}
 		switch i.flag {
 		case itemNew:
@@ -237,7 +237,6 @@ func (c *Cache) processItems() {
 				}
 			}
 		case itemUpdate:
-			// TODO: make this nonblocking?
 			c.policy.Update(i.key, i.cost)
 		case itemDelete:
 			c.policy.Del(i.key)
