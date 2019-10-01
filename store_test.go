@@ -88,6 +88,22 @@ func GenerateTest(create func() store) func(*testing.T) {
 				if _, ok := m.Get(i); ok {
 					t.Fatal("clear operation failed")
 				}
+      }
+    })
+		t.Run("update", func(t *testing.T) {
+			m := create()
+			m.Set(1, 1)
+			if updated := m.Update(1, 2); !updated {
+				t.Fatal("value should have been updated")
+			}
+			if val, _ := m.Get(1); val.(int) != 2 {
+				t.Fatal("value wasn't updated")
+			}
+			if updated := m.Update(2, 2); updated {
+				t.Fatal("value should not have been updated")
+			}
+			if val, found := m.Get(2); val != nil || found {
+				t.Fatal("value should not have been updated")
 			}
 		})
 	}

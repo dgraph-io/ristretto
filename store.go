@@ -36,6 +36,9 @@ type store interface {
 	Del(uint64)
 	// Clear clears all contents of the store.
 	Clear()
+	// Update attempts to update the key with a new value and returns true if
+	// successful.
+	Update(uint64, interface{}) bool
 }
 
 // newStore returns the default store implementation.
@@ -78,6 +81,11 @@ func (sm *shardedMap) Clear() {
 	}
 }
 
+func (sm *shardedMap) Update(key uint64, value interface{}) bool {
+	idx := key % numShards
+	return sm.shards[idx].Update(key, value)
+}
+
 type lockedMap struct {
 	sync.RWMutex
 	data map[uint64]interface{}
@@ -89,21 +97,31 @@ func newLockedMap() *lockedMap {
 
 func (m *lockedMap) Get(key uint64) (interface{}, bool) {
 	m.RLock()
-	defer m.RUnlock()
 	val, found := m.data[key]
+	m.RUnlock()
 	return val, found
 }
 
 func (m *lockedMap) Set(key uint64, value interface{}) {
 	m.Lock()
-	defer m.Unlock()
 	m.data[key] = value
+	m.Unlock()
 }
 
 func (m *lockedMap) Del(key uint64) {
 	m.Lock()
-	defer m.Unlock()
 	delete(m.data, key)
+	m.Unlock()
+}
+
+func (m *lockedMap) Update(key uint64, value interface{}) bool {
+	m.Lock()
+	defer m.Unlock()
+	if _, found := m.data[key]; found {
+		m.data[key] = value
+		return true
+	}
+	return false
 }
 
 func (m *lockedMap) Clear() {

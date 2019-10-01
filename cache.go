@@ -58,6 +58,8 @@ type Cache struct {
 	keyToHash func(interface{}) uint64
 	// stop is used to stop the processItems goroutine
 	stop chan struct{}
+	// cost calculates cost from a value
+	cost func(value interface{}) int64
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -97,14 +99,26 @@ type Config struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	KeyToHash func(key interface{}) uint64
+	// Cost evaluates a value and outputs a corresponding cost. This function
+	// is ran after Set is called for a new item or an item update with a cost
+	// param of 0.
+	Cost func(value interface{}) int64
 }
+
+type itemFlag byte
+
+const (
+	itemNew itemFlag = iota
+	itemDelete
+	itemUpdate
+)
 
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
-	key  uint64
-	val  interface{}
-	cost int64
-	del  bool
+	flag  itemFlag
+	key   uint64
+	value interface{}
+	cost  int64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -129,6 +143,7 @@ func NewCache(config *Config) (*Cache, error) {
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
 		stop:      make(chan struct{}),
+		cost:      config.Cost,
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -166,22 +181,31 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // it returns true, there's still a chance it could be dropped by the policy if
 // its determined that the key-value item isn't worth keeping, but otherwise the
 // item will be added and other items will be evicted in order to make room.
-func (c *Cache) Set(key interface{}, val interface{}, cost int64) bool {
+//
+// To dynamically evaluate the items cost using the Config.Coster function, set
+// the cost parameter to 0 and Coster will be ran when needed in order to find
+// the items true cost.
+func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	if c == nil {
 		return false
 	}
-	hash := c.keyToHash(key)
-	// TODO: Add a c.store.UpdateIfPresent here. This would catch any value updates and avoid having
-	// to push the key in setBuf.
-
-	// attempt to add the (possibly) new item to the setBuf where it will later
-	// be processed by the policy and evaluated
+	i := &item{
+		flag:  itemNew,
+		key:   c.keyToHash(key),
+		value: value,
+		cost:  cost,
+	}
+	// attempt to immediately update hashmap value and set flag to update so the
+	// cost is eventually updated
+	if c.store.Update(i.key, i.value) {
+		i.flag = itemUpdate
+	}
+	// attempt to send item to policy
 	select {
-	case c.setBuf <- &item{key: hash, val: val, cost: cost}:
+	case c.setBuf <- i:
 		return true
 	default:
-		// drop the set and avoid blocking
-		c.stats.Add(dropSets, hash, 1)
+		c.stats.Add(dropSets, i.key, 1)
 		return false
 	}
 }
@@ -191,7 +215,10 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	c.setBuf <- &item{key: c.keyToHash(key), del: true}
+	c.setBuf <- &item{
+		flag: itemDelete,
+		key:  c.keyToHash(key),
+	}
 }
 
 // Close stops all goroutines and closes all channels.
@@ -220,26 +247,31 @@ func (c *Cache) Clear() {
 func (c *Cache) processItems() {
 	for {
 		select {
-		case item := <-c.setBuf:
-			if item.del {
-				c.policy.Del(item.key)
-				c.store.Del(item.key)
-				continue
+		case i := <-c.setBuf:
+			// calculate item cost value if new or update
+			if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
+				i.cost = c.cost(i.value)
 			}
-			victims, added := c.policy.Add(item.key, item.cost)
-			if added {
-				// item was accepted by the policy, so add to the hashmap
-				c.store.Set(item.key, item.val)
-			}
-			// delete victims that are no longer worthy of being in the cache
-			for _, victim := range victims {
-				// eviction callback
-				if c.onEvict != nil {
-					victim.val, _ = c.store.Get(victim.key)
-					c.onEvict(victim.key, victim.val, victim.cost)
+			switch i.flag {
+			case itemNew:
+				if victims, added := c.policy.Add(i.key, i.cost); added {
+					// item was accepted by the policy, so add to the hashmap
+					c.store.Set(i.key, i.value)
+					// delete victims
+					for _, victim := range victims {
+						// TODO: make Get-Delete atomic
+						if c.onEvict != nil {
+							victim.value, _ = c.store.Get(victim.key)
+							c.onEvict(victim.key, victim.value, victim.cost)
+						}
+						c.store.Del(victim.key)
+					}
 				}
-				// delete from hashmap
-				c.store.Del(victim.key)
+			case itemUpdate:
+				c.policy.Update(i.key, i.cost)
+			case itemDelete:
+				c.policy.Del(i.key)
+				c.store.Del(i.key)
 			}
 		case <-c.stop:
 			return
