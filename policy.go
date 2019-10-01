@@ -170,27 +170,28 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 
 func (p *defaultPolicy) Has(key uint64) bool {
 	p.Lock()
-	defer p.Unlock()
 	_, exists := p.evict.keyCosts[key]
+	p.Unlock()
 	return exists
 }
 
 func (p *defaultPolicy) Del(key uint64) {
 	p.Lock()
-	defer p.Unlock()
 	p.evict.del(key)
+	p.Unlock()
 }
 
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
-	defer p.Unlock()
-	return int64(p.evict.maxCost - p.evict.used)
+	capacity := int64(p.evict.maxCost - p.evict.used)
+	p.Unlock()
+	return capacity
 }
 
 func (p *defaultPolicy) Update(key uint64, cost int64) {
 	p.Lock()
-	defer p.Unlock()
 	p.evict.updateIfHas(key, cost)
+	p.Unlock()
 }
 
 func (p *defaultPolicy) Cost(key uint64) int64 {
@@ -239,10 +240,8 @@ func (p *sampledLFU) del(key uint64) {
 	if !ok {
 		return
 	}
-
 	p.stats.Add(keyEvict, key, 1)
 	p.stats.Add(costEvict, key, uint64(cost))
-
 	p.used -= cost
 	delete(p.keyCosts, key)
 }
@@ -250,7 +249,6 @@ func (p *sampledLFU) del(key uint64) {
 func (p *sampledLFU) add(key uint64, cost int64) {
 	p.stats.Add(keyAdd, key, 1)
 	p.stats.Add(costAdd, key, uint64(cost))
-
 	p.keyCosts[key] = cost
 	p.used += cost
 }

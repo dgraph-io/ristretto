@@ -89,21 +89,21 @@ func newLockedMap() *lockedMap {
 
 func (m *lockedMap) Get(key uint64) (interface{}, bool) {
 	m.RLock()
-	defer m.RUnlock()
 	val, found := m.data[key]
+	m.RUnlock()
 	return val, found
 }
 
 func (m *lockedMap) Set(key uint64, value interface{}) {
 	m.Lock()
-	defer m.Unlock()
 	m.data[key] = value
+	m.Unlock()
 }
 
 func (m *lockedMap) Del(key uint64) {
 	m.Lock()
-	defer m.Unlock()
 	delete(m.data, key)
+	m.Unlock()
 }
 
 func (m *lockedMap) Update(key uint64, value interface{}) bool {
