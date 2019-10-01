@@ -201,12 +201,10 @@ func (c *Cache) Close() {}
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occuring until after this).
 func (c *Cache) Clear() {
-	// wait to stop processItems goroutine
+	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
-	// drain remaining items in setBuf
+	// swap out the setBuf channel
 	c.setBuf = make(chan *item, setBufSize)
-	// restart processItems goroutine
-	go c.processItems()
 	// clear value hashmap and policy data
 	c.policy.Clear()
 	c.store.Clear()
@@ -214,6 +212,8 @@ func (c *Cache) Clear() {
 	if c.stats != nil {
 		c.collectMetrics()
 	}
+	// restart processItems goroutine
+	go c.processItems()
 }
 
 // processItems is ran by goroutines processing the Set buffer.
