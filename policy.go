@@ -45,8 +45,14 @@ type policy interface {
 	Cap() int64
 	// Close stops all goroutines and closes all channels.
 	Close()
+	// Update updates the cost value for the key.
+	Update(uint64, int64)
+	// Cost returns the cost value of a key or -1 if missing.
+	Cost(uint64) int64
 	// Optionally, set stats object to track how policy is performing.
 	CollectMetrics(stats *metrics)
+	// Clear zeroes out all counters and clears hashmaps.
+	Clear()
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
@@ -54,7 +60,7 @@ func newPolicy(numCounters, maxCost int64) policy {
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
 		itemsCh: make(chan []uint64, 3),
-		closeCh: make(chan struct{}),
+		stop:    make(chan struct{}),
 	}
 	go p.processItems()
 	return p
@@ -67,7 +73,7 @@ type defaultPolicy struct {
 	admit   *tinyLFU
 	evict   *sampledLFU
 	itemsCh chan []uint64
-	closeCh chan struct{}
+	stop    chan struct{}
 	stats   *metrics
 }
 
@@ -88,7 +94,7 @@ func (p *defaultPolicy) processItems() {
 			p.Lock()
 			p.admit.Push(items)
 			p.Unlock()
-		case <-p.closeCh:
+		case <-p.stop:
 			return
 		}
 	}
@@ -163,7 +169,10 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
-		victims = append(victims, &item{minKey, nil, minCost})
+		victims = append(victims, &item{
+			key:  minKey,
+			cost: minCost,
+		})
 	}
 	p.evict.add(key, cost)
 	return victims, true
@@ -171,25 +180,50 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 
 func (p *defaultPolicy) Has(key uint64) bool {
 	p.Lock()
-	defer p.Unlock()
 	_, exists := p.evict.keyCosts[key]
+	p.Unlock()
 	return exists
 }
 
 func (p *defaultPolicy) Del(key uint64) {
 	p.Lock()
-	defer p.Unlock()
 	p.evict.del(key)
+	p.Unlock()
 }
 
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
+	capacity := int64(p.evict.maxCost - p.evict.used)
+	p.Unlock()
+	return capacity
+}
+
+func (p *defaultPolicy) Update(key uint64, cost int64) {
+	p.Lock()
+	p.evict.updateIfHas(key, cost)
+	p.Unlock()
+}
+
+func (p *defaultPolicy) Cost(key uint64) int64 {
+	p.Lock()
 	defer p.Unlock()
-	return int64(p.evict.maxCost - p.evict.used)
+	if cost, found := p.evict.keyCosts[key]; found {
+		return cost
+	}
+	return -1
+}
+
+func (p *defaultPolicy) Clear() {
+	p.Lock()
+	defer p.Unlock()
+	p.admit.clear()
+	p.evict.clear()
 }
 
 func (p *defaultPolicy) Close() {
-	close(p.closeCh)
+  // block until p.processItems goroutine is returned
+  p.stop <- struct{}{}
+	close(p.stop)
 	close(p.itemsCh)
 }
 
@@ -230,10 +264,8 @@ func (p *sampledLFU) del(key uint64) {
 	if !ok {
 		return
 	}
-
 	p.stats.Add(keyEvict, key, 1)
 	p.stats.Add(costEvict, key, uint64(cost))
-
 	p.used -= cost
 	delete(p.keyCosts, key)
 }
@@ -241,22 +273,25 @@ func (p *sampledLFU) del(key uint64) {
 func (p *sampledLFU) add(key uint64, cost int64) {
 	p.stats.Add(keyAdd, key, 1)
 	p.stats.Add(costAdd, key, uint64(cost))
-
 	p.keyCosts[key] = cost
 	p.used += cost
 }
 
-// TODO: Move this to the store itself. So, it can be used by public Set.
-func (p *sampledLFU) updateIfHas(key uint64, cost int64) (updated bool) {
-	if prev, exists := p.keyCosts[key]; exists {
-		// Update the cost of the existing key. For simplicity, don't worry about evicting anything
-		// if the updated cost causes the size to grow beyond maxCost.
+func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
+	if prev, found := p.keyCosts[key]; found {
+		// update the cost of an existing key, but don't worry about evicting,
+		// evictions will be handled the next time a new item is added
 		p.stats.Add(keyUpdate, key, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
 	}
 	return false
+}
+
+func (p *sampledLFU) clear() {
+	p.used = 0
+	p.keyCosts = make(map[uint64]int64)
 }
 
 // tinyLFU is an admission helper that keeps track of access frequency using
@@ -310,6 +345,12 @@ func (p *tinyLFU) reset() {
 	p.door.Clear()
 	// halves count-min counters
 	p.freq.Reset()
+}
+
+func (p *tinyLFU) clear() {
+	p.incrs = 0
+	p.door.Clear()
+	p.freq.Clear()
 }
 
 // lruPolicy is different than the default policy in that it uses exact LRU
@@ -373,9 +414,6 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	}
 	victims := make([]*item, 0)
 	incHits := p.admit.Estimate(key)
-	if p.room >= 0 {
-		goto add
-	}
 	for p.room < 0 {
 		lru := p.vals.Back()
 		victim := lru.Value.(*lruItem)
@@ -385,14 +423,16 @@ func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// delete victim from metadata
 		p.vals.Remove(victim.ptr)
 		delete(p.ptrs, victim.key)
-		victims = append(victims, &item{victim.key, nil, victim.cost})
+		victims = append(victims, &item{
+			key:  victim.key,
+			cost: victim.cost,
+		})
 		// adjust room
 		p.room += victim.cost
 	}
-add:
-	item := &lruItem{key: key, cost: cost}
-	item.ptr = p.vals.PushFront(item)
-	p.ptrs[key] = item
+	newItem := &lruItem{key: key, cost: cost}
+	newItem.ptr = p.vals.PushFront(newItem)
+	p.ptrs[key] = newItem
 	p.room -= cost
 	return victims, true
 }
@@ -422,5 +462,17 @@ func (p *lruPolicy) Cap() int64 {
 func (p *lruPolicy) Close() {}
 
 // TODO
+func (p *lruPolicy) Update(key uint64, cost int64) {
+}
+
+// TODO
+func (p *lruPolicy) Cost(key uint64) int64 {
+	return -1
+}
+
+// TODO
 func (p *lruPolicy) CollectMetrics(stats *metrics) {
 }
+
+// TODO
+func (p *lruPolicy) Clear() {}

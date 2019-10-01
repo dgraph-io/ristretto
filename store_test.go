@@ -20,10 +20,6 @@ import (
 	"testing"
 )
 
-func BenchmarkStoreSyncMap(b *testing.B) {
-	GenerateBench(func() store { return newSyncMap() })(b)
-}
-
 func BenchmarkStoreLockedMap(b *testing.B) {
 	GenerateBench(func() store { return newLockedMap() })(b)
 }
@@ -46,10 +42,6 @@ func GenerateBench(create func() store) func(*testing.B) {
 
 func TestStore(t *testing.T) {
 	GenerateTest(func() store { return newStore() })(t)
-}
-
-func TestStoreSyncMap(t *testing.T) {
-	GenerateTest(func() store { return newSyncMap() })(t)
 }
 
 func TestStoreLockedMap(t *testing.T) {
@@ -81,6 +73,37 @@ func GenerateTest(create func() store) func(*testing.T) {
 			m.Del(1)
 			if val, found := m.Get(1); val != nil || found {
 				t.Fatal("del error")
+			}
+		})
+		t.Run("clear", func(t *testing.T) {
+			m := create()
+			// set a lot of values
+			for i := uint64(0); i < 1000; i++ {
+				m.Set(i, i)
+			}
+			// clear
+			m.Clear()
+			// check if any of the values exist
+			for i := uint64(0); i < 1000; i++ {
+				if _, ok := m.Get(i); ok {
+					t.Fatal("clear operation failed")
+				}
+      }
+    })
+		t.Run("update", func(t *testing.T) {
+			m := create()
+			m.Set(1, 1)
+			if updated := m.Update(1, 2); !updated {
+				t.Fatal("value should have been updated")
+			}
+			if val, _ := m.Get(1); val.(int) != 2 {
+				t.Fatal("value wasn't updated")
+			}
+			if updated := m.Update(2, 2); updated {
+				t.Fatal("value should not have been updated")
+			}
+			if val, found := m.Get(2); val != nil || found {
+				t.Fatal("value should not have been updated")
 			}
 		})
 	}
