@@ -139,12 +139,8 @@ func TestCacheSetDel(t *testing.T) {
 	cache := newCache(true)
 	cache.Set(1, 1, 1)
 	cache.Del(1)
-	found := false
-	// make sure the item is eventually deleted
-	for i := 0; i < 10; i++ {
-		_, found = cache.Get(1)
-	}
-	if found {
+	time.Sleep(time.Second / 100)
+	if _, found := cache.Get(1); found {
 		t.Fatal("value shouldn't exist")
 	}
 }
