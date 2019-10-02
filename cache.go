@@ -320,21 +320,40 @@ func exportMetrics(stats *metrics) *Metrics {
 	}
 }
 
-// Metrics is the exported struct for performance statistics. A different
-// internal struct is used for performance purposes (padding, etc).
+// Metrics is a snapshot of performance statistics for the lifetime of a cache
+// instance.
 type Metrics struct {
-	Hits         uint64  `json:"hits"`
-	Misses       uint64  `json:"misses"`
-	Ratio        float64 `json:"ratio"`
-	KeysAdded    uint64  `json:"keysAdded"`
-	KeysUpdated  uint64  `json:"keysUpdated"`
-	KeysEvicted  uint64  `json:"keysEvicted"`
-	CostAdded    uint64  `json:"costAdded"`
-	CostEvicted  uint64  `json:"costEvicted"`
-	SetsDropped  uint64  `json:"setsDropped"`
-	SetsRejected uint64  `json:"setsRejected"`
-	GetsDropped  uint64  `json:"getsDropped"`
-	GetsKept     uint64  `json:"getsKept"`
+	// Hits is the number of Get calls where a value was found for the
+	// corresponding key.
+	Hits uint64 `json:"hits"`
+	// Misses is the number of Get calls where a value was not found for the
+	// corresponding key.
+	Misses uint64 `json:"misses"`
+	// Ratio is the number of Hits over all accesses (Hits + Misses). This is
+	// the percentage of successful Get calls.
+	Ratio float64 `json:"ratio"`
+	// KeysAdded is the total number of Set calls where a new key-value item was
+	// added.
+	KeysAdded uint64 `json:"keysAdded"`
+	// KeysUpdated is the total number of Set calls where the value was updated.
+	KeysUpdated uint64 `json:"keysUpdated"`
+	// KeysEvicted is the total number of keys evicted.
+	KeysEvicted uint64 `json:"keysEvicted"`
+	// CostAdded is the sum of all costs that have been added (successful Set
+	// calls).
+	CostAdded uint64 `json:"costAdded"`
+	// CostEvicted is the sum of all costs that have been evicted.
+	CostEvicted uint64 `json:"costEvicted"`
+	// SetsDropped is the number of Set calls that don't make it into internal
+	// buffers (due to contention or some other reason).
+	SetsDropped uint64 `json:"setsDropped"`
+	// SetsRejected is the number of Set calls rejected by the policy (TinyLFU).
+	SetsRejected uint64 `json:"setsRejected"`
+	// GetsDropped is the number of Get counter increments that are dropped
+	// internally.
+	GetsDropped uint64 `json:"getsDropped"`
+	// GetsKept is the number of Get counter increments that are kept.
+	GetsKept uint64 `json:"getsKept"`
 }
 
 type metricType int
