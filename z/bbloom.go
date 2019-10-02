@@ -63,7 +63,7 @@ func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 			" i.e. New(float64(1000), float64(3)) or New(float64(number_of_entries)," +
 			" float64(number_of_hashlocations)) i.e. New(float64(1000), float64(0.03))")
 	}
-	size, exponent := getSize(uint64(entries))
+	size, exponent := getSize(entries)
 	bloomfilter = &Bloom{
 		sizeExp: exponent,
 		size:    size - 1,
@@ -188,7 +188,7 @@ func JSONUnmarshal(dbData []byte) *Bloom {
 // JSONMarshal returns JSON-object (type bloomJSONImExport) as []byte.
 func (bl Bloom) JSONMarshal() []byte {
 	bloomImEx := bloomJSONImExport{}
-	bloomImEx.SetLocs = uint64(bl.setLocs)
+	bloomImEx.SetLocs = bl.setLocs
 	bloomImEx.FilterSet = make([]byte, len(bl.bitset)<<3)
 	for i := range bloomImEx.FilterSet {
 		bloomImEx.FilterSet[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&bl.bitset[0])) +
