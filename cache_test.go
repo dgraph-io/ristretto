@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"container/heap"
+	"fmt"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -371,6 +372,8 @@ func TestCacheSetGet(t *testing.T) {
 	time.Sleep(time.Second / 100)
 	wg := &sync.WaitGroup{}
 	// launch goroutines to concurrently Get random keys
+
+	var err error
 	for r := 0; r < 8; r++ {
 		wg.Add(1)
 		go func() {
@@ -383,7 +386,8 @@ func TestCacheSetGet(t *testing.T) {
 				key := r.Int() % capacity
 				if val, ok := cache.Get(key); ok {
 					if val.(int) != key {
-						t.Fatalf("expected %d but got %d\n", key, val.(int))
+						err = fmt.Errorf("expected %d but got %d", key, val.(int))
+						break
 					}
 				}
 			}
@@ -391,6 +395,10 @@ func TestCacheSetGet(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if ratio := cache.Metrics().Ratio(); ratio != 1.0 {
 		t.Fatalf("expected 1.00 but got %.2f\n", ratio)
 	}
