@@ -43,6 +43,8 @@ type policy interface {
 	Del(uint64)
 	// Cap returns the available capacity.
 	Cap() int64
+	// Close stops all goroutines and closes all channels.
+	Close()
 	// Update updates the cost value for the key.
 	Update(uint64, int64)
 	// Cost returns the cost value of a key or -1 if missing.
@@ -58,8 +60,8 @@ func newPolicy(numCounters, maxCost int64) policy {
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
 		itemsCh: make(chan []uint64, 3),
+		stop:    make(chan struct{}),
 	}
-	// TODO: Add a way to stop the goroutine.
 	go p.processItems()
 	return p
 }
@@ -71,6 +73,7 @@ type defaultPolicy struct {
 	admit   *tinyLFU
 	evict   *sampledLFU
 	itemsCh chan []uint64
+	stop    chan struct{}
 	stats   *metrics
 }
 
@@ -85,10 +88,15 @@ type policyPair struct {
 }
 
 func (p *defaultPolicy) processItems() {
-	for items := range p.itemsCh {
-		p.Lock()
-		p.admit.Push(items)
-		p.Unlock()
+	for {
+		select {
+		case items := <-p.itemsCh:
+			p.Lock()
+			p.admit.Push(items)
+			p.Unlock()
+		case <-p.stop:
+			return
+		}
 	}
 }
 
@@ -210,6 +218,13 @@ func (p *defaultPolicy) Clear() {
 	defer p.Unlock()
 	p.admit.clear()
 	p.evict.clear()
+}
+
+func (p *defaultPolicy) Close() {
+	// block until p.processItems goroutine is returned
+	p.stop <- struct{}{}
+	close(p.stop)
+	close(p.itemsCh)
 }
 
 // sampledLFU is an eviction helper storing key-cost pairs.
@@ -443,6 +458,8 @@ func (p *lruPolicy) Cap() int64 {
 	defer p.Unlock()
 	return int64(p.vals.Len())
 }
+
+func (p *lruPolicy) Close() {}
 
 // TODO
 func (p *lruPolicy) Update(key uint64, cost int64) {

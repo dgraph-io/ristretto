@@ -222,7 +222,13 @@ func (c *Cache) Del(key interface{}) {
 }
 
 // Close stops all goroutines and closes all channels.
-func (c *Cache) Close() {}
+func (c *Cache) Close() {
+	// block until processItems goroutine is returned
+	c.stop <- struct{}{}
+	close(c.stop)
+	close(c.setBuf)
+	c.policy.Close()
+}
 
 // Clear empties the hashmap and zeroes all policy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
