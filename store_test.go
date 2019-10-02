@@ -88,8 +88,8 @@ func GenerateTest(create func() store) func(*testing.T) {
 				if _, ok := m.Get(i); ok {
 					t.Fatal("clear operation failed")
 				}
-      }
-    })
+			}
+		})
 		t.Run("update", func(t *testing.T) {
 			m := create()
 			m.Set(1, 1)
