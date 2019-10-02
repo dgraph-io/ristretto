@@ -41,7 +41,7 @@ func GenerateBench(create func() store) func(*testing.B) {
 }
 
 func TestStore(t *testing.T) {
-	GenerateTest(func() store { return newStore() })(t)
+	GenerateTest(newStore)(t)
 }
 
 func TestStoreLockedMap(t *testing.T) {
