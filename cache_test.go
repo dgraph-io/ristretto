@@ -35,7 +35,7 @@ import (
 type TestCache interface {
 	Get(interface{}) (interface{}, bool)
 	Set(interface{}, interface{}, int64) bool
-	Metrics() *metrics
+	Metrics() *Metrics
 }
 
 // capacity is the cache capacity to be used across all tests and benchmarks.
@@ -131,7 +131,7 @@ func TestCacheClear(t *testing.T) {
 		}
 	}
 	// 0.5 and not 1.0 because we tried Getting each item twice
-	if cache.Metrics().Ratio() != 0.5 {
+	if cache.Metrics().Ratio != 0.5 {
 		t.Fatal("incorrect hit ratio")
 	}
 }
@@ -194,7 +194,7 @@ func TestCacheUpdate(t *testing.T) {
 	}
 	// wait for keyUpdates to go through
 	time.Sleep(time.Second / 100)
-	if cache.Metrics().Get(keyUpdate) == 0 {
+	if cache.Metrics().KeysUpdated == 0 {
 		t.Fatal("keyUpdates not being processed")
 	}
 }
@@ -261,8 +261,8 @@ func TestCacheRatios(t *testing.T) {
 	optimal := NewClairvoyant(capacity)
 	newRatioTest(cache)(t)
 	newRatioTest(optimal)(t)
-	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio())
-	t.Logf("- optimal: %.2f\n", optimal.Metrics().Ratio())
+	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio)
+	t.Logf("- optimal: %.2f\n", optimal.Metrics().Ratio)
 }
 
 var newCacheInvalidConfigTests = []struct {
@@ -352,7 +352,7 @@ func TestCacheDel(t *testing.T) {
 		}
 	}
 
-	if ratio := cache.Metrics().Ratio(); ratio != 0.0 {
+	if ratio := cache.Metrics().Ratio; ratio != 0.0 {
 		t.Fatalf("expected 0.00 but got %.2f\n", ratio)
 	}
 }
@@ -395,7 +395,7 @@ func TestCacheSetGet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ratio := cache.Metrics().Ratio(); ratio != 1.0 {
+	if ratio := cache.Metrics().Ratio; ratio != 1.0 {
 		t.Fatalf("expected 1.00 but got %.2f\n", ratio)
 	}
 }
@@ -436,7 +436,7 @@ func TestCacheSetDrops(t *testing.T) {
 			}(i)
 		}
 		finish.Wait()
-		dropped := cache.Metrics().Get(dropSets)
+		dropped := cache.Metrics().SetsDropped
 		t.Logf("%d goroutines: %.2f%% dropped \n",
 			goroutines, float64(float64(dropped)/float64(sample))*100)
 		runtime.GC()
@@ -474,7 +474,7 @@ func (c *Clairvoyant) Set(key, value interface{}, cost int64) bool {
 	return false
 }
 
-func (c *Clairvoyant) Metrics() *metrics {
+func (c *Clairvoyant) Metrics() *Metrics {
 	stat := newMetrics()
 	look := make(map[uint64]struct{}, c.capacity)
 	data := &clairvoyantHeap{}
@@ -492,7 +492,7 @@ func (c *Clairvoyant) Metrics() *metrics {
 		look[key] = struct{}{}
 		heap.Push(data, &clairvoyantItem{key, c.hits[key]})
 	}
-	return stat
+	return exportMetrics(stat)
 }
 
 type clairvoyantItem struct {

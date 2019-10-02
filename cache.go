@@ -285,17 +285,56 @@ func (c *Cache) processItems() {
 	}
 }
 
+// collectMetrics just creates a new *metrics instance and adds the pointers
+// to the cache and policy instances.
 func (c *Cache) collectMetrics() {
-	c.stats = newMetrics()
-	c.policy.CollectMetrics(c.stats)
+	stats := newMetrics()
+	c.stats = stats
+	c.policy.CollectMetrics(stats)
 }
 
 // Metrics returns statistics about cache performance.
-func (c *Cache) Metrics() *metrics {
+func (c *Cache) Metrics() *Metrics {
 	if c == nil {
 		return nil
 	}
-	return c.stats
+	return exportMetrics(c.stats)
+}
+
+// exportMetrics converts an internal metrics struct into a friendlier Metrics
+// struct.
+func exportMetrics(stats *metrics) *Metrics {
+	return &Metrics{
+		Hits:         stats.Get(hit),
+		Misses:       stats.Get(miss),
+		Ratio:        stats.Ratio(),
+		KeysAdded:    stats.Get(keyAdd),
+		KeysUpdated:  stats.Get(keyUpdate),
+		KeysEvicted:  stats.Get(keyEvict),
+		CostAdded:    stats.Get(costAdd),
+		CostEvicted:  stats.Get(costEvict),
+		SetsDropped:  stats.Get(dropSets),
+		SetsRejected: stats.Get(rejectSets),
+		GetsDropped:  stats.Get(dropGets),
+		GetsKept:     stats.Get(keepGets),
+	}
+}
+
+// Metrics is the exported struct for performance statistics. A different
+// internal struct is used for performance purposes (padding, etc).
+type Metrics struct {
+	Hits         uint64  `json:"hits"`
+	Misses       uint64  `json:"misses"`
+	Ratio        float64 `json:"ratio"`
+	KeysAdded    uint64  `json:"keysAdded"`
+	KeysUpdated  uint64  `json:"keysUpdated"`
+	KeysEvicted  uint64  `json:"keysEvicted"`
+	CostAdded    uint64  `json:"costAdded"`
+	CostEvicted  uint64  `json:"costEvicted"`
+	SetsDropped  uint64  `json:"setsDropped"`
+	SetsRejected uint64  `json:"setsRejected"`
+	GetsDropped  uint64  `json:"getsDropped"`
+	GetsKept     uint64  `json:"getsKept"`
 }
 
 type metricType int
@@ -304,24 +343,20 @@ const (
 	// The following 2 keep track of hits and misses.
 	hit = iota
 	miss
-
 	// The following 3 keep track of number of keys added, updated and evicted.
 	keyAdd
 	keyUpdate
 	keyEvict
-
 	// The following 2 keep track of cost of keys added and evicted.
 	costAdd
 	costEvict
-
 	// The following keep track of how many sets were dropped or rejected later.
 	dropSets
 	rejectSets
-
-	// The following 2 keep track of how many gets were kept and dropped on the floor.
+	// The following 2 keep track of how many gets were kept and dropped on the
+	// floor.
 	dropGets
 	keepGets
-
 	// This should be the final enum. Other enums should be set before this.
 	doNotUse
 )
