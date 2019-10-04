@@ -1,110 +1,87 @@
-/*
- * Copyright 2019 Dgraph Labs, Inc. and Contributors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package ristretto
 
 import (
 	"testing"
-
-	"github.com/dgraph-io/ristretto/z"
 )
 
-// sketch is a collection of approximate frequency counters.
-type sketch interface {
-	// Increment increments the count(ers) for the specified key.
-	Increment(uint64)
-	// Estimate returns the value of the specified key.
-	Estimate(uint64) int64
-	// Reset halves all counter values.
-	Reset()
+func TestSketch(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("no panic with bad param numCounters")
+		}
+	}()
+	s := newCmSketch(5)
+	if s.mask != 7 {
+		t.Fatal("not rounding up to next power of 2")
+	}
+	newCmSketch(0)
 }
 
-type TestSketch interface {
-	sketch
-	string() string
-}
-
-func GenerateSketchTest(create func() TestSketch) func(t *testing.T) {
-	return func(t *testing.T) {
-		s := create()
-		s.Increment(0)
-		s.Increment(0)
-		s.Increment(0)
-		s.Increment(0)
-		if s.Estimate(0) != 4 {
-			t.Fatal("increment/estimate error")
+func TestSketchIncrement(t *testing.T) {
+	s := newCmSketch(16)
+	s.Increment(1)
+	s.Increment(5)
+	s.Increment(9)
+	for i := 0; i < cmDepth; i++ {
+		if s.rows[i].string() != s.rows[0].string() {
+			break
 		}
-		if s.Estimate(1) != 0 {
-			t.Fatal("neighbor corruption")
-		}
-		s.Reset()
-		if s.Estimate(0) != 2 {
-			t.Fatal("reset error")
-		}
-		if s.Estimate(9) != 0 {
-			t.Fatal("neighbor corruption")
+		if i == cmDepth-1 {
+			t.Fatal("identical rows, bad seeding")
 		}
 	}
 }
 
-func TestCM(t *testing.T) {
-	GenerateSketchTest(func() TestSketch { return newCmSketch(16) })(t)
-}
-
-func GenerateSketchBenchmark(create func() TestSketch) func(b *testing.B) {
-	return func(b *testing.B) {
-		s := create()
-		b.Run("increment", func(b *testing.B) {
-			b.SetBytes(1)
-			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
-				s.Increment(1)
-			}
-		})
-		b.Run("estimate", func(b *testing.B) {
-			b.SetBytes(1)
-			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
-				s.Estimate(1)
-			}
-		})
+func TestSketchEstimate(t *testing.T) {
+	s := newCmSketch(16)
+	s.Increment(1)
+	s.Increment(1)
+	if s.Estimate(1) != 2 {
+		t.Fatal("estimate should be 2")
+	}
+	if s.Estimate(0) != 0 {
+		t.Fatal("estimate should be 0")
 	}
 }
 
-func BenchmarkCM(b *testing.B) {
-	GenerateSketchBenchmark(func() TestSketch { return newCmSketch(16) })(b)
+func TestSketchReset(t *testing.T) {
+	s := newCmSketch(16)
+	s.Increment(1)
+	s.Increment(1)
+	s.Increment(1)
+	s.Increment(1)
+	s.Reset()
+	if s.Estimate(1) != 2 {
+		t.Fatal("reset failed, estimate should be 2")
+	}
 }
 
-func TestDoorkeeper(t *testing.T) {
-	d := z.NewBloomFilter(float64(1374), 0.01)
-	hash := z.MemHashString("*")
-	if d.Has(hash) {
-		t.Fatal("item exists but was never added")
+func TestSketchClear(t *testing.T) {
+	s := newCmSketch(16)
+	for i := 0; i < 16; i++ {
+		s.Increment(uint64(i))
 	}
-	if d.AddIfNotHas(hash) != true {
-		t.Fatal("item didn't exist so Set() should return true")
+	s.Clear()
+	for i := 0; i < 16; i++ {
+		if s.Estimate(uint64(i)) != 0 {
+			t.Fatal("clear failed")
+		}
 	}
-	if d.AddIfNotHas(hash) != false {
-		t.Fatal("item did exist so Set() should return false")
+}
+
+func BenchmarkSketchIncrement(b *testing.B) {
+	s := newCmSketch(16)
+	b.SetBytes(1)
+	for n := 0; n < b.N; n++ {
+		s.Increment(1)
 	}
-	if !d.Has(hash) {
-		t.Fatal("item was added but Has() is false")
-	}
-	d.Clear()
-	if d.Has(hash) {
-		t.Fatal("doorkeeper was reset but Has() returns true")
+}
+
+func BenchmarkSketchEstimate(b *testing.B) {
+	s := newCmSketch(16)
+	s.Increment(1)
+	b.SetBytes(1)
+	for n := 0; n < b.N; n++ {
+		s.Estimate(1)
 	}
 }

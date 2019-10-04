@@ -18,13 +18,6 @@ package ristretto
 
 import (
 	"sync"
-	"sync/atomic"
-	"time"
-)
-
-const (
-	ringLossy byte = iota
-	ringLossless
 )
 
 // ringConsumer is the user-defined object responsible for receiving and
@@ -35,17 +28,16 @@ type ringConsumer interface {
 
 // ringStripe is a singular ring buffer that is not concurrent safe.
 type ringStripe struct {
-	consumer ringConsumer
-	data     []uint64
-	capacity int
-	busy     int32
+	cons ringConsumer
+	data []uint64
+	capa int
 }
 
-func newRingStripe(config *ringConfig) *ringStripe {
+func newRingStripe(cons ringConsumer, capa int64) *ringStripe {
 	return &ringStripe{
-		consumer: config.Consumer,
-		data:     make([]uint64, 0, config.Capacity),
-		capacity: int(config.Capacity),
+		cons: cons,
+		data: make([]uint64, 0, capa),
+		capa: int(capa),
 	}
 }
 
@@ -54,21 +46,14 @@ func newRingStripe(config *ringConfig) *ringStripe {
 func (s *ringStripe) Push(item uint64) {
 	s.data = append(s.data, item)
 	// if we should drain
-	if len(s.data) >= s.capacity {
+	if len(s.data) >= s.capa {
 		// Send elements to consumer. Create a new one.
-		if s.consumer.Push(s.data) {
-			s.data = make([]uint64, 0, s.capacity)
+		if s.cons.Push(s.data) {
+			s.data = make([]uint64, 0, s.capa)
 		} else {
 			s.data = s.data[:0]
 		}
 	}
-}
-
-// ringConfig is passed to newRingBuffer with parameters.
-type ringConfig struct {
-	Consumer ringConsumer
-	Stripes  int64
-	Capacity int64
 }
 
 // ringBuffer stores multiple buffers (stripes) and distributes Pushed items
@@ -79,67 +64,29 @@ type ringConfig struct {
 type ringBuffer struct {
 	stripes []*ringStripe
 	pool    *sync.Pool
-	push    func(*ringBuffer, uint64)
-	rand    int
-	mask    int
 }
 
-// newRingBuffer returns a striped ring buffer. The Type can be either LOSSY or
-// LOSSLESS. LOSSY should provide better performance. The Consumer in ringConfig
-// will be called when individual stripes are full and need to drain their
-// elements.
-func newRingBuffer(ringType byte, config *ringConfig) *ringBuffer {
-	if ringType == ringLossy {
-		// LOSSY buffers use a very simple sync.Pool for concurrently reusing
-		// stripes. We do lose some stripes due to GC (unheld items in sync.Pool
-		// are cleared), but the performance gains generally outweigh the small
-		// percentage of elements lost. The performance primarily comes from
-		// low-level runtime functions used in the standard library that aren't
-		// available to us (such as runtime_procPin()).
-		return &ringBuffer{
-			pool: &sync.Pool{
-				New: func() interface{} { return newRingStripe(config) },
-			},
-			push: pushLossy,
-		}
-	}
-	// begin LOSSLESS buffer handling
-	//
-	// unlike lossy, lossless manually handles all stripes
-	stripes := make([]*ringStripe, config.Stripes)
-	for i := range stripes {
-		stripes[i] = newRingStripe(config)
-	}
+// newRingBuffer returns a striped ring buffer. The Consumer in ringConfig will
+// be called when individual stripes are full and need to drain their elements.
+func newRingBuffer(cons ringConsumer, capa int64) *ringBuffer {
+	// LOSSY buffers use a very simple sync.Pool for concurrently reusing
+	// stripes. We do lose some stripes due to GC (unheld items in sync.Pool
+	// are cleared), but the performance gains generally outweigh the small
+	// percentage of elements lost. The performance primarily comes from
+	// low-level runtime functions used in the standard library that aren't
+	// available to us (such as runtime_procPin()).
 	return &ringBuffer{
-		stripes: stripes,
-		mask:    int(config.Stripes - 1),
-		rand:    int(time.Now().UnixNano()), // random seed for picking stripes
-		push:    pushLossless,
+		pool: &sync.Pool{
+			New: func() interface{} { return newRingStripe(cons, capa) },
+		},
 	}
 }
 
 // Push adds an element to one of the internal stripes and possibly drains if
 // the stripe becomes full.
 func (b *ringBuffer) Push(item uint64) {
-	b.push(b, item)
-}
-
-func pushLossy(b *ringBuffer, item uint64) {
 	// reuse or create a new stripe
 	stripe := b.pool.Get().(*ringStripe)
 	stripe.Push(item)
 	b.pool.Put(stripe)
-}
-
-func pushLossless(b *ringBuffer, item uint64) {
-	// try to find an available stripe
-	for i := 0; ; i = (i + 1) & b.mask {
-		if atomic.CompareAndSwapInt32(&b.stripes[i].busy, 0, 1) {
-			// try to get exclusive lock on the stripe
-			b.stripes[i].Push(item)
-			// unlock
-			atomic.StoreInt32(&b.stripes[i].busy, 0)
-			return
-		}
-	}
 }

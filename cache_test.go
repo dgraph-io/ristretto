@@ -1,519 +1,296 @@
-/*
- * Copyright 2019 Dgraph Labs, Inc. and Contributors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package ristretto
 
 import (
-	"container/heap"
-	"fmt"
-	"math/rand"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/dgraph-io/ristretto/sim"
-	"github.com/dgraph-io/ristretto/z"
 )
 
-// TestCache is used to pass instances of Ristretto and Clairvoyant around and
-// compare their performance.
-type TestCache interface {
-	Get(interface{}) (interface{}, bool)
-	Set(interface{}, interface{}, int64) bool
-	Metrics() *metrics
+func TestCache(t *testing.T) {
+	if _, err := NewCache(&Config{
+		NumCounters: 0,
+	}); err == nil {
+		t.Fatal("numCounters can't be 0")
+	}
+	if _, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     0,
+	}); err == nil {
+		t.Fatal("maxCost can't be 0")
+	}
+	if _, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 0,
+	}); err == nil {
+		t.Fatal("bufferItems can't be 0")
+	}
+	if c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	}); c == nil || err != nil {
+		t.Fatal("config should be good")
+	}
 }
 
-// capacity is the cache capacity to be used across all tests and benchmarks.
-const capacity = 1000
-
-// newCache should be used for all Ristretto instances in local tests.
-func newCache(metrics bool) *Cache {
-	cache, err := NewCache(&Config{
-		NumCounters: capacity * 10,
-		MaxCost:     capacity,
+func TestCacheProcessItems(t *testing.T) {
+	m := &sync.Mutex{}
+	evicted := make(map[uint64]struct{})
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
 		BufferItems: 64,
-		Metrics:     metrics,
+		Cost: func(value interface{}) int64 {
+			return int64(value.(int))
+		},
+		OnEvict: func(key uint64, value interface{}, cost int64) {
+			m.Lock()
+			defer m.Unlock()
+			evicted[key] = struct{}{}
+		},
 	})
 	if err != nil {
 		panic(err)
 	}
-	return cache
+	c.setBuf <- &item{flag: itemNew, key: 1, value: 1, cost: 0}
+	time.Sleep(time.Millisecond)
+	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
+		t.Fatal("cache processItems didn't add new item")
+	}
+	c.setBuf <- &item{flag: itemUpdate, key: 1, value: 2, cost: 0}
+	time.Sleep(time.Millisecond)
+	if c.policy.Cost(1) != 2 {
+		t.Fatal("cache processItems didn't update item cost")
+	}
+	c.setBuf <- &item{flag: itemDelete, key: 1}
+	time.Sleep(time.Millisecond)
+	if val, ok := c.store.Get(1); val != nil || ok {
+		t.Fatal("cache processItems didn't delete item")
+	}
+	if c.policy.Has(1) {
+		t.Fatal("cache processItems didn't delete item")
+	}
+	c.setBuf <- &item{flag: itemNew, key: 2, value: 2, cost: 3}
+	c.setBuf <- &item{flag: itemNew, key: 3, value: 3, cost: 3}
+	c.setBuf <- &item{flag: itemNew, key: 4, value: 3, cost: 3}
+	c.setBuf <- &item{flag: itemNew, key: 5, value: 3, cost: 5}
+	time.Sleep(time.Millisecond)
+	m.Lock()
+	if len(evicted) == 0 {
+		m.Unlock()
+		t.Fatal("cache processItems not evicting or calling OnEvict")
+	}
+	m.Unlock()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("cache processItems didn't stop")
+		}
+	}()
+	c.Close()
+	c.setBuf <- &item{flag: itemNew}
 }
 
-// newBenchmark should be used for all local benchmarks to ensure consistency
-// across comparisons.
-func newBenchmark(bencher func(uint64)) func(b *testing.B) {
-	return func(b *testing.B) {
-		b.SetParallelism(1)
-		b.SetBytes(1)
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for i := uint64(0); pb.Next(); i++ {
-				bencher(i)
-			}
-		})
+func TestCacheGet(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.store.Set(1, 1)
+	if val, ok := c.Get(1); val == nil || !ok {
+		t.Fatal("get should be successful")
+	}
+	if val, ok := c.Get(2); val != nil || ok {
+		t.Fatal("get should not be successful")
+	}
+	if c.stats.Ratio() != 0.5 {
+		t.Fatal("get should record metrics")
+	}
+	c = nil
+	if val, ok := c.Get(0); val != nil || ok {
+		t.Fatal("get should not be successful with nil cache")
 	}
 }
 
-// BenchmarkCacheGetOne Gets the same key-value item over and over.
-func BenchmarkCacheGetOne(b *testing.B) {
-	cache := newCache(false)
-	cache.Set(1, nil, 1)
-	newBenchmark(func(i uint64) { cache.Get(1) })(b)
-}
-
-// BenchmarkCacheSetOne Sets the same key-value item over and over.
-func BenchmarkCacheSetOne(b *testing.B) {
-	cache := newCache(false)
-	newBenchmark(func(i uint64) { cache.Set(1, nil, 1) })(b)
-}
-
-// BenchmarkCacheSetUni Sets keys incrementing by 1.
-func BenchmarkCacheSetUni(b *testing.B) {
-	cache := newCache(false)
-	newBenchmark(func(i uint64) { cache.Set(i, nil, 1) })(b)
-}
-
-// newRatioTest simulates a workload for a TestCache so you can just run the
-// returned test and call cache.metrics() to get a basic idea of performance.
-func newRatioTest(cache TestCache) func(t *testing.T) {
-	return func(t *testing.T) {
-		keys := sim.NewZipfian(1.0001, 1, capacity*100)
-		for i := 0; i < capacity*1000; i++ {
-			key, err := keys()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, ok := cache.Get(key); !ok {
-				cache.Set(key, nil, 1)
-			}
+func TestCacheSet(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	if c.Set(1, 1, 1) {
+		time.Sleep(time.Millisecond)
+		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
+			t.Fatal("set/get returned wrong value")
+		}
+	} else {
+		if val, ok := c.Get(1); val != nil || ok {
+			t.Fatal("set was dropped but value still added")
 		}
 	}
+	c.Set(1, 2, 2)
+	if val, ok := c.store.Get(1); val == nil || val.(int) != 2 || !ok {
+		t.Fatal("set/update was unsuccessful")
+	}
+	c.stop <- struct{}{}
+	for i := 0; i < setBufSize; i++ {
+		c.setBuf <- &item{itemUpdate, 1, 1, 1}
+	}
+	if c.Set(2, 2, 1) {
+		t.Fatal("set should be dropped with full setBuf")
+	}
+	if c.stats.Get(dropSets) != 1 {
+		t.Fatal("set should track dropSets")
+	}
+	close(c.setBuf)
+	close(c.stop)
+	c = nil
+	if c.Set(1, 1, 1) {
+		t.Fatal("set shouldn't be successful with nil cache")
+	}
+}
+
+func TestCacheDel(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Set(1, 1, 1)
+	c.Del(1)
+	time.Sleep(time.Millisecond)
+	if val, ok := c.Get(1); val != nil || ok {
+		t.Fatal("del didn't delete")
+	}
+	c = nil
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("del panic with nil cache")
+		}
+	}()
+	c.Del(1)
 }
 
 func TestCacheClear(t *testing.T) {
-	cache := newCache(true)
-	for i := 0; i < capacity; i++ {
-		cache.Set(i, i, 1)
-	}
-	cache.Clear()
-	if len(cache.setBuf) != 0 {
-		t.Fatal("setBuf not cleared")
-	}
-	for i := 0; i < capacity; i++ {
-		if _, ok := cache.Get(i); ok {
-			t.Fatal("clear operation failed")
-		}
-	}
-	// verify that we can still Set/Get items with the new buffers
-	for i := 0; i < capacity; i++ {
-		cache.Set(i, i, 1)
-	}
-	time.Sleep(time.Second / 100)
-	for i := 0; i < capacity; i++ {
-		if _, found := cache.Get(i); !found {
-			t.Fatal("value should exist")
-		}
-	}
-	// 0.5 and not 1.0 because we tried Getting each item twice
-	if cache.Metrics().Ratio() != 0.5 {
-		t.Fatal("incorrect hit ratio")
-	}
-}
-
-func TestCacheSetDel(t *testing.T) {
-	cache := newCache(true)
-	cache.Set(1, 1, 1)
-	cache.Del(1)
-	time.Sleep(time.Second / 100)
-	if _, found := cache.Get(1); found {
-		t.Fatal("value shouldn't exist")
-	}
-}
-
-func TestCacheCoster(t *testing.T) {
-	costRuns := uint64(0)
-	cache, err := NewCache(&Config{
-		NumCounters: 1000,
-		MaxCost:     500,
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
 		BufferItems: 64,
-		Cost: func(value interface{}) int64 {
-			atomic.AddUint64(&costRuns, 1)
-			return 5
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	for i := 0; i < 100; i++ {
-		cache.Set(i, i, 0)
-	}
-	time.Sleep(time.Second / 100)
-	for i := 0; i < 100; i++ {
-		if cache.policy.Cost(z.KeyToHash(i)) != 5 {
-			t.Fatal("coster not being ran")
-		}
-	}
-	if costRuns != 100 {
-		t.Fatal("coster not being ran")
-	}
-}
-
-// TestCacheUpdate verifies that a Set call on an existing key immediately
-// updates the value and cost for that key without using/polluting the Set
-// buffer(s).
-func TestCacheUpdate(t *testing.T) {
-	cache := newCache(true)
-	cache.Set(1, 1, 1)
-	// wait for new-item Set to go through
-	time.Sleep(time.Second / 100)
-	// do 100 updates
-	for i := 0; i < 100; i++ {
-		// update the same key (1) with incrementing value and cost, so we can
-		// verify that they are immediately updated and not going through
-		// channels
-		cache.Set(1, i, int64(i))
-		if val, ok := cache.Get(1); !ok || val.(int) != i {
-			t.Fatal("keyUpdate value inconsistent")
-		}
-	}
-	// wait for keyUpdates to go through
-	time.Sleep(time.Second / 100)
-	if cache.Metrics().Get(keyUpdate) == 0 {
-		t.Fatal("keyUpdates not being processed")
-	}
-}
-
-func TestCacheOnEvict(t *testing.T) {
-	mu := &sync.Mutex{}
-	evictions := make(map[uint64]int)
-	cache, err := NewCache(&Config{
-		NumCounters: 1000,
-		MaxCost:     100,
-		BufferItems: 1,
-		OnEvict: func(key uint64, value interface{}, cost int64) {
-			mu.Lock()
-			defer mu.Unlock()
-			evictions[key] = value.(int)
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	for i := 0; i < 256; i++ {
-		cache.Set(i, i, 1)
-	}
-	time.Sleep(time.Second / 100)
-	mu.Lock()
-	defer mu.Unlock()
-	if len(evictions) != 156 {
-		t.Fatal("onEvict not being called")
-	}
-	for k, v := range evictions {
-		if k != uint64(v) {
-			t.Fatal("onEvict key-val mismatch")
-		}
-	}
-}
-
-func TestCacheKeyToHash(t *testing.T) {
-	cache, err := NewCache(&Config{
-		NumCounters: 1000,
-		MaxCost:     100,
-		BufferItems: 1,
-		KeyToHash: func(key interface{}) uint64 {
-			i, ok := key.(int)
-			if !ok {
-				panic("failed to type assert")
-			}
-			return uint64(i + 2)
-		},
+		Metrics:     true,
 	})
 	if err != nil {
 		panic(err)
 	}
 	for i := 0; i < 10; i++ {
-		if uint64(i+2) != cache.keyToHash(i) {
-			t.Fatal("keyToHash hash mismatch")
+		c.Set(i, i, 1)
+	}
+	time.Sleep(time.Millisecond)
+	if c.stats.Get(keyAdd) != 10 {
+		t.Fatal("range of sets not being processed")
+	}
+	c.Clear()
+	if c.stats.Get(keyAdd) != 0 {
+		t.Fatal("clear didn't reset metrics")
+	}
+	for i := 0; i < 10; i++ {
+		if val, ok := c.Get(i); val != nil || ok {
+			t.Fatal("clear didn't delete values")
 		}
 	}
 }
 
-// TestCacheRatios gives us a rough idea of the hit ratio relative to the
-// theoretical optimum. Useful for quickly seeing the effects of changes.
-func TestCacheRatios(t *testing.T) {
-	cache := newCache(true)
-	optimal := NewClairvoyant(capacity)
-	newRatioTest(cache)(t)
-	newRatioTest(optimal)(t)
-	t.Logf("ristretto: %.2f\n", cache.Metrics().Ratio())
-	t.Logf("- optimal: %.2f\n", optimal.Metrics().Ratio())
-}
-
-var newCacheInvalidConfigTests = []struct {
-	conf Config
-	desc string
-}{
-	{
-		conf: Config{
-			NumCounters: 0,
-			MaxCost:     1,
-			BufferItems: 1,
-		},
-		desc: "NumCounters is 0",
-	},
-	{
-		conf: Config{
-			NumCounters: 1,
-			MaxCost:     0,
-			BufferItems: 1,
-		},
-		desc: "MaxCost is 0",
-	},
-	{
-		conf: Config{
-			NumCounters: 1,
-			MaxCost:     1,
-			BufferItems: 0,
-		},
-		desc: "BufferItems is 0",
-	},
-}
-
-func TestNewCacheInvalidConfig(t *testing.T) {
-	for _, tc := range newCacheInvalidConfigTests {
-		_, err := NewCache(&tc.conf)
-
-		if err == nil {
-			t.Fatalf("%s: NewCache should return an error", tc.desc)
-		}
-	}
-
-}
-
-func TestCacheNil(t *testing.T) {
-	var cache *Cache
-
-	r := cache.Set("key", "value", 1)
-	if r != false {
-		t.Fatal("Calling Set on nil Cache should return false")
-	}
-
-	_, r = cache.Get("key")
-	if r != false {
-		t.Fatal("Calling Get on nil Cache should return false")
-	}
-}
-
-func TestCacheDel(t *testing.T) {
-	cache := newCache(true)
-	// fill the cache with data
-	for key := 0; key < capacity; key++ {
-		cache.Set(key, key, 1)
-	}
-	// wait for the Sets to be processed so that all values are in the cache
-	// before we begin Gets, otherwise the hit ratio would be bad
-	time.Sleep(time.Second / 100)
-
-	wg := &sync.WaitGroup{}
-	// launch goroutines to concurrently Del keys
-	for b := 0; b < capacity/100; b++ {
-		wg.Add(1)
-		go func(b int) {
-			for i := 100 * b; i < 100*b+100; i++ {
-				cache.Del(i)
-			}
-			wg.Done()
-		}(b)
-	}
-	wg.Wait()
-
-	// wait for Dels to be processed (they pass through the same buffer as Set)
-	time.Sleep(time.Second / 100)
-
-	for key := 0; key < capacity; key++ {
-		if _, ok := cache.Get(key); ok {
-			t.Fatalf("cache key %d should not be exist\n", key)
-		}
-	}
-
-	if ratio := cache.Metrics().Ratio(); ratio != 0.0 {
-		t.Fatalf("expected 0.00 but got %.2f\n", ratio)
-	}
-}
-
-func TestCacheSetGet(t *testing.T) {
-	cache := newCache(true)
-	// fill the cache with data
-	for key := 0; key < capacity; key++ {
-		cache.Set(key, key, 1)
-	}
-	// wait for the Sets to be processed so that all values are in the cache
-	// before we begin Gets, otherwise the hit ratio would be bad
-	time.Sleep(time.Second / 100)
-	wg := &sync.WaitGroup{}
-	// launch goroutines to concurrently Get random keys
-
-	var err error
-	for r := 0; r < 8; r++ {
-		wg.Add(1)
-		go func() {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			// it's not too important that we iterate through the whole capacity
-			// here, but we want all the goroutines to be Getting in parallel,
-			// so it should iterate long enough that it will continue until the
-			// other goroutines are done spinning up
-			for i := 0; i < capacity; i++ {
-				key := r.Int() % capacity
-				if val, ok := cache.Get(key); ok {
-					if val.(int) != key {
-						err = fmt.Errorf("expected %d but got %d", key, val.(int))
-						break
-					}
-				}
-			}
-			wg.Done()
-		}()
-	}
-	wg.Wait()
+func TestCacheMetrics(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
-
-	if ratio := cache.Metrics().Ratio(); ratio != 1.0 {
-		t.Fatalf("expected 1.00 but got %.2f\n", ratio)
+	for i := 0; i < 10; i++ {
+		c.Set(i, i, 1)
 	}
-}
-
-// TestCacheSetNil makes sure nil values are working properly.
-func TestCacheSetNil(t *testing.T) {
-	cache := newCache(false)
-	cache.Set(1, nil, 1)
-	// must wait for the set buffer
-	time.Sleep(time.Second / 1000)
-	if value, ok := cache.Get(1); !ok || value != nil {
-		t.Fatal("cache value should exist and be nil")
+	time.Sleep(time.Millisecond)
+	m := c.Metrics()
+	if m.KeysAdded != 10 {
+		t.Fatal("metrics exporting incorrect fields")
+	}
+	c = nil
+	if c.Metrics() != nil {
+		t.Fatal("metrics exporting non-nil with nil cache")
 	}
 }
 
-// TestCacheSetDrops simulates a period of high contention and reports the
-// percentage of Sets that are dropped. For most use cases, it would be rare to
-// have more than 4 goroutines calling Set in parallel. Nevertheless, this is a
-// useful stress test.
-func TestCacheSetDrops(t *testing.T) {
-	for goroutines := 1; goroutines <= 16; goroutines++ {
-		n, size := goroutines, capacity*10
-		sample := uint64(n * size)
-		cache := newCache(true)
-		keys := sim.Collection(sim.NewUniform(sample), sample)
-		start, finish := &sync.WaitGroup{}, &sync.WaitGroup{}
-		start.Add(n)
-		finish.Add(n)
-		for i := 0; i < n; i++ {
-			go func(i int) {
-				start.Done()
-				// wait for all goroutines to be ready
-				start.Wait()
-				for j := i * size; j < (i*size)+size; j++ {
-					cache.Set(keys[j], 0, 1)
-				}
-				finish.Done()
-			}(i)
-		}
-		finish.Wait()
-		dropped := cache.Metrics().Get(dropSets)
-		t.Logf("%d goroutines: %.2f%% dropped \n",
-			goroutines, float64(float64(dropped)/float64(sample))*100)
-		runtime.GC()
+func TestMetrics(t *testing.T) {
+	newMetrics()
+}
+
+func TestMetricsAddGet(t *testing.T) {
+	m := newMetrics()
+	m.Add(hit, 1, 1)
+	m.Add(hit, 2, 2)
+	m.Add(hit, 3, 3)
+	if m.Get(hit) != 6 {
+		t.Fatal("add/get error")
+	}
+	m = nil
+	m.Add(hit, 1, 1)
+	if m.Get(hit) != 0 {
+		t.Fatal("get with nil struct should return 0")
 	}
 }
 
-// Clairvoyant is a mock cache providing us with optimal hit ratios to compare
-// with Ristretto's. It looks ahead and evicts the absolute least valuable item,
-// which we try to approximate in a real cache.
-type Clairvoyant struct {
-	capacity uint64
-	hits     map[uint64]uint64
-	access   []uint64
-}
-
-func NewClairvoyant(capacity uint64) *Clairvoyant {
-	return &Clairvoyant{
-		capacity: capacity,
-		hits:     make(map[uint64]uint64),
-		access:   make([]uint64, 0),
+func TestMetricsRatio(t *testing.T) {
+	m := newMetrics()
+	if m.Ratio() != 0 {
+		t.Fatal("ratio with no hits or misses should be 0")
+	}
+	m.Add(hit, 1, 1)
+	m.Add(hit, 2, 2)
+	m.Add(miss, 1, 1)
+	m.Add(miss, 2, 2)
+	if m.Ratio() != 0.5 {
+		t.Fatal("ratio incorrect")
+	}
+	m = nil
+	if m.Ratio() != 0.0 {
+		t.Fatal("ratio with a nil struct should return 0")
 	}
 }
 
-// Get just records the cache access so that we can later take this event into
-// consideration when calculating the absolute least valuable item to evict.
-func (c *Clairvoyant) Get(key interface{}) (interface{}, bool) {
-	c.hits[key.(uint64)]++
-	c.access = append(c.access, key.(uint64))
-	return nil, false
-}
-
-// Set isn't important because it is only called after a Get (in the case of our
-// hit ratio benchmarks, at least).
-func (c *Clairvoyant) Set(key, value interface{}, cost int64) bool {
-	return false
-}
-
-func (c *Clairvoyant) Metrics() *metrics {
-	stat := newMetrics()
-	look := make(map[uint64]struct{}, c.capacity)
-	data := &clairvoyantHeap{}
-	heap.Init(data)
-	for _, key := range c.access {
-		if _, has := look[key]; has {
-			stat.Add(hit, 0, 1)
-			continue
-		}
-		if uint64(data.Len()) >= c.capacity {
-			victim := heap.Pop(data)
-			delete(look, victim.(*clairvoyantItem).key)
-		}
-		stat.Add(miss, 0, 1)
-		look[key] = struct{}{}
-		heap.Push(data, &clairvoyantItem{key, c.hits[key]})
+func TestMetricsExport(t *testing.T) {
+	m := newMetrics()
+	m.Add(hit, 1, 1)
+	m.Add(miss, 1, 1)
+	m.Add(keyAdd, 1, 1)
+	m.Add(keyUpdate, 1, 1)
+	m.Add(keyEvict, 1, 1)
+	m.Add(costAdd, 1, 1)
+	m.Add(costEvict, 1, 1)
+	m.Add(dropSets, 1, 1)
+	m.Add(rejectSets, 1, 1)
+	m.Add(dropGets, 1, 1)
+	m.Add(keepGets, 1, 1)
+	M := exportMetrics(m)
+	if M.Hits != 1 || M.Misses != 1 || M.Ratio != 0.5 || M.KeysAdded != 1 ||
+		M.KeysUpdated != 1 || M.KeysEvicted != 1 || M.CostAdded != 1 ||
+		M.CostEvicted != 1 || M.SetsDropped != 1 || M.SetsRejected != 1 ||
+		M.GetsDropped != 1 || M.GetsKept != 1 {
+		t.Fatal("exportMetrics wrong value(s)")
 	}
-	return stat
-}
-
-type clairvoyantItem struct {
-	key  uint64
-	hits uint64
-}
-
-type clairvoyantHeap []*clairvoyantItem
-
-func (h clairvoyantHeap) Len() int           { return len(h) }
-func (h clairvoyantHeap) Less(i, j int) bool { return h[i].hits < h[j].hits }
-func (h clairvoyantHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *clairvoyantHeap) Push(x interface{}) {
-	*h = append(*h, x.(*clairvoyantItem))
-}
-
-func (h *clairvoyantHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
 }
