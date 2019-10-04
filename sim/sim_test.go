@@ -19,7 +19,6 @@ package sim
 import (
 	"bytes"
 	"compress/gzip"
-	"math"
 	"os"
 	"testing"
 )
@@ -34,16 +33,8 @@ func TestZipfian(t *testing.T) {
 		}
 		m[k]++
 	}
-	maxVal, minVal := uint64(0), uint64(math.MaxUint64)
-	for _, v := range m {
-		if v < minVal {
-			minVal = v
-		} else if v > maxVal {
-			maxVal = v
-		}
-	}
-	if maxVal-minVal < 10 {
-		t.Fatal("zipf not skewed enough")
+	if len(m) == 0 || len(m) == 100 {
+		t.Fatal("zipfian not skewed")
 	}
 }
 
