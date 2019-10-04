@@ -14,7 +14,7 @@ func TestSketch(t *testing.T) {
 	if s.mask != 7 {
 		t.Fatal("not rounding up to next power of 2")
 	}
-	s = newCmSketch(0)
+	newCmSketch(0)
 }
 
 func TestSketchIncrement(t *testing.T) {
