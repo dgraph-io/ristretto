@@ -1,7 +1,7 @@
 # Ristretto
 [![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/dgraph-io/ristretto)
-[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-green)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
-[![Coverage](https://img.shields.io/badge/coverage-79%25-lightgrey)](https://gocover.io/github.com/dgraph-io/ristretto)
+[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://gocover.io/github.com/dgraph-io/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
