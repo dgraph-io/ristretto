@@ -149,7 +149,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	sample := make([]*policyPair, 0, lfuSample)
 	// as items are evicted they will be appended to victims
 	victims := make([]*item, 0)
-	// Delete victims until there's enough space or a minKey is found that has
+	// delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
@@ -162,7 +162,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
 			}
 		}
-		// If the incoming item isn't worth keeping in the policy, reject.
+		// if the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
 			p.stats.Add(rejectSets, key, 1)
 			return victims, false
