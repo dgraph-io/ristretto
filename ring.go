@@ -31,7 +31,6 @@ type ringStripe struct {
 	cons ringConsumer
 	data []uint64
 	capa int
-	busy int32
 }
 
 func newRingStripe(cons ringConsumer, capa int64) *ringStripe {
