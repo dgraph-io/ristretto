@@ -20,9 +20,7 @@
 package ristretto
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -377,38 +375,9 @@ const (
 	doNotUse
 )
 
-func stringFor(t metricType) string {
-	switch t {
-	case hit:
-		return "hit"
-	case miss:
-		return "miss"
-	case keyAdd:
-		return "keys-added"
-	case keyUpdate:
-		return "keys-updated"
-	case keyEvict:
-		return "keys-evicted"
-	case costAdd:
-		return "cost-added"
-	case costEvict:
-		return "cost-evicted"
-	case dropSets:
-		return "sets-dropped"
-	case rejectSets:
-		return "sets-rejected" // by policy.
-	case dropGets:
-		return "gets-dropped"
-	case keepGets:
-		return "gets-kept"
-	default:
-		return "unidentified"
-	}
-}
-
-// metrics is the struct for hit ratio statistics. Note that there is some
-// cost to maintaining the counters, so it's best to wrap Policies via the
-// Recorder type when hit ratio analysis is needed.
+// metrics is the struct for hit ratio statistics. Padding is used to avoid
+// false sharing in order to minimize the performance cost for those who track
+// metrics outside of testing scenarios.
 type metrics struct {
 	all [doNotUse][]*uint64
 }
@@ -457,18 +426,4 @@ func (p *metrics) Ratio() float64 {
 		return 0.0
 	}
 	return float64(hits) / float64(hits+misses)
-}
-
-func (p *metrics) String() string {
-	if p == nil {
-		return ""
-	}
-	var buf bytes.Buffer
-	for i := 0; i < doNotUse; i++ {
-		t := metricType(i)
-		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.Get(t))
-	}
-	fmt.Fprintf(&buf, "gets-total: %d ", p.Get(hit)+p.Get(miss))
-	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
-	return buf.String()
 }
