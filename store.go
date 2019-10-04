@@ -20,6 +20,18 @@ import (
 	"sync"
 )
 
+type storeHash struct {
+	primary   uint64
+	secondary uint64
+}
+
+type storeItem struct {
+	key   storeHash
+	value interface{}
+}
+
+var emptyStoreItem = storeItem{key: storeHash{0, 0}, value: nil}
+
 // store is the interface fulfilled by all hash map implementations in this
 // file. Some hash map implementations are better suited for certain data
 // distributions than others, so this allows us to abstract that out for use
@@ -28,17 +40,17 @@ import (
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get(uint64) (interface{}, bool)
+	Get(storeHash) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
-	Set(uint64, interface{})
+	Set(storeHash, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del(uint64)
-	// Clear clears all contents of the store.
-	Clear()
+	Del(storeHash)
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(uint64, interface{}) bool
+	Update(storeHash, interface{}) bool
+	// Clear clears all contents of the store.
+	Clear()
 }
 
 // newStore returns the default store implementation.
@@ -60,19 +72,24 @@ func newShardedMap() *shardedMap {
 	return sm
 }
 
-func (sm *shardedMap) Get(key uint64) (interface{}, bool) {
-	idx := key % numShards
+func (sm *shardedMap) Get(key storeHash) (interface{}, bool) {
+	idx := key.primary % numShards
 	return sm.shards[idx].Get(key)
 }
 
-func (sm *shardedMap) Set(key uint64, value interface{}) {
-	idx := key % numShards
+func (sm *shardedMap) Set(key storeHash, value interface{}) {
+	idx := key.primary % numShards
 	sm.shards[idx].Set(key, value)
 }
 
-func (sm *shardedMap) Del(key uint64) {
-	idx := key % numShards
+func (sm *shardedMap) Del(key storeHash) {
+	idx := key.primary % numShards
 	sm.shards[idx].Del(key)
+}
+
+func (sm *shardedMap) Update(key storeHash, value interface{}) bool {
+	idx := key.primary % numShards
+	return sm.shards[idx].Update(key, value)
 }
 
 func (sm *shardedMap) Clear() {
@@ -81,44 +98,64 @@ func (sm *shardedMap) Clear() {
 	}
 }
 
-func (sm *shardedMap) Update(key uint64, value interface{}) bool {
-	idx := key % numShards
-	return sm.shards[idx].Update(key, value)
-}
-
 type lockedMap struct {
 	sync.RWMutex
-	data map[uint64]interface{}
+	data map[uint64]storeItem
 }
 
 func newLockedMap() *lockedMap {
-	return &lockedMap{data: make(map[uint64]interface{})}
+	return &lockedMap{
+		data: make(map[uint64]storeItem),
+	}
 }
 
-func (m *lockedMap) Get(key uint64) (interface{}, bool) {
+func (m *lockedMap) Get(key storeHash) (interface{}, bool) {
 	m.RLock()
-	val, found := m.data[key]
+	item, found := m.data[key.primary]
 	m.RUnlock()
-	return val, found
+	if item == emptyStoreItem || !found {
+		return nil, false
+	}
+	if item.key.secondary == key.secondary {
+		return item.value, true
+	}
+	// TODO: log collision
+	return nil, false
 }
 
-func (m *lockedMap) Set(key uint64, value interface{}) {
+func (m *lockedMap) Set(key storeHash, value interface{}) {
 	m.Lock()
-	m.data[key] = value
+	if item, ok := m.data[key.primary]; ok {
+		if item.key.secondary != key.secondary {
+			// TODO: log collision
+			return
+		}
+	}
+	m.data[key.primary] = storeItem{key, value}
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(key uint64) {
+func (m *lockedMap) Del(key storeHash) {
 	m.Lock()
-	delete(m.data, key)
+	if item, ok := m.data[key.primary]; ok {
+		if item.key.secondary != key.secondary {
+			// TODO: log collision
+			return
+		}
+	}
+	delete(m.data, key.primary)
 	m.Unlock()
 }
 
-func (m *lockedMap) Update(key uint64, value interface{}) bool {
+func (m *lockedMap) Update(key storeHash, value interface{}) bool {
 	m.Lock()
 	defer m.Unlock()
-	if _, found := m.data[key]; found {
-		m.data[key] = value
+	if item, ok := m.data[key.primary]; ok {
+		if item.key.secondary != key.secondary {
+			// TODO: log collision
+			return false
+		}
+		m.data[key.primary] = storeItem{key, value}
 		return true
 	}
 	return false
@@ -126,6 +163,6 @@ func (m *lockedMap) Update(key uint64, value interface{}) bool {
 
 func (m *lockedMap) Clear() {
 	m.Lock()
-	defer m.Unlock()
-	m.data = make(map[uint64]interface{})
+	m.data = make(map[uint64]storeItem)
+	m.Unlock()
 }

@@ -21,6 +21,7 @@ package ristretto
 
 import (
 	"errors"
+	"math/rand"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -53,11 +54,13 @@ type Cache struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}) uint64
+	keyToHash func(interface{}, []byte) uint64
 	// stop is used to stop the processItems goroutine
 	stop chan struct{}
 	// cost calculates cost from a value
 	cost func(value interface{}) int64
+
+	seed []byte
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -96,7 +99,7 @@ type Config struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}) uint64
+	KeyToHash func(key interface{}, seed []byte) uint64
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
@@ -114,7 +117,7 @@ const (
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
 	flag  itemFlag
-	key   uint64
+	key   storeHash
 	value interface{}
 	cost  int64
 }
@@ -139,6 +142,7 @@ func NewCache(config *Config) (*Cache, error) {
 		keyToHash: config.KeyToHash,
 		stop:      make(chan struct{}),
 		cost:      config.Cost,
+		seed:      make([]byte, 8),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -146,6 +150,7 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Metrics {
 		cache.collectMetrics()
 	}
+	rand.Read(cache.seed)
 	// NOTE: benchmarks seem to show that performance decreases the more
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
@@ -160,13 +165,16 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil {
 		return nil, false
 	}
-	hash := c.keyToHash(key)
-	c.getBuf.Push(hash)
+	hash := storeHash{
+		primary:   c.keyToHash(key, nil),
+		secondary: c.keyToHash(key, c.seed),
+	}
+	c.getBuf.Push(hash.primary)
 	val, ok := c.store.Get(hash)
 	if ok {
-		c.stats.Add(hit, hash, 1)
+		c.stats.Add(hit, hash.primary, 1)
 	} else {
-		c.stats.Add(miss, hash, 1)
+		c.stats.Add(miss, hash.primary, 1)
 	}
 	return val, ok
 }
@@ -185,8 +193,11 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 		return false
 	}
 	i := &item{
-		flag:  itemNew,
-		key:   c.keyToHash(key),
+		flag: itemNew,
+		key: storeHash{
+			primary:   c.keyToHash(key, nil),
+			secondary: c.keyToHash(key, c.seed),
+		},
 		value: value,
 		cost:  cost,
 	}
@@ -200,7 +211,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	case c.setBuf <- i:
 		return true
 	default:
-		c.stats.Add(dropSets, i.key, 1)
+		c.stats.Add(dropSets, i.key.primary, 1)
 		return false
 	}
 }
@@ -212,7 +223,10 @@ func (c *Cache) Del(key interface{}) {
 	}
 	c.setBuf <- &item{
 		flag: itemDelete,
-		key:  c.keyToHash(key),
+		key: storeHash{
+			primary:   c.keyToHash(key, nil),
+			secondary: c.keyToHash(key, c.seed),
+		},
 	}
 }
 
@@ -255,7 +269,7 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.key, i.cost); added {
+				if victims, added := c.policy.Add(i.key.primary, i.cost); added {
 					// item was accepted by the policy, so add to the hashmap
 					c.store.Set(i.key, i.value)
 					// delete victims
@@ -263,15 +277,15 @@ func (c *Cache) processItems() {
 						// TODO: make Get-Delete atomic
 						if c.onEvict != nil {
 							victim.value, _ = c.store.Get(victim.key)
-							c.onEvict(victim.key, victim.value, victim.cost)
+							c.onEvict(victim.key.primary, victim.value, victim.cost)
 						}
 						c.store.Del(victim.key)
 					}
 				}
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
+				c.policy.Update(i.key.primary, i.cost)
 			case itemDelete:
-				c.policy.Del(i.key)
+				c.policy.Del(i.key.primary)
 				c.store.Del(i.key)
 			}
 		case <-c.stop:
