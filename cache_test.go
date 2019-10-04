@@ -171,6 +171,7 @@ func TestCacheDel(t *testing.T) {
 	}
 	c.Set(1, 1, 1)
 	c.Del(1)
+	time.Sleep(time.Millisecond)
 	if val, ok := c.Get(1); val != nil || ok {
 		t.Fatal("del didn't delete")
 	}
