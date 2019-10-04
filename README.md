@@ -38,6 +38,7 @@ Ristretto is usable but still under active development. We expect it to be produ
 		* [Metrics](#Config)
 		* [OnEvict](#Config)
 		* [KeyToHash](#Config)
+        * [Cost](#Config)
 * [Benchmarks](#Benchmarks)
 	* [Hit Ratios](#Hit-Ratios)
 		* [Search](#Search)
@@ -115,6 +116,18 @@ OnEvict is called for every eviction.
 **KeyToHash** `func(key interface{}) uint64`
 
 KeyToHash is the hashing algorithm used for every key. If this is nil, Ristretto has a variety of [defaults depending on the underlying interface type](https://github.com/dgraph-io/ristretto/blob/master/z/z.go#L19-L41).
+
+**Cost** `func(value interface{}) int64`
+
+Cost is an optional function you can pass to the Config in order to evaluate
+item cost at runtime, and only for the Set calls that aren't dropped (this is
+useful if calculating item cost is particularly expensive and you don't want to
+waste time on items that will be dropped anyways).
+
+To signal to Ristretto that you'd like to use this Cost function:
+
+1. Set the Cost field to a non-nil function.
+2. When calling Set for new items or item updates, use a `cost` of 0.
 
 ## Benchmarks
 
