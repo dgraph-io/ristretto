@@ -19,16 +19,20 @@ package z
 import (
 	"math"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
+func verifyHashProduct(t *testing.T, wants, got uint64) {
+	if wants != got {
+		t.Errorf("expected hash product to equal %d. Got %d", wants, got)
+	}
+}
+
 func TestKeyToHash(t *testing.T) {
-	require.Equal(t, uint64(1), KeyToHash(uint64(1)))
-	require.Equal(t, uint64(1), KeyToHash(1))
-	require.Equal(t, uint64(2), KeyToHash(int32(2)))
-	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int32(-2)))
-	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int64(-2)))
-	require.Equal(t, uint64(3), KeyToHash(uint32(3)))
-	require.Equal(t, uint64(3), KeyToHash(int64(3)))
+	verifyHashProduct(t, 1, KeyToHash(uint64(1)))
+	verifyHashProduct(t, 1, KeyToHash(1))
+	verifyHashProduct(t, 2, KeyToHash(int32(2)))
+	verifyHashProduct(t, math.MaxUint64-1, KeyToHash(int32(-2)))
+	verifyHashProduct(t, math.MaxUint64-1, KeyToHash(int64(-2)))
+	verifyHashProduct(t, 3, KeyToHash(uint32(3)))
+	verifyHashProduct(t, 3, KeyToHash(int64(3)))
 }
