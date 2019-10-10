@@ -21,7 +21,6 @@ package ristretto
 
 import (
 	"errors"
-	"math/rand"
 	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -59,8 +58,6 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value
 	cost func(value interface{}) int64
-
-	seed []byte
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -143,7 +140,6 @@ func NewCache(config *Config) (*Cache, error) {
 		keyToHash: config.KeyToHash,
 		stop:      make(chan struct{}),
 		cost:      config.Cost,
-		seed:      make([]byte, 8),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -151,7 +147,6 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	rand.Read(cache.seed)
 	// NOTE: benchmarks seem to show that performance decreases the more
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
