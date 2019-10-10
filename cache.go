@@ -101,6 +101,14 @@ type Config struct {
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
 	Cost func(value interface{}) int64
+	// Hashes is the number of 64-bit hashes to chain and use as each item's
+	// unique identifier. For example, setting Hashes to 2 will set internal
+	// keys to 128-bits and therefore very little probability of colliding with
+	// another key-value item in the cache. To just use 64-bit keys, set this
+	// value to 0 or 1.
+	//
+	// The larger this value is, the worse throughput performance will be.
+	Hashes uint8
 }
 
 type itemFlag byte
@@ -132,7 +140,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:     newStore(2),
+		store:     newStore(config.Hashes),
 		policy:    policy,
 		getBuf:    newRingBuffer(policy, config.BufferItems),
 		setBuf:    make(chan *item, setBufSize),
