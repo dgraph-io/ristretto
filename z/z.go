@@ -17,14 +17,14 @@
 package z
 
 // KeyToHash interprets the type of key and converts it to a uint64 hash.
-func KeyToHash(key interface{}, seed []byte) uint64 {
+func KeyToHash(key interface{}, seed uint8) uint64 {
 	switch k := key.(type) {
 	case uint64:
 		return k
 	case string:
-		return MemHash(append([]byte(k), seed...))
+		return MemHash(append([]byte(k), seed))
 	case []byte:
-		return MemHash(append(k, seed...))
+		return MemHash(append(k, seed))
 	case byte:
 		return uint64(k)
 	case int:

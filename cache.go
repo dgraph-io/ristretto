@@ -54,7 +54,7 @@ type Cache struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}, []byte) uint64
+	keyToHash func(interface{}, uint8) uint64
 	// stop is used to stop the processItems goroutine
 	stop chan struct{}
 	// cost calculates cost from a value
@@ -99,7 +99,7 @@ type Config struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}, seed []byte) uint64
+	KeyToHash func(key interface{}, seed uint8) uint64
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
@@ -116,10 +116,11 @@ const (
 
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
-	flag  itemFlag
-	key   storeHash
-	value interface{}
-	cost  int64
+	flag   itemFlag
+	key    interface{}
+	hashed uint64
+	value  interface{}
+	cost   int64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -134,7 +135,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:     newStore(),
+		store:     newStore(2),
 		policy:    policy,
 		getBuf:    newRingBuffer(policy, config.BufferItems),
 		setBuf:    make(chan *item, setBufSize),
@@ -165,18 +166,15 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil {
 		return nil, false
 	}
-	hash := storeHash{
-		primary:   c.keyToHash(key, nil),
-		secondary: c.keyToHash(key, c.seed),
-	}
-	c.getBuf.Push(hash.primary)
-	val, ok := c.store.Get(hash)
+	hashed := z.KeyToHash(key, 0)
+	c.getBuf.Push(hashed)
+	value, ok := c.store.Get(key, hashed)
 	if ok {
-		c.stats.Add(hit, hash.primary, 1)
+		c.stats.Add(hit, hashed, 1)
 	} else {
-		c.stats.Add(miss, hash.primary, 1)
+		c.stats.Add(miss, hashed, 1)
 	}
-	return val, ok
+	return value, ok
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -193,17 +191,15 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 		return false
 	}
 	i := &item{
-		flag: itemNew,
-		key: storeHash{
-			primary:   c.keyToHash(key, nil),
-			secondary: c.keyToHash(key, c.seed),
-		},
-		value: value,
-		cost:  cost,
+		flag:   itemNew,
+		key:    key,
+		hashed: z.KeyToHash(key, 0),
+		value:  value,
+		cost:   cost,
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
-	if c.store.Update(i.key, i.value) {
+	if c.store.Update(i.key, i.hashed, i.value) {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
@@ -211,7 +207,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	case c.setBuf <- i:
 		return true
 	default:
-		c.stats.Add(dropSets, i.key.primary, 1)
+		c.stats.Add(dropSets, i.hashed, 1)
 		return false
 	}
 }
@@ -222,11 +218,9 @@ func (c *Cache) Del(key interface{}) {
 		return
 	}
 	c.setBuf <- &item{
-		flag: itemDelete,
-		key: storeHash{
-			primary:   c.keyToHash(key, nil),
-			secondary: c.keyToHash(key, c.seed),
-		},
+		flag:   itemDelete,
+		key:    key,
+		hashed: z.KeyToHash(key, 0),
 	}
 }
 
@@ -269,24 +263,24 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.key.primary, i.cost); added {
+				if victims, added := c.policy.Add(i.hashed, i.cost); added {
 					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.key, i.value)
+					c.store.Set(i.key, i.hashed, i.value)
 					// delete victims
 					for _, victim := range victims {
 						// TODO: make Get-Delete atomic
 						if c.onEvict != nil {
-							victim.value, _ = c.store.Get(victim.key)
-							c.onEvict(victim.key.primary, victim.value, victim.cost)
+							victim.value, _ = c.store.Get(victim.key, victim.hashed)
+							c.onEvict(victim.hashed, victim.value, victim.cost)
 						}
-						c.store.Del(victim.key)
+						c.store.Del(victim.key, victim.hashed)
 					}
 				}
 			case itemUpdate:
-				c.policy.Update(i.key.primary, i.cost)
+				c.policy.Update(i.hashed, i.cost)
 			case itemDelete:
-				c.policy.Del(i.key.primary)
-				c.store.Del(i.key)
+				c.policy.Del(i.hashed)
+				c.store.Del(i.key, i.hashed)
 			}
 		case <-c.stop:
 			return

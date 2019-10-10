@@ -24,11 +24,15 @@ import (
 )
 
 func TestKeyToHash(t *testing.T) {
-	require.Equal(t, uint64(1), KeyToHash(uint64(1)))
-	require.Equal(t, uint64(1), KeyToHash(1))
-	require.Equal(t, uint64(2), KeyToHash(int32(2)))
-	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int32(-2)))
-	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int64(-2)))
-	require.Equal(t, uint64(3), KeyToHash(uint32(3)))
-	require.Equal(t, uint64(3), KeyToHash(int64(3)))
+	require.Equal(t, uint64(1), KeyToHash(uint64(1), 0))
+	require.Equal(t, uint64(1), KeyToHash(1, 0))
+	require.Equal(t, uint64(2), KeyToHash(int32(2), 0))
+	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int32(-2), 0))
+	require.Equal(t, uint64(math.MaxUint64)-1, KeyToHash(int64(-2), 0))
+	require.Equal(t, uint64(3), KeyToHash(uint32(3), 0))
+	require.Equal(t, uint64(3), KeyToHash(int64(3), 0))
+	last := KeyToHash("data", 0)
+	if KeyToHash("data", 1) == last {
+		t.Fatal("seed not being used")
+	}
 }

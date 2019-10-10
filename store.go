@@ -18,19 +18,15 @@ package ristretto
 
 import (
 	"sync"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
-type storeHash struct {
-	primary   uint64
-	secondary uint64
-}
-
 type storeItem struct {
-	key   storeHash
-	value interface{}
+	hashed uint64
+	hashes []uint64
+	value  interface{}
 }
-
-var emptyStoreItem = storeItem{key: storeHash{0, 0}, value: nil}
 
 // store is the interface fulfilled by all hash map implementations in this
 // file. Some hash map implementations are better suited for certain data
@@ -40,22 +36,22 @@ var emptyStoreItem = storeItem{key: storeHash{0, 0}, value: nil}
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get(storeHash) (interface{}, bool)
+	Get(interface{}, uint64) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
-	Set(storeHash, interface{})
+	Set(interface{}, uint64, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del(storeHash)
+	Del(interface{}, uint64)
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(storeHash, interface{}) bool
+	Update(interface{}, uint64, interface{}) bool
 	// Clear clears all contents of the store.
 	Clear()
 }
 
 // newStore returns the default store implementation.
-func newStore() store {
-	return newShardedMap()
+func newStore(rounds uint8) store {
+	return newShardedMap(rounds)
 }
 
 const numShards uint64 = 256
@@ -64,32 +60,30 @@ type shardedMap struct {
 	shards []*lockedMap
 }
 
-func newShardedMap() *shardedMap {
-	sm := &shardedMap{shards: make([]*lockedMap, int(numShards))}
+func newShardedMap(rounds uint8) *shardedMap {
+	sm := &shardedMap{
+		shards: make([]*lockedMap, int(numShards)),
+	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap()
+		sm.shards[i] = newLockedMap(rounds)
 	}
 	return sm
 }
 
-func (sm *shardedMap) Get(key storeHash) (interface{}, bool) {
-	idx := key.primary % numShards
-	return sm.shards[idx].Get(key)
+func (sm *shardedMap) Get(key interface{}, hashed uint64) (interface{}, bool) {
+	return sm.shards[hashed%numShards].Get(key, hashed)
 }
 
-func (sm *shardedMap) Set(key storeHash, value interface{}) {
-	idx := key.primary % numShards
-	sm.shards[idx].Set(key, value)
+func (sm *shardedMap) Set(key interface{}, hashed uint64, value interface{}) {
+	sm.shards[hashed%numShards].Set(key, hashed, value)
 }
 
-func (sm *shardedMap) Del(key storeHash) {
-	idx := key.primary % numShards
-	sm.shards[idx].Del(key)
+func (sm *shardedMap) Del(key interface{}, hashed uint64) {
+	sm.shards[hashed%numShards].Del(key, hashed)
 }
 
-func (sm *shardedMap) Update(key storeHash, value interface{}) bool {
-	idx := key.primary % numShards
-	return sm.shards[idx].Update(key, value)
+func (sm *shardedMap) Update(key interface{}, hashed uint64, value interface{}) bool {
+	return sm.shards[hashed%numShards].Update(key, hashed, value)
 }
 
 func (sm *shardedMap) Clear() {
@@ -100,65 +94,111 @@ func (sm *shardedMap) Clear() {
 
 type lockedMap struct {
 	sync.RWMutex
-	data map[uint64]storeItem
+	data   map[uint64]storeItem
+	rounds uint8
 }
 
-func newLockedMap() *lockedMap {
+func newLockedMap(rounds uint8) *lockedMap {
 	return &lockedMap{
-		data: make(map[uint64]storeItem),
+		data:   make(map[uint64]storeItem),
+		rounds: rounds,
 	}
 }
 
-func (m *lockedMap) Get(key storeHash) (interface{}, bool) {
+func (m *lockedMap) Get(key interface{}, hashed uint64) (interface{}, bool) {
+	if key == nil {
+		key = hashed
+	}
 	m.RLock()
-	item, found := m.data[key.primary]
+	item, ok := m.data[hashed]
 	m.RUnlock()
-	if item == emptyStoreItem || !found {
+	if !ok {
 		return nil, false
 	}
-	if item.key.secondary == key.secondary {
-		return item.value, true
+	for i := uint8(1); i < m.rounds; i++ {
+		if z.KeyToHash(key, i) != item.hashes[i-1] {
+			return nil, false
+		}
 	}
-	// TODO: log collision
-	return nil, false
+	return item.value, true
 }
 
-func (m *lockedMap) Set(key storeHash, value interface{}) {
+func (m *lockedMap) Set(key interface{}, hashed uint64, value interface{}) {
+	if key == nil {
+		key = hashed
+	}
 	m.Lock()
-	if item, ok := m.data[key.primary]; ok {
-		if item.key.secondary != key.secondary {
-			// TODO: log collision
+	item, ok := m.data[hashed]
+	if !ok {
+		hashes := make([]uint64, m.rounds)
+		for i := uint8(1); i < m.rounds; i++ {
+			hashes[i-1] = z.KeyToHash(key, i)
+		}
+		m.data[hashed] = storeItem{
+			hashed: hashed,
+			hashes: hashes,
+			value:  value,
+		}
+		m.Unlock()
+		return
+	}
+	for i := uint8(1); i < m.rounds; i++ {
+		if z.KeyToHash(key, i) != item.hashes[i-1] {
+			m.Unlock()
 			return
 		}
 	}
-	m.data[key.primary] = storeItem{key, value}
+	m.data[hashed] = storeItem{
+		hashed: hashed,
+		hashes: item.hashes,
+		value:  value,
+	}
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(key storeHash) {
+func (m *lockedMap) Del(key interface{}, hashed uint64) {
+	if key == nil {
+		key = hashed
+	}
 	m.Lock()
-	if item, ok := m.data[key.primary]; ok {
-		if item.key.secondary != key.secondary {
-			// TODO: log collision
+	item, ok := m.data[hashed]
+	if !ok {
+		m.Unlock()
+		return
+	}
+	for i := uint8(1); i < m.rounds; i++ {
+		if z.KeyToHash(key, i) != item.hashes[i-1] {
+			m.Unlock()
 			return
 		}
 	}
-	delete(m.data, key.primary)
+	delete(m.data, hashed)
 	m.Unlock()
 }
 
-func (m *lockedMap) Update(key storeHash, value interface{}) bool {
+func (m *lockedMap) Update(key interface{}, hashed uint64, value interface{}) bool {
+	if key == nil {
+		key = hashed
+	}
 	m.Lock()
-	defer m.Unlock()
-	if item, ok := m.data[key.primary]; ok {
-		if item.key.secondary != key.secondary {
-			// TODO: log collision
+	item, ok := m.data[hashed]
+	if !ok {
+		m.Unlock()
+		return false
+	}
+	for i := uint8(1); i < m.rounds; i++ {
+		if z.KeyToHash(key, i) != item.hashes[i-1] {
+			m.Unlock()
 			return false
 		}
-		m.data[key.primary] = storeItem{key, value}
-		return true
 	}
-	return false
+	m.data[hashed] = storeItem{
+		hashed: hashed,
+		hashes: item.hashes,
+		value:  value,
+	}
+	m.Unlock()
+	return true
 }
 
 func (m *lockedMap) Clear() {

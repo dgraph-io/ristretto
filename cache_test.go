@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
 func TestCache(t *testing.T) {
@@ -54,28 +56,68 @@ func TestCacheProcessItems(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.setBuf <- &item{flag: itemNew, key: 1, value: 1, cost: 0}
+	c.setBuf <- &item{
+		flag:   itemNew,
+		key:    1,
+		hashed: z.KeyToHash(1, 0),
+		value:  1,
+		cost:   0,
+	}
 	time.Sleep(time.Millisecond)
 	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
 		t.Fatal("cache processItems didn't add new item")
 	}
-	c.setBuf <- &item{flag: itemUpdate, key: 1, value: 2, cost: 0}
+	c.setBuf <- &item{
+		flag:   itemUpdate,
+		key:    1,
+		hashed: z.KeyToHash(1, 0),
+		value:  2,
+		cost:   0,
+	}
 	time.Sleep(time.Millisecond)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
 	}
-	c.setBuf <- &item{flag: itemDelete, key: 1}
+	c.setBuf <- &item{
+		flag:   itemDelete,
+		key:    1,
+		hashed: z.KeyToHash(1, 0),
+	}
 	time.Sleep(time.Millisecond)
-	if val, ok := c.store.Get(1); val != nil || ok {
+	if val, ok := c.store.Get(1, z.KeyToHash(1, 0)); val != nil || ok {
 		t.Fatal("cache processItems didn't delete item")
 	}
 	if c.policy.Has(1) {
 		t.Fatal("cache processItems didn't delete item")
 	}
-	c.setBuf <- &item{flag: itemNew, key: 2, value: 2, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 3, value: 3, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 4, value: 3, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 5, value: 3, cost: 5}
+	c.setBuf <- &item{
+		flag:   itemNew,
+		key:    2,
+		hashed: z.KeyToHash(2, 0),
+		value:  2,
+		cost:   3,
+	}
+	c.setBuf <- &item{
+		flag:   itemNew,
+		key:    3,
+		hashed: z.KeyToHash(3, 0),
+		value:  3,
+		cost:   3,
+	}
+	c.setBuf <- &item{
+		flag:   itemNew,
+		key:    4,
+		hashed: z.KeyToHash(4, 0),
+		value:  3,
+		cost:   3,
+	}
+	c.setBuf <- &item{
+		flag:   itemNew,
+		key:    5,
+		hashed: z.KeyToHash(5, 0),
+		value:  3,
+		cost:   5,
+	}
 	time.Sleep(time.Millisecond)
 	m.Lock()
 	if len(evicted) == 0 {
@@ -102,7 +144,7 @@ func TestCacheGet(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.store.Set(1, 1)
+	c.store.Set(1, z.KeyToHash(1, 0), 1)
 	if val, ok := c.Get(1); val == nil || !ok {
 		t.Fatal("get should be successful")
 	}
@@ -139,12 +181,19 @@ func TestCacheSet(t *testing.T) {
 		}
 	}
 	c.Set(1, 2, 2)
-	if val, ok := c.store.Get(1); val == nil || val.(int) != 2 || !ok {
+	val, ok := c.store.Get(1, z.KeyToHash(1, 0))
+	if val == nil || val.(int) != 2 || !ok {
 		t.Fatal("set/update was unsuccessful")
 	}
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
-		c.setBuf <- &item{itemUpdate, 1, 1, 1}
+		c.setBuf <- &item{
+			flag:   itemUpdate,
+			key:    1,
+			hashed: z.KeyToHash(1, 0),
+			value:  1,
+			cost:   1,
+		}
 	}
 	if c.Set(2, 2, 1) {
 		t.Fatal("set should be dropped with full setBuf")
