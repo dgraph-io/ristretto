@@ -25,7 +25,7 @@ func TestPolicyMetrics(t *testing.T) {
 func TestPolicyProcessItems(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.itemsCh <- []uint64{1, 2, 2}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	p.Lock()
 	if p.admit.Estimate(2) != 2 || p.admit.Estimate(1) != 1 {
 		p.Unlock()
@@ -34,7 +34,7 @@ func TestPolicyProcessItems(t *testing.T) {
 	p.Unlock()
 	p.stop <- struct{}{}
 	p.itemsCh <- []uint64{3, 3, 3}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	p.Lock()
 	if p.admit.Estimate(3) != 0 {
 		p.Unlock()
