@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var wait time.Duration = time.Millisecond * 10
+
 func TestCache(t *testing.T) {
 	if _, err := NewCache(&Config{
 		NumCounters: 0,
@@ -55,17 +57,17 @@ func TestCacheProcessItems(t *testing.T) {
 		panic(err)
 	}
 	c.setBuf <- &item{flag: itemNew, key: 1, value: 1, cost: 0}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
 		t.Fatal("cache processItems didn't add new item")
 	}
 	c.setBuf <- &item{flag: itemUpdate, key: 1, value: 2, cost: 0}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
 	}
 	c.setBuf <- &item{flag: itemDelete, key: 1}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if val, ok := c.store.Get(1); val != nil || ok {
 		t.Fatal("cache processItems didn't delete item")
 	}
@@ -76,7 +78,7 @@ func TestCacheProcessItems(t *testing.T) {
 	c.setBuf <- &item{flag: itemNew, key: 3, value: 3, cost: 3}
 	c.setBuf <- &item{flag: itemNew, key: 4, value: 3, cost: 3}
 	c.setBuf <- &item{flag: itemNew, key: 5, value: 3, cost: 5}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	m.Lock()
 	if len(evicted) == 0 {
 		m.Unlock()
@@ -129,7 +131,7 @@ func TestCacheSet(t *testing.T) {
 		panic(err)
 	}
 	if c.Set(1, 1, 1) {
-		time.Sleep(time.Millisecond)
+		time.Sleep(wait)
 		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
 			t.Fatal("set/get returned wrong value")
 		}
@@ -171,7 +173,7 @@ func TestCacheDel(t *testing.T) {
 	}
 	c.Set(1, 1, 1)
 	c.Del(1)
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if val, ok := c.Get(1); val != nil || ok {
 		t.Fatal("del didn't delete")
 	}
@@ -197,7 +199,7 @@ func TestCacheClear(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if c.stats.Get(keyAdd) != 10 {
 		t.Fatal("range of sets not being processed")
 	}
@@ -225,7 +227,7 @@ func TestCacheMetrics(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	m := c.Metrics()
 	if m.KeysAdded != 10 {
 		t.Fatal("metrics exporting incorrect fields")

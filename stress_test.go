@@ -25,7 +25,7 @@ func TestStressSetGet(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		c.Set(i, i, 1)
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	wg := &sync.WaitGroup{}
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		wg.Add(1)
