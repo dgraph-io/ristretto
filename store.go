@@ -106,27 +106,23 @@ func newLockedMap(rounds uint8) *lockedMap {
 }
 
 func (m *lockedMap) Get(hashed uint64, key interface{}) (interface{}, bool) {
-	if key == nil {
-		key = hashed
-	}
 	m.RLock()
 	item, ok := m.data[hashed]
 	m.RUnlock()
 	if !ok {
 		return nil, false
 	}
-	for i := uint8(1); i < m.rounds; i++ {
-		if z.KeyToHash(key, i) != item.hashes[i-1] {
-			return nil, false
+	if key != nil {
+		for i := uint8(1); i < m.rounds; i++ {
+			if z.KeyToHash(key, i) != item.hashes[i-1] {
+				return nil, false
+			}
 		}
 	}
 	return item.value, true
 }
 
 func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
-	if key == nil {
-		key = hashed
-	}
 	m.Lock()
 	item, ok := m.data[hashed]
 	if !ok {
@@ -142,10 +138,12 @@ func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
 		m.Unlock()
 		return
 	}
-	for i := uint8(1); i < m.rounds; i++ {
-		if z.KeyToHash(key, i) != item.hashes[i-1] {
-			m.Unlock()
-			return
+	if key != nil {
+		for i := uint8(1); i < m.rounds; i++ {
+			if z.KeyToHash(key, i) != item.hashes[i-1] {
+				m.Unlock()
+				return
+			}
 		}
 	}
 	m.data[hashed] = storeItem{
@@ -157,19 +155,18 @@ func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
 }
 
 func (m *lockedMap) Del(hashed uint64, key interface{}) {
-	if key == nil {
-		key = hashed
-	}
 	m.Lock()
 	item, ok := m.data[hashed]
 	if !ok {
 		m.Unlock()
 		return
 	}
-	for i := uint8(1); i < m.rounds; i++ {
-		if z.KeyToHash(key, i) != item.hashes[i-1] {
-			m.Unlock()
-			return
+	if key != nil {
+		for i := uint8(1); i < m.rounds; i++ {
+			if z.KeyToHash(key, i) != item.hashes[i-1] {
+				m.Unlock()
+				return
+			}
 		}
 	}
 	delete(m.data, hashed)
@@ -177,19 +174,18 @@ func (m *lockedMap) Del(hashed uint64, key interface{}) {
 }
 
 func (m *lockedMap) Update(hashed uint64, key, value interface{}) bool {
-	if key == nil {
-		key = hashed
-	}
 	m.Lock()
 	item, ok := m.data[hashed]
 	if !ok {
 		m.Unlock()
 		return false
 	}
-	for i := uint8(1); i < m.rounds; i++ {
-		if z.KeyToHash(key, i) != item.hashes[i-1] {
-			m.Unlock()
-			return false
+	if key != nil {
+		for i := uint8(1); i < m.rounds; i++ {
+			if z.KeyToHash(key, i) != item.hashes[i-1] {
+				m.Unlock()
+				return false
+			}
 		}
 	}
 	m.data[hashed] = storeItem{

@@ -210,18 +210,19 @@ func (p *defaultPolicy) Update(key uint64, cost int64) {
 
 func (p *defaultPolicy) Cost(key uint64) int64 {
 	p.Lock()
-	defer p.Unlock()
 	if cost, found := p.evict.keyCosts[key]; found {
+		p.Unlock()
 		return cost
 	}
+	p.Unlock()
 	return -1
 }
 
 func (p *defaultPolicy) Clear() {
 	p.Lock()
-	defer p.Unlock()
 	p.admit.clear()
 	p.evict.clear()
+	p.Unlock()
 }
 
 func (p *defaultPolicy) Close() {

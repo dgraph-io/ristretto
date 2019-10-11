@@ -166,7 +166,7 @@ func NewCache(config *Config) (*Cache, error) {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	if c == nil {
+	if c == nil || key == nil {
 		return nil, false
 	}
 	hashed := z.KeyToHash(key, 0)
@@ -190,7 +190,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
 func (c *Cache) Set(key, value interface{}, cost int64) bool {
-	if c == nil {
+	if c == nil || key == nil {
 		return false
 	}
 	i := &item{
@@ -217,7 +217,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil {
+	if c == nil || key == nil {
 		return
 	}
 	c.setBuf <- &item{
@@ -273,10 +273,14 @@ func (c *Cache) processItems() {
 					for _, victim := range victims {
 						// TODO: make Get-Delete atomic
 						if c.onEvict != nil {
-							victim.value, _ = c.store.Get(victim.hashed, victim.key)
+							// force get with no collision checking because
+							// we don't have access to the victim's key
+							victim.value, _ = c.store.Get(victim.hashed, nil)
 							c.onEvict(victim.hashed, victim.value, victim.cost)
 						}
-						c.store.Del(victim.hashed, victim.key)
+						// force delete with no collision checking because we
+						// don't have access to the original, unhashed key
+						c.store.Del(victim.hashed, nil)
 					}
 				}
 			case itemUpdate:

@@ -18,6 +18,9 @@ package z
 
 // KeyToHash interprets the type of key and converts it to a uint64 hash.
 func KeyToHash(key interface{}, seed uint8) uint64 {
+	if key == nil {
+		return 0 + uint64(seed)
+	}
 	switch k := key.(type) {
 	case uint64:
 		return k
