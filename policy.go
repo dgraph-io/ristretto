@@ -17,7 +17,6 @@
 package ristretto
 
 import (
-	"container/list"
 	"math"
 	"sync"
 
@@ -31,6 +30,9 @@ const (
 )
 
 // policy is the interface encapsulating eviction/admission behavior.
+//
+// TODO: remove this interface and just rename defaultPolicy to policy, as we
+//       are probably only going to use/implement/maintain one policy.
 type policy interface {
 	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
@@ -56,6 +58,19 @@ type policy interface {
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
+	return newDefaultPolicy(numCounters, maxCost)
+}
+
+type defaultPolicy struct {
+	sync.Mutex
+	admit   *tinyLFU
+	evict   *sampledLFU
+	itemsCh chan []uint64
+	stop    chan struct{}
+	metrics *Metrics
+}
+
+func newDefaultPolicy(numCounters, maxCost int64) *defaultPolicy {
 	p := &defaultPolicy{
 		admit:   newTinyLFU(numCounters),
 		evict:   newSampledLFU(maxCost),
@@ -64,17 +79,6 @@ func newPolicy(numCounters, maxCost int64) policy {
 	}
 	go p.processItems()
 	return p
-}
-
-// defaultPolicy is the default defaultPolicy, which is currently TinyLFU
-// admission with sampledLFU eviction.
-type defaultPolicy struct {
-	sync.Mutex
-	admit   *tinyLFU
-	evict   *sampledLFU
-	itemsCh chan []uint64
-	stop    chan struct{}
-	metrics *Metrics
 }
 
 func (p *defaultPolicy) CollectMetrics(metrics *Metrics) {
@@ -145,7 +149,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	sample := make([]*policyPair, 0, lfuSample)
 	// as items are evicted they will be appended to victims
 	victims := make([]*item, 0)
-	// Delete victims until there's enough space or a minKey is found that has
+	// delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// fill up empty slots in sample
@@ -158,7 +162,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
 			}
 		}
-		// If the incoming item isn't worth keeping in the policy, reject.
+		// if the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
@@ -352,127 +356,3 @@ func (p *tinyLFU) clear() {
 	p.door.Clear()
 	p.freq.Clear()
 }
-
-// lruPolicy is different than the default policy in that it uses exact LRU
-// eviction rather than Sampled LFU eviction, which may be useful for certain
-// workloads (ARC-OLTP for example; LRU heavy workloads).
-//
-// TODO: - cost based eviction (multiple evictions for one new item, etc.)
-//       - sampled LRU
-type lruPolicy struct {
-	sync.Mutex
-	admit   *tinyLFU
-	ptrs    map[uint64]*lruItem
-	vals    *list.List
-	maxCost int64
-	room    int64
-}
-
-type lruItem struct {
-	ptr  *list.Element
-	key  uint64
-	cost int64
-}
-
-func newLRUPolicy(numCounters, maxCost int64) policy {
-	return &lruPolicy{
-		admit:   newTinyLFU(numCounters),
-		ptrs:    make(map[uint64]*lruItem, maxCost),
-		vals:    list.New(),
-		room:    maxCost,
-		maxCost: maxCost,
-	}
-}
-
-func (p *lruPolicy) Push(keys []uint64) bool {
-	if len(keys) == 0 {
-		return true
-	}
-	p.Lock()
-	defer p.Unlock()
-	for _, key := range keys {
-		// increment tinylfu counter
-		p.admit.Increment(key)
-		// move list item to front
-		if val, ok := p.ptrs[key]; ok {
-			// move accessed val to MRU position
-			p.vals.MoveToFront(val.ptr)
-		}
-	}
-	return true
-}
-
-func (p *lruPolicy) Add(key uint64, cost int64) ([]*item, bool) {
-	p.Lock()
-	defer p.Unlock()
-	if cost > p.maxCost {
-		return nil, false
-	}
-	if val, has := p.ptrs[key]; has {
-		p.vals.MoveToFront(val.ptr)
-		return nil, true
-	}
-	victims := make([]*item, 0)
-	incHits := p.admit.Estimate(key)
-	for p.room < 0 {
-		lru := p.vals.Back()
-		victim := lru.Value.(*lruItem)
-		if incHits < p.admit.Estimate(victim.key) {
-			return victims, false
-		}
-		// delete victim from metadata
-		p.vals.Remove(victim.ptr)
-		delete(p.ptrs, victim.key)
-		victims = append(victims, &item{
-			key:  victim.key,
-			cost: victim.cost,
-		})
-		// adjust room
-		p.room += victim.cost
-	}
-	newItem := &lruItem{key: key, cost: cost}
-	newItem.ptr = p.vals.PushFront(newItem)
-	p.ptrs[key] = newItem
-	p.room -= cost
-	return victims, true
-}
-
-func (p *lruPolicy) Has(key uint64) bool {
-	p.Lock()
-	defer p.Unlock()
-	_, has := p.ptrs[key]
-	return has
-}
-
-func (p *lruPolicy) Del(key uint64) {
-	p.Lock()
-	defer p.Unlock()
-	if val, ok := p.ptrs[key]; ok {
-		p.vals.Remove(val.ptr)
-		delete(p.ptrs, key)
-	}
-}
-
-func (p *lruPolicy) Cap() int64 {
-	p.Lock()
-	defer p.Unlock()
-	return int64(p.vals.Len())
-}
-
-func (p *lruPolicy) Close() {}
-
-// TODO
-func (p *lruPolicy) Update(key uint64, cost int64) {
-}
-
-// TODO
-func (p *lruPolicy) Cost(key uint64) int64 {
-	return -1
-}
-
-// TODO
-func (p *lruPolicy) CollectMetrics(metrics *Metrics) {
-}
-
-// TODO
-func (p *lruPolicy) Clear() {}

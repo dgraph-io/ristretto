@@ -133,12 +133,9 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:  newStore(),
-		policy: policy,
-		getBuf: newRingBuffer(ringLossy, &ringConfig{
-			Consumer: policy,
-			Capacity: config.BufferItems,
-		}),
+		store:     newStore(),
+		policy:    policy,
+		getBuf:    newRingBuffer(policy, config.BufferItems),
 		setBuf:    make(chan *item, setBufSize),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
