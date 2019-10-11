@@ -171,7 +171,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	}
 	hashed := z.KeyToHash(key, 0)
 	c.getBuf.Push(hashed)
-	value, ok := c.store.Get(key, hashed)
+	value, ok := c.store.Get(hashed, key)
 	if ok {
 		c.stats.Add(hit, hashed, 1)
 	} else {
@@ -202,7 +202,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
-	if c.store.Update(i.key, i.hashed, i.value) {
+	if c.store.Update(i.hashed, i.key, i.value) {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
@@ -268,22 +268,22 @@ func (c *Cache) processItems() {
 			case itemNew:
 				if victims, added := c.policy.Add(i.hashed, i.cost); added {
 					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.key, i.hashed, i.value)
+					c.store.Set(i.hashed, i.key, i.value)
 					// delete victims
 					for _, victim := range victims {
 						// TODO: make Get-Delete atomic
 						if c.onEvict != nil {
-							victim.value, _ = c.store.Get(victim.key, victim.hashed)
+							victim.value, _ = c.store.Get(victim.hashed, victim.key)
 							c.onEvict(victim.hashed, victim.value, victim.cost)
 						}
-						c.store.Del(victim.key, victim.hashed)
+						c.store.Del(victim.hashed, victim.key)
 					}
 				}
 			case itemUpdate:
 				c.policy.Update(i.hashed, i.cost)
 			case itemDelete:
 				c.policy.Del(i.hashed)
-				c.store.Del(i.key, i.hashed)
+				c.store.Del(i.hashed, i.key)
 			}
 		case <-c.stop:
 			return

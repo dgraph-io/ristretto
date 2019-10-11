@@ -36,15 +36,15 @@ type storeItem struct {
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get(interface{}, uint64) (interface{}, bool)
+	Get(uint64, interface{}) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
-	Set(interface{}, uint64, interface{})
+	Set(uint64, interface{}, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del(interface{}, uint64)
+	Del(uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(interface{}, uint64, interface{}) bool
+	Update(uint64, interface{}, interface{}) bool
 	// Clear clears all contents of the store.
 	Clear()
 }
@@ -70,20 +70,20 @@ func newShardedMap(rounds uint8) *shardedMap {
 	return sm
 }
 
-func (sm *shardedMap) Get(key interface{}, hashed uint64) (interface{}, bool) {
-	return sm.shards[hashed%numShards].Get(key, hashed)
+func (sm *shardedMap) Get(hashed uint64, key interface{}) (interface{}, bool) {
+	return sm.shards[hashed%numShards].Get(hashed, key)
 }
 
-func (sm *shardedMap) Set(key interface{}, hashed uint64, value interface{}) {
-	sm.shards[hashed%numShards].Set(key, hashed, value)
+func (sm *shardedMap) Set(hashed uint64, key, value interface{}) {
+	sm.shards[hashed%numShards].Set(hashed, key, value)
 }
 
-func (sm *shardedMap) Del(key interface{}, hashed uint64) {
-	sm.shards[hashed%numShards].Del(key, hashed)
+func (sm *shardedMap) Del(hashed uint64, key interface{}) {
+	sm.shards[hashed%numShards].Del(hashed, key)
 }
 
-func (sm *shardedMap) Update(key interface{}, hashed uint64, value interface{}) bool {
-	return sm.shards[hashed%numShards].Update(key, hashed, value)
+func (sm *shardedMap) Update(hashed uint64, key, value interface{}) bool {
+	return sm.shards[hashed%numShards].Update(hashed, key, value)
 }
 
 func (sm *shardedMap) Clear() {
@@ -105,7 +105,7 @@ func newLockedMap(rounds uint8) *lockedMap {
 	}
 }
 
-func (m *lockedMap) Get(key interface{}, hashed uint64) (interface{}, bool) {
+func (m *lockedMap) Get(hashed uint64, key interface{}) (interface{}, bool) {
 	if key == nil {
 		key = hashed
 	}
@@ -123,7 +123,7 @@ func (m *lockedMap) Get(key interface{}, hashed uint64) (interface{}, bool) {
 	return item.value, true
 }
 
-func (m *lockedMap) Set(key interface{}, hashed uint64, value interface{}) {
+func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
 	if key == nil {
 		key = hashed
 	}
@@ -156,7 +156,7 @@ func (m *lockedMap) Set(key interface{}, hashed uint64, value interface{}) {
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(key interface{}, hashed uint64) {
+func (m *lockedMap) Del(hashed uint64, key interface{}) {
 	if key == nil {
 		key = hashed
 	}
@@ -176,7 +176,7 @@ func (m *lockedMap) Del(key interface{}, hashed uint64) {
 	m.Unlock()
 }
 
-func (m *lockedMap) Update(key interface{}, hashed uint64, value interface{}) bool {
+func (m *lockedMap) Update(hashed uint64, key, value interface{}) bool {
 	if key == nil {
 		key = hashed
 	}
