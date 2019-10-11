@@ -47,9 +47,6 @@ type Cache struct {
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention
 	setBuf chan *item
-	// stats contains a running log of important statistics like hits, misses,
-	// and dropped items
-	stats *metrics
 	// onEvict is called for item evictions
 	onEvict func(uint64, interface{}, int64)
 	// KeyToHash function is used to customize the key hashing algorithm.
@@ -60,6 +57,9 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value
 	cost func(value interface{}) int64
+	// Metrics contains a running log of important statistics like hits, misses,
+	// and dropped items
+	Metrics *Metrics
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -169,9 +169,9 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	c.getBuf.Push(hash)
 	val, ok := c.store.Get(hash)
 	if ok {
-		c.stats.Add(hit, hash, 1)
+		c.Metrics.add(hit, hash, 1)
 	} else {
-		c.stats.Add(miss, hash, 1)
+		c.Metrics.add(miss, hash, 1)
 	}
 	return val, ok
 }
@@ -205,7 +205,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	case c.setBuf <- i:
 		return true
 	default:
-		c.stats.Add(dropSets, i.key, 1)
+		c.Metrics.add(dropSets, i.key, 1)
 		return false
 	}
 }
@@ -242,7 +242,7 @@ func (c *Cache) Clear() {
 	c.policy.Clear()
 	c.store.Clear()
 	// only reset metrics if they're enabled
-	if c.stats != nil {
+	if c.Metrics != nil {
 		c.collectMetrics()
 	}
 	// restart processItems goroutine
@@ -285,75 +285,11 @@ func (c *Cache) processItems() {
 	}
 }
 
-// collectMetrics just creates a new *metrics instance and adds the pointers
+// collectMetrics just creates a new *Metrics instance and adds the pointers
 // to the cache and policy instances.
 func (c *Cache) collectMetrics() {
-	stats := newMetrics()
-	c.stats = stats
-	c.policy.CollectMetrics(stats)
-}
-
-// Metrics returns statistics about cache performance.
-func (c *Cache) Metrics() *Metrics {
-	if c == nil {
-		return nil
-	}
-	return exportMetrics(c.stats)
-}
-
-// exportMetrics converts an internal metrics struct into a friendlier Metrics
-// struct.
-func exportMetrics(stats *metrics) *Metrics {
-	return &Metrics{
-		Hits:         stats.Get(hit),
-		Misses:       stats.Get(miss),
-		Ratio:        stats.Ratio(),
-		KeysAdded:    stats.Get(keyAdd),
-		KeysUpdated:  stats.Get(keyUpdate),
-		KeysEvicted:  stats.Get(keyEvict),
-		CostAdded:    stats.Get(costAdd),
-		CostEvicted:  stats.Get(costEvict),
-		SetsDropped:  stats.Get(dropSets),
-		SetsRejected: stats.Get(rejectSets),
-		GetsDropped:  stats.Get(dropGets),
-		GetsKept:     stats.Get(keepGets),
-	}
-}
-
-// Metrics is a snapshot of performance statistics for the lifetime of a cache
-// instance.
-type Metrics struct {
-	// Hits is the number of Get calls where a value was found for the
-	// corresponding key.
-	Hits uint64 `json:"hits"`
-	// Misses is the number of Get calls where a value was not found for the
-	// corresponding key.
-	Misses uint64 `json:"misses"`
-	// Ratio is the number of Hits over all accesses (Hits + Misses). This is
-	// the percentage of successful Get calls.
-	Ratio float64 `json:"ratio"`
-	// KeysAdded is the total number of Set calls where a new key-value item was
-	// added.
-	KeysAdded uint64 `json:"keysAdded"`
-	// KeysUpdated is the total number of Set calls where the value was updated.
-	KeysUpdated uint64 `json:"keysUpdated"`
-	// KeysEvicted is the total number of keys evicted.
-	KeysEvicted uint64 `json:"keysEvicted"`
-	// CostAdded is the sum of all costs that have been added (successful Set
-	// calls).
-	CostAdded uint64 `json:"costAdded"`
-	// CostEvicted is the sum of all costs that have been evicted.
-	CostEvicted uint64 `json:"costEvicted"`
-	// SetsDropped is the number of Set calls that don't make it into internal
-	// buffers (due to contention or some other reason).
-	SetsDropped uint64 `json:"setsDropped"`
-	// SetsRejected is the number of Set calls rejected by the policy (TinyLFU).
-	SetsRejected uint64 `json:"setsRejected"`
-	// GetsDropped is the number of Get counter increments that are dropped
-	// internally.
-	GetsDropped uint64 `json:"getsDropped"`
-	// GetsKept is the number of Get counter increments that are kept.
-	GetsKept uint64 `json:"getsKept"`
+	c.Metrics = newMetrics()
+	c.policy.CollectMetrics(c.Metrics)
 }
 
 type metricType int
@@ -409,15 +345,14 @@ func stringFor(t metricType) string {
 	}
 }
 
-// metrics is the struct for hit ratio statistics. Note that there is some
-// cost to maintaining the counters, so it's best to wrap Policies via the
-// Recorder type when hit ratio analysis is needed.
-type metrics struct {
+// Metrics is a snapshot of performance statistics for the lifetime of a cache
+// instance.
+type Metrics struct {
 	all [doNotUse][]*uint64
 }
 
-func newMetrics() *metrics {
-	s := &metrics{}
+func newMetrics() *Metrics {
+	s := &Metrics{}
 	for i := 0; i < doNotUse; i++ {
 		s.all[i] = make([]*uint64, 256)
 		slice := s.all[i]
@@ -428,7 +363,7 @@ func newMetrics() *metrics {
 	return s
 }
 
-func (p *metrics) Add(t metricType, hash, delta uint64) {
+func (p *Metrics) add(t metricType, hash, delta uint64) {
 	if p == nil {
 		return
 	}
@@ -439,7 +374,7 @@ func (p *metrics) Add(t metricType, hash, delta uint64) {
 	atomic.AddUint64(valp[idx], delta)
 }
 
-func (p *metrics) Get(t metricType) uint64 {
+func (p *Metrics) get(t metricType) uint64 {
 	if p == nil {
 		return 0
 	}
@@ -451,27 +386,89 @@ func (p *metrics) Get(t metricType) uint64 {
 	return total
 }
 
-func (p *metrics) Ratio() float64 {
+// Hits is the number of Get calls where a value was found for the corresponding
+// key.
+func (p *Metrics) Hits() uint64 {
+	return p.get(hit)
+}
+
+// Misses is the number of Get calls where a value was not found for the
+// corresponding key.
+func (p *Metrics) Misses() uint64 {
+	return p.get(miss)
+}
+
+// KeysAdded is the total number of Set calls where a new key-value item was
+// added.
+func (p *Metrics) KeysAdded() uint64 {
+	return p.get(keyAdd)
+}
+
+// KeysUpdated is the total number of Set calls where the value was updated.
+func (p *Metrics) KeysUpdated() uint64 {
+	return p.get(keyUpdate)
+}
+
+// KeysEvicted is the total number of keys evicted.
+func (p *Metrics) KeysEvicted() uint64 {
+	return p.get(keyEvict)
+}
+
+// CostAdded is the sum of costs that have been added (successful Set calls).
+func (p *Metrics) CostAdded() uint64 {
+	return p.get(costAdd)
+}
+
+// CostEvicted is the sum of all costs that have been evicted.
+func (p *Metrics) CostEvicted() uint64 {
+	return p.get(costEvict)
+}
+
+// SetsDropped is the number of Set calls that don't make it into internal
+// buffers (due to contention or some other reason).
+func (p *Metrics) SetsDropped() uint64 {
+	return p.get(dropSets)
+}
+
+// SetsRejected is the number of Set calls rejected by the policy (TinyLFU).
+func (p *Metrics) SetsRejected() uint64 {
+	return p.get(rejectSets)
+}
+
+// GetsDropped is the number of Get counter increments that are dropped
+// internally.
+func (p *Metrics) GetsDropped() uint64 {
+	return p.get(dropGets)
+}
+
+// GetsKept is the number of Get counter increments that are kept.
+func (p *Metrics) GetsKept() uint64 {
+	return p.get(keepGets)
+}
+
+// Ratio is the number of Hits over all accesses (Hits + Misses). This is the
+// percentage of successful Get calls.
+func (p *Metrics) Ratio() float64 {
 	if p == nil {
 		return 0.0
 	}
-	hits, misses := p.Get(hit), p.Get(miss)
+	hits, misses := p.get(hit), p.get(miss)
 	if hits == 0 && misses == 0 {
 		return 0.0
 	}
 	return float64(hits) / float64(hits+misses)
 }
 
-func (p *metrics) String() string {
+func (p *Metrics) String() string {
 	if p == nil {
 		return ""
 	}
 	var buf bytes.Buffer
 	for i := 0; i < doNotUse; i++ {
 		t := metricType(i)
-		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.Get(t))
+		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.get(t))
 	}
-	fmt.Fprintf(&buf, "gets-total: %d ", p.Get(hit)+p.Get(miss))
+	fmt.Fprintf(&buf, "gets-total: %d ", p.get(hit)+p.get(miss))
 	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
 	return buf.String()
 }
