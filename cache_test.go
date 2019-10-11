@@ -112,8 +112,8 @@ func TestCacheGet(t *testing.T) {
 		t.Fatal("get should not be successful")
 	}
 	// 0.5 and not 1.0 because we tried Getting each item twice
-	if cache.Metrics.Ratio() != 0.5 {
-		t.Fatal("incorrect hit ratio")
+	if c.Metrics.Ratio() != 0.5 {
+		t.Fatal("get should record metrics")
 	}
 	c = nil
 	if val, ok := c.Get(0); val != nil || ok {
@@ -152,7 +152,7 @@ func TestCacheSet(t *testing.T) {
 	if c.Set(2, 2, 1) {
 		t.Fatal("set should be dropped with full setBuf")
 	}
-	if c.stats.Get(dropSets) != 1 {
+	if c.Metrics.SetsDropped() != 1 {
 		t.Fatal("set should track dropSets")
 	}
 	close(c.setBuf)
@@ -201,11 +201,11 @@ func TestCacheClear(t *testing.T) {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
-	if c.stats.Get(keyAdd) != 10 {
+	if c.Metrics.KeysAdded() != 10 {
 		t.Fatal("range of sets not being processed")
 	}
 	c.Clear()
-	if c.stats.Get(keyAdd) != 0 {
+	if c.Metrics.KeysAdded() != 0 {
 		t.Fatal("clear didn't reset metrics")
 	}
 	for i := 0; i < 10; i++ {
@@ -229,13 +229,9 @@ func TestCacheMetrics(t *testing.T) {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
-	m := c.Metrics()
-	if m.KeysAdded != 10 {
+	m := c.Metrics
+	if m.KeysAdded() != 10 {
 		t.Fatal("metrics exporting incorrect fields")
-	}
-	c = nil
-	if c.Metrics() != nil {
-		t.Fatal("metrics exporting non-nil with nil cache")
 	}
 }
 
@@ -245,15 +241,15 @@ func TestMetrics(t *testing.T) {
 
 func TestMetricsAddGet(t *testing.T) {
 	m := newMetrics()
-	m.Add(hit, 1, 1)
-	m.Add(hit, 2, 2)
-	m.Add(hit, 3, 3)
-	if m.Get(hit) != 6 {
+	m.add(hit, 1, 1)
+	m.add(hit, 2, 2)
+	m.add(hit, 3, 3)
+	if m.Hits() != 6 {
 		t.Fatal("add/get error")
 	}
 	m = nil
-	m.Add(hit, 1, 1)
-	if m.Get(hit) != 0 {
+	m.add(hit, 1, 1)
+	if m.Hits() != 0 {
 		t.Fatal("get with nil struct should return 0")
 	}
 }
@@ -263,10 +259,10 @@ func TestMetricsRatio(t *testing.T) {
 	if m.Ratio() != 0 {
 		t.Fatal("ratio with no hits or misses should be 0")
 	}
-	m.Add(hit, 1, 1)
-	m.Add(hit, 2, 2)
-	m.Add(miss, 1, 1)
-	m.Add(miss, 2, 2)
+	m.add(hit, 1, 1)
+	m.add(hit, 2, 2)
+	m.add(miss, 1, 1)
+	m.add(miss, 2, 2)
 	if m.Ratio() != 0.5 {
 		t.Fatal("ratio incorrect")
 	}
@@ -276,24 +272,33 @@ func TestMetricsRatio(t *testing.T) {
 	}
 }
 
-func TestMetricsExport(t *testing.T) {
+func TestMetricsString(t *testing.T) {
 	m := newMetrics()
-	m.Add(hit, 1, 1)
-	m.Add(miss, 1, 1)
-	m.Add(keyAdd, 1, 1)
-	m.Add(keyUpdate, 1, 1)
-	m.Add(keyEvict, 1, 1)
-	m.Add(costAdd, 1, 1)
-	m.Add(costEvict, 1, 1)
-	m.Add(dropSets, 1, 1)
-	m.Add(rejectSets, 1, 1)
-	m.Add(dropGets, 1, 1)
-	m.Add(keepGets, 1, 1)
-	M := exportMetrics(m)
-	if M.Hits != 1 || M.Misses != 1 || M.Ratio != 0.5 || M.KeysAdded != 1 ||
-		M.KeysUpdated != 1 || M.KeysEvicted != 1 || M.CostAdded != 1 ||
-		M.CostEvicted != 1 || M.SetsDropped != 1 || M.SetsRejected != 1 ||
-		M.GetsDropped != 1 || M.GetsKept != 1 {
-		t.Fatal("exportMetrics wrong value(s)")
+	m.add(hit, 1, 1)
+	m.add(miss, 1, 1)
+	m.add(keyAdd, 1, 1)
+	m.add(keyUpdate, 1, 1)
+	m.add(keyEvict, 1, 1)
+	m.add(costAdd, 1, 1)
+	m.add(costEvict, 1, 1)
+	m.add(dropSets, 1, 1)
+	m.add(rejectSets, 1, 1)
+	m.add(dropGets, 1, 1)
+	m.add(keepGets, 1, 1)
+	if m.Hits() != 1 || m.Misses() != 1 || m.Ratio() != 0.5 || m.KeysAdded() != 1 ||
+		m.KeysUpdated() != 1 || m.KeysEvicted() != 1 || m.CostAdded() != 1 ||
+		m.CostEvicted() != 1 || m.SetsDropped() != 1 || m.SetsRejected() != 1 ||
+		m.GetsDropped() != 1 || m.GetsKept() != 1 {
+		t.Fatal("Metrics wrong value(s)")
+	}
+	if len(m.String()) == 0 {
+		t.Fatal("Metrics.String() empty")
+	}
+	m = nil
+	if len(m.String()) != 0 {
+		t.Fatal("Metrics.String() should be empty with nil struct")
+	}
+	if stringFor(doNotUse) != "unidentified" {
+		t.Fatal("stringFor() not handling doNotUse type")
 	}
 }

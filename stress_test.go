@@ -48,7 +48,7 @@ func TestStressSetGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := c.stats.Ratio(); r != 1.0 {
+	if r := c.Metrics.Ratio(); r != 1.0 {
 		t.Fatalf("hit ratio should be 1.0 but got %.2f\n", r)
 	}
 }
@@ -77,7 +77,7 @@ func TestStressHitRatio(t *testing.T) {
 			c.Set(k, k, 1)
 		}
 	}
-	t.Logf("actual: %.2f, optimal: %.2f", c.stats.Ratio(), o.Metrics().Ratio())
+	t.Logf("actual: %.2f, optimal: %.2f", c.Metrics.Ratio(), o.Metrics().Ratio())
 }
 
 // Clairvoyant is a mock cache providing us with optimal hit ratios to compare
@@ -111,21 +111,21 @@ func (c *Clairvoyant) Set(key, value interface{}, cost int64) bool {
 	return false
 }
 
-func (c *Clairvoyant) Metrics() *metrics {
+func (c *Clairvoyant) Metrics() *Metrics {
 	stat := newMetrics()
 	look := make(map[uint64]struct{}, c.capacity)
 	data := &clairvoyantHeap{}
 	heap.Init(data)
 	for _, key := range c.access {
 		if _, has := look[key]; has {
-			stat.Add(hit, 0, 1)
+			stat.add(hit, 0, 1)
 			continue
 		}
 		if uint64(data.Len()) >= c.capacity {
 			victim := heap.Pop(data)
 			delete(look, victim.(*clairvoyantItem).key)
 		}
-		stat.Add(miss, 0, 1)
+		stat.add(miss, 0, 1)
 		look[key] = struct{}{}
 		heap.Push(data, &clairvoyantItem{key, c.hits[key]})
 	}
