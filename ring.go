@@ -20,6 +20,53 @@ import (
 	"sync"
 )
 
+type setConsumer interface {
+	Push([]*item) bool
+}
+
+type setStripe struct {
+	cons setConsumer
+	data []*item
+	capa int
+}
+
+func newSetStripe(cons setConsumer, capa int64) *setStripe {
+	return &setStripe{
+		cons: cons,
+		data: make([]*item, 0, capa),
+		capa: int(capa),
+	}
+}
+
+func (s *setStripe) Push(i *item) {
+	s.data = append(s.data, i)
+	if len(s.data) >= s.capa {
+		if s.cons.Push(s.data) {
+			s.data = make([]*item, 0, s.capa)
+		} else {
+			s.data = s.data[:0]
+		}
+	}
+}
+
+type setBuffer struct {
+	pool *sync.Pool
+}
+
+func newSetBuffer(cons setConsumer, capa int64) *setBuffer {
+	return &setBuffer{
+		pool: &sync.Pool{
+			New: func() interface{} { return newSetStripe(cons, capa) },
+		},
+	}
+}
+
+func (b *setBuffer) Push(i *item) {
+	stripe := b.pool.Get().(*setStripe)
+	stripe.Push(i)
+	b.pool.Put(stripe)
+}
+
 // ringConsumer is the user-defined object responsible for receiving and
 // processing items in batches when buffers are drained.
 type ringConsumer interface {
