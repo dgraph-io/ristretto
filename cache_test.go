@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var wait time.Duration = time.Millisecond * 10
+var wait = time.Millisecond * 10
 
 func TestCache(t *testing.T) {
 	if _, err := NewCache(&Config{
