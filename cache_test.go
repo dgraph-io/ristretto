@@ -136,7 +136,7 @@ func TestCacheSet(t *testing.T) {
 			t.Fatal("set/get returned wrong value")
 		}
 	} else if val, ok := c.Get(1); val != nil || ok {
-			t.Fatal("set was dropped but value still added")
+		t.Fatal("set was dropped but value still added")
 	}
 	c.Set(1, 2, 2)
 	if val, ok := c.store.Get(1); val == nil || val.(int) != 2 || !ok {
