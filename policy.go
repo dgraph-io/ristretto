@@ -155,11 +155,11 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// fill up empty slots in sample
 		sample = p.evict.fillSample(sample)
 		// find minimally used item in sample
-		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
+		minKey, minHits, minID, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
 		for i, pair := range sample {
 			// look up hit count for sample key
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
-				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
+				minKey, minHits, minID, minCost = pair.key, hits, i, pair.cost
 			}
 		}
 		// if the incoming item isn't worth keeping in the policy, reject.
@@ -170,7 +170,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// delete the victim from metadata
 		p.evict.del(minKey)
 		// delete the victim from sample
-		sample[minId] = sample[len(sample)-1]
+		sample[minID] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
 		victims = append(victims, &item{
