@@ -37,63 +37,6 @@ func TestCache(t *testing.T) {
 	}
 }
 
-func TestCacheProcessItems(t *testing.T) {
-	m := &sync.Mutex{}
-	evicted := make(map[uint64]struct{})
-	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Cost: func(value interface{}) int64 {
-			return int64(value.(int))
-		},
-		OnEvict: func(key uint64, value interface{}, cost int64) {
-			m.Lock()
-			defer m.Unlock()
-			evicted[key] = struct{}{}
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	c.setBuf <- &item{flag: itemNew, key: 1, value: 1, cost: 0}
-	time.Sleep(wait)
-	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
-		t.Fatal("cache processItems didn't add new item")
-	}
-	c.setBuf <- &item{flag: itemUpdate, key: 1, value: 2, cost: 0}
-	time.Sleep(wait)
-	if c.policy.Cost(1) != 2 {
-		t.Fatal("cache processItems didn't update item cost")
-	}
-	c.setBuf <- &item{flag: itemDelete, key: 1}
-	time.Sleep(wait)
-	if val, ok := c.store.Get(1); val != nil || ok {
-		t.Fatal("cache processItems didn't delete item")
-	}
-	if c.policy.Has(1) {
-		t.Fatal("cache processItems didn't delete item")
-	}
-	c.setBuf <- &item{flag: itemNew, key: 2, value: 2, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 3, value: 3, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 4, value: 3, cost: 3}
-	c.setBuf <- &item{flag: itemNew, key: 5, value: 3, cost: 5}
-	time.Sleep(wait)
-	m.Lock()
-	if len(evicted) == 0 {
-		m.Unlock()
-		t.Fatal("cache processItems not evicting or calling OnEvict")
-	}
-	m.Unlock()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("cache processItems didn't stop")
-		}
-	}()
-	c.Close()
-	c.setBuf <- &item{flag: itemNew}
-}
-
 func TestCacheGet(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
@@ -144,18 +87,6 @@ func TestCacheSet(t *testing.T) {
 	if val, ok := c.store.Get(1); val == nil || val.(int) != 2 || !ok {
 		t.Fatal("set/update was unsuccessful")
 	}
-	c.stop <- struct{}{}
-	for i := 0; i < setBufSize; i++ {
-		c.setBuf <- &item{itemUpdate, 1, 1, 1}
-	}
-	if c.Set(2, 2, 1) {
-		t.Fatal("set should be dropped with full setBuf")
-	}
-	if c.stats.Get(dropSets) != 1 {
-		t.Fatal("set should track dropSets")
-	}
-	close(c.setBuf)
-	close(c.stop)
 	c = nil
 	if c.Set(1, 1, 1) {
 		t.Fatal("set shouldn't be successful with nil cache")
@@ -184,6 +115,42 @@ func TestCacheDel(t *testing.T) {
 		}
 	}()
 	c.Del(1)
+}
+
+func TestCachePush(t *testing.T) {
+	m := &sync.Mutex{}
+	evicted := make(map[uint64]struct{})
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Cost: func(value interface{}) int64 {
+			return int64(value.(int))
+		},
+		OnEvict: func(key uint64, value interface{}, cost int64) {
+			m.Lock()
+			defer m.Unlock()
+			evicted[key] = struct{}{}
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Push([]*item{{flag: itemNew, key: 1, value: 1, cost: 0}})
+	time.Sleep(wait)
+	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
+		t.Fatal("cache Push didn't add new item")
+	}
+	c.Push([]*item{
+		{flag: itemNew, key: 2, value: 7, cost: 0},
+		{flag: itemNew, key: 3, value: 3, cost: 3},
+	})
+	c.Close()
+	m.Lock()
+	defer m.Unlock()
+	if len(evicted) != 1 {
+		t.Fatal("cache Push not evicting or calling OnEvict")
+	}
 }
 
 func TestCacheClear(t *testing.T) {

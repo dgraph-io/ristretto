@@ -27,8 +27,7 @@ import (
 )
 
 const (
-	// TODO: find the optimal value for this or make it configurable
-	setBufSize = 32 * 1024
+	setBufSize = 1
 )
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
@@ -42,9 +41,7 @@ type Cache struct {
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read
 	getBuf *ringBuffer
-	// setBuf is a buffer allowing us to batch/drop Sets during times of high
-	// contention
-	setBuf chan *item
+	setBuf *setBuffer
 	// stats contains a running log of important statistics like hits, misses,
 	// and dropped items
 	stats *metrics
@@ -54,8 +51,6 @@ type Cache struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	keyToHash func(interface{}) uint64
-	// stop is used to stop the processItems goroutine
-	stop chan struct{}
 	// cost calculates cost from a value
 	cost func(value interface{}) int64
 }
@@ -134,22 +129,17 @@ func NewCache(config *Config) (*Cache, error) {
 		store:     newStore(),
 		policy:    policy,
 		getBuf:    newRingBuffer(policy, config.BufferItems),
-		setBuf:    make(chan *item, setBufSize),
 		onEvict:   config.OnEvict,
 		keyToHash: config.KeyToHash,
-		stop:      make(chan struct{}),
 		cost:      config.Cost,
 	}
+	cache.setBuf = newSetBuffer(cache, setBufSize)
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
 	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
-	// NOTE: benchmarks seem to show that performance decreases the more
-	//       goroutines we have running cache.processItems(), so 1 should
-	//       usually be sufficient
-	go cache.processItems()
 	return cache, nil
 }
 
@@ -196,13 +186,8 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
-	select {
-	case c.setBuf <- i:
-		return true
-	default:
-		c.stats.Add(dropSets, i.key, 1)
-		return false
-	}
+	c.setBuf.Push(i)
+	return true
 }
 
 // Del deletes the key-value item from the cache if it exists.
@@ -210,18 +195,15 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil {
 		return
 	}
-	c.setBuf <- &item{
+	c.setBuf.Push(&item{
 		flag: itemDelete,
 		key:  c.keyToHash(key),
-	}
+	})
 }
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
 	// block until processItems goroutine is returned
-	c.stop <- struct{}{}
-	close(c.stop)
-	close(c.setBuf)
 	c.policy.Close()
 }
 
@@ -229,10 +211,6 @@ func (c *Cache) Close() {
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
-	// block until processItems goroutine is returned
-	c.stop <- struct{}{}
-	// swap out the setBuf channel
-	c.setBuf = make(chan *item, setBufSize)
 	// clear value hashmap and policy data
 	c.policy.Clear()
 	c.store.Clear()
@@ -240,10 +218,40 @@ func (c *Cache) Clear() {
 	if c.stats != nil {
 		c.collectMetrics()
 	}
-	// restart processItems goroutine
-	go c.processItems()
 }
 
+func (c *Cache) Push(items []*item) bool {
+	for _, i := range items {
+		// calculate item cost value if new or update
+		if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
+			i.cost = c.cost(i.value)
+		}
+		switch i.flag {
+		case itemNew:
+			if victims, added := c.policy.Add(i.key, i.cost); added {
+				// item was accepted by the policy, so add to the hashmap
+				c.store.Set(i.key, i.value)
+				// delete victims
+				for _, victim := range victims {
+					// TODO: make Get-Delete atomic
+					if c.onEvict != nil {
+						victim.value, _ = c.store.Get(victim.key)
+						c.onEvict(victim.key, victim.value, victim.cost)
+					}
+					c.store.Del(victim.key)
+				}
+			}
+		case itemUpdate:
+			c.policy.Update(i.key, i.cost)
+		case itemDelete:
+			c.policy.Del(i.key)
+			c.store.Del(i.key)
+		}
+	}
+	return true
+}
+
+/*
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
 	for {
@@ -279,6 +287,7 @@ func (c *Cache) processItems() {
 		}
 	}
 }
+*/
 
 // collectMetrics just creates a new *metrics instance and adds the pointers
 // to the cache and policy instances.
