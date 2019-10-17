@@ -54,10 +54,10 @@ func TestM_JSON(t *testing.T) {
 		}
 	}
 
-	Json := bf.JSONMarshal()
+	JSON := bf.JSONMarshal()
 
 	// create new bloomfilter from bloomfilter's JSON representation
-	bf2 := JSONUnmarshal(Json)
+	bf2 := JSONUnmarshal(JSON)
 
 	cnt2 := 0
 	for i := range wordlist1 {
