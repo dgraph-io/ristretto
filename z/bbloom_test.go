@@ -3,7 +3,8 @@ package z
 import (
 	"crypto/rand"
 	"fmt"
-	"testing"
+  "os"
+  "testing"
 )
 
 var (
@@ -22,8 +23,8 @@ func TestMain(m *testing.M) {
 	fmt.Println("\n###############\nbbloom_test.go")
 	fmt.Print("Benchmarks relate to 2**16 OP. --> output/65536 op/ns\n###############\n\n")
 
-	m.Run()
-
+  exitVal := m.Run()
+  os.Exit(exitVal)
 }
 
 func TestM_NumberOfWrongs(t *testing.T) {
