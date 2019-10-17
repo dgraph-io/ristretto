@@ -325,7 +325,7 @@ func (p *tinyLFU) Push(keys []uint64) {
 func (p *tinyLFU) Estimate(key uint64) int64 {
 	hits := p.freq.Estimate(key)
 	if p.door.Has(key) {
-		hits += 1
+		hits++
 	}
 	return hits
 }
