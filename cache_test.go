@@ -296,3 +296,32 @@ func TestMetricsExport(t *testing.T) {
 		t.Fatal("exportMetrics wrong value(s)")
 	}
 }
+
+func TestCacheMetricsClear(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Set(1, 1, 1)
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				c.Get(1)
+			}
+		}
+	}()
+	time.Sleep(wait)
+	c.Clear()
+	stop <- struct{}{}
+	c.stats = nil
+	c.stats.Clear()
+}
