@@ -251,44 +251,6 @@ func (c *Cache) Push(items []*item) bool {
 	return true
 }
 
-/*
-// processItems is ran by goroutines processing the Set buffer.
-func (c *Cache) processItems() {
-	for {
-		select {
-		case i := <-c.setBuf:
-			// calculate item cost value if new or update
-			if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
-				i.cost = c.cost(i.value)
-			}
-			switch i.flag {
-			case itemNew:
-				if victims, added := c.policy.Add(i.key, i.cost); added {
-					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.key, i.value)
-					// delete victims
-					for _, victim := range victims {
-						// TODO: make Get-Delete atomic
-						if c.onEvict != nil {
-							victim.value, _ = c.store.Get(victim.key)
-							c.onEvict(victim.key, victim.value, victim.cost)
-						}
-						c.store.Del(victim.key)
-					}
-				}
-			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
-			case itemDelete:
-				c.policy.Del(i.key)
-				c.store.Del(i.key)
-			}
-		case <-c.stop:
-			return
-		}
-	}
-}
-*/
-
 // collectMetrics just creates a new *metrics instance and adds the pointers
 // to the cache and policy instances.
 func (c *Cache) collectMetrics() {
