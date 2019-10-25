@@ -240,7 +240,7 @@ func (c *Cache) Clear() {
 	c.store.Clear()
 	// only reset metrics if they're enabled
 	if c.Metrics != nil {
-		c.collectMetrics()
+		c.Metrics.Clear()
 	}
 	// restart processItems goroutine
 	go c.processItems()
@@ -454,6 +454,17 @@ func (p *Metrics) Ratio() float64 {
 		return 0.0
 	}
 	return float64(hits) / float64(hits+misses)
+}
+
+func (p *Metrics) Clear() {
+	if p == nil {
+		return
+	}
+	for i := 0; i < doNotUse; i++ {
+		for j := range p.all[i] {
+			atomic.StoreUint64(p.all[i][j], 0)
+		}
+	}
 }
 
 func (p *Metrics) String() string {
