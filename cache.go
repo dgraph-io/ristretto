@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	setBufSize = 1
+	setBufSize = 4
 )
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission

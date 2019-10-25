@@ -8,6 +8,23 @@ import (
 
 var wait time.Duration = time.Millisecond * 10
 
+func BenchmarkCacheSet(b *testing.B) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	if err != nil {
+		panic(err)
+	}
+	b.SetBytes(1)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			c.Set(1, 1, 1)
+		}
+	})
+}
+
 func TestCache(t *testing.T) {
 	if _, err := NewCache(&Config{
 		NumCounters: 0,
@@ -74,6 +91,9 @@ func TestCacheSet(t *testing.T) {
 		panic(err)
 	}
 	if c.Set(1, 1, 1) {
+		for i := 1; i < setBufSize; i++ {
+			c.Set(i, i, 1)
+		}
 		time.Sleep(wait)
 		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
 			t.Fatal("set/get returned wrong value")
@@ -156,25 +176,25 @@ func TestCachePush(t *testing.T) {
 func TestCacheClear(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
-		MaxCost:     10,
+		MaxCost:     8 * setBufSize,
 		BufferItems: 64,
 		Metrics:     true,
 	})
 	if err != nil {
 		panic(err)
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 8*setBufSize; i++ {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
-	if c.stats.Get(keyAdd) != 10 {
+	if c.stats.Get(keyAdd) != 8*setBufSize {
 		t.Fatal("range of sets not being processed")
 	}
 	c.Clear()
 	if c.stats.Get(keyAdd) != 0 {
 		t.Fatal("clear didn't reset metrics")
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 8*setBufSize; i++ {
 		if val, ok := c.Get(i); val != nil || ok {
 			t.Fatal("clear didn't delete values")
 		}
@@ -184,19 +204,19 @@ func TestCacheClear(t *testing.T) {
 func TestCacheMetrics(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
-		MaxCost:     10,
+		MaxCost:     8 * setBufSize,
 		BufferItems: 64,
 		Metrics:     true,
 	})
 	if err != nil {
 		panic(err)
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 8*setBufSize; i++ {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
 	m := c.Metrics()
-	if m.KeysAdded != 10 {
+	if m.KeysAdded != 8*setBufSize {
 		t.Fatal("metrics exporting incorrect fields")
 	}
 	c = nil
