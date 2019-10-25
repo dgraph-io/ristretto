@@ -239,8 +239,8 @@ func (c *Cache) Clear() {
 	c.policy.Clear()
 	c.store.Clear()
 	// only reset metrics if they're enabled
-	if c.stats != nil {
-		c.stats.Clear()
+	if c.Metrics != nil {
+		c.Metrics.Clear()
 	}
 	// restart processItems goroutine
 	go c.processItems()
@@ -466,7 +466,7 @@ func (p *Metrics) Clear() {
 		}
 	}
 }
-  
+
 func (p *Metrics) String() string {
 	if p == nil {
 		return ""

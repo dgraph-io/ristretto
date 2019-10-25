@@ -328,6 +328,6 @@ func TestCacheMetricsClear(t *testing.T) {
 	time.Sleep(wait)
 	c.Clear()
 	stop <- struct{}{}
-	c.stats = nil
-	c.stats.Clear()
+	c.Metrics = nil
+	c.Metrics.Clear()
 }
