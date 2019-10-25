@@ -60,31 +60,31 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 
 	c.setBuf <- &item{
-		flag:   itemNew,
-		key:    1,
-		hashed: z.KeyToHash(1, 0),
-		value:  1,
-		cost:   0,
+		flag:    itemNew,
+		key:     1,
+		keyHash: z.KeyToHash(1, 0),
+		value:   1,
+		cost:    0,
 	}
 	time.Sleep(wait)
 	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
 		t.Fatal("cache processItems didn't add new item")
 	}
 	c.setBuf <- &item{
-		flag:   itemUpdate,
-		key:    1,
-		hashed: z.KeyToHash(1, 0),
-		value:  2,
-		cost:   0,
+		flag:    itemUpdate,
+		key:     1,
+		keyHash: z.KeyToHash(1, 0),
+		value:   2,
+		cost:    0,
 	}
 	time.Sleep(wait)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
 	}
 	c.setBuf <- &item{
-		flag:   itemDelete,
-		key:    1,
-		hashed: z.KeyToHash(1, 0),
+		flag:    itemDelete,
+		key:     1,
+		keyHash: z.KeyToHash(1, 0),
 	}
 	time.Sleep(wait)
 	if val, ok := c.store.Get(1, z.KeyToHash(1, 0)); val != nil || ok {
@@ -94,32 +94,32 @@ func TestCacheProcessItems(t *testing.T) {
 		t.Fatal("cache processItems didn't delete item")
 	}
 	c.setBuf <- &item{
-		flag:   itemNew,
-		key:    2,
-		hashed: z.KeyToHash(2, 0),
-		value:  2,
-		cost:   3,
+		flag:    itemNew,
+		key:     2,
+		keyHash: z.KeyToHash(2, 0),
+		value:   2,
+		cost:    3,
 	}
 	c.setBuf <- &item{
-		flag:   itemNew,
-		key:    3,
-		hashed: z.KeyToHash(3, 0),
-		value:  3,
-		cost:   3,
+		flag:    itemNew,
+		key:     3,
+		keyHash: z.KeyToHash(3, 0),
+		value:   3,
+		cost:    3,
 	}
 	c.setBuf <- &item{
-		flag:   itemNew,
-		key:    4,
-		hashed: z.KeyToHash(4, 0),
-		value:  3,
-		cost:   3,
+		flag:    itemNew,
+		key:     4,
+		keyHash: z.KeyToHash(4, 0),
+		value:   3,
+		cost:    3,
 	}
 	c.setBuf <- &item{
-		flag:   itemNew,
-		key:    5,
-		hashed: z.KeyToHash(5, 0),
-		value:  3,
-		cost:   5,
+		flag:    itemNew,
+		key:     5,
+		keyHash: z.KeyToHash(5, 0),
+		value:   3,
+		cost:    5,
 	}
 	time.Sleep(wait)
 	m.Lock()
@@ -191,11 +191,11 @@ func TestCacheSet(t *testing.T) {
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
 		c.setBuf <- &item{
-			flag:   itemUpdate,
-			key:    1,
-			hashed: z.KeyToHash(1, 0),
-			value:  1,
-			cost:   1,
+			flag:    itemUpdate,
+			key:     1,
+			keyHash: z.KeyToHash(1, 0),
+			value:   1,
+			cost:    1,
 		}
 	}
 	if c.Set(2, 2, 1) {

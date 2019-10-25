@@ -38,6 +38,7 @@ Ristretto is usable but still under active development. We expect it to be produ
 		* [OnEvict](#Config)
 		* [KeyToHash](#Config)
         * [Cost](#Config)
+        * [Hashes](#Config)
 * [Benchmarks](#Benchmarks)
 	* [Hit Ratios](#Hit-Ratios)
 		* [Search](#Search)
@@ -127,6 +128,15 @@ To signal to Ristretto that you'd like to use this Cost function:
 
 1. Set the Cost field to a non-nil function.
 2. When calling Set for new items or item updates, use a `cost` of 0.
+
+**Hashes** `uint8`
+
+Hashes is the number of 64-bit hashes to chain and use as unique identifiers.
+For example, if Hashes is 2, Ristretto will use 128-bit hashes to verify and
+protect against collisions. If Hashes is 3, Ristretto will use 192-bit hashes,
+etc.
+
+If this value is 0 or 1, 64-bit hashes will be used.
 
 ## Benchmarks
 
