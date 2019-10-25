@@ -79,9 +79,9 @@ func TestStoreCollision(t *testing.T) {
 	s := newShardedMap(2)
 	s.shards[1].Lock()
 	s.shards[1].data[1] = storeItem{
-		hashed: 1,
-		hashes: []uint64{2},
-		value:  1,
+		keyHash: 1,
+		hashes:  []uint64{2},
+		value:   1,
 	}
 	s.shards[1].Unlock()
 	if val, ok := s.Get(1, 1); val != nil || ok {

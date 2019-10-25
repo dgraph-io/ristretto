@@ -23,9 +23,9 @@ import (
 )
 
 type storeItem struct {
-	hashed uint64
-	hashes []uint64
-	value  interface{}
+	keyHash uint64
+	hashes  []uint64
+	value   interface{}
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -105,9 +105,9 @@ func newLockedMap(rounds uint8) *lockedMap {
 	}
 }
 
-func (m *lockedMap) Get(hashed uint64, key interface{}) (interface{}, bool) {
+func (m *lockedMap) Get(keyHash uint64, key interface{}) (interface{}, bool) {
 	m.RLock()
-	item, ok := m.data[hashed]
+	item, ok := m.data[keyHash]
 	m.RUnlock()
 	if !ok {
 		return nil, false
@@ -122,18 +122,18 @@ func (m *lockedMap) Get(hashed uint64, key interface{}) (interface{}, bool) {
 	return item.value, true
 }
 
-func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
+func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
 	m.Lock()
-	item, ok := m.data[hashed]
+	item, ok := m.data[keyHash]
 	if !ok {
 		hashes := make([]uint64, m.rounds)
 		for i := uint8(1); i < m.rounds; i++ {
 			hashes[i-1] = z.KeyToHash(key, i)
 		}
-		m.data[hashed] = storeItem{
-			hashed: hashed,
-			hashes: hashes,
-			value:  value,
+		m.data[keyHash] = storeItem{
+			keyHash: keyHash,
+			hashes:  hashes,
+			value:   value,
 		}
 		m.Unlock()
 		return
@@ -146,17 +146,17 @@ func (m *lockedMap) Set(hashed uint64, key, value interface{}) {
 			}
 		}
 	}
-	m.data[hashed] = storeItem{
-		hashed: hashed,
-		hashes: item.hashes,
-		value:  value,
+	m.data[keyHash] = storeItem{
+		keyHash: keyHash,
+		hashes:  item.hashes,
+		value:   value,
 	}
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(hashed uint64, key interface{}) {
+func (m *lockedMap) Del(keyHash uint64, key interface{}) {
 	m.Lock()
-	item, ok := m.data[hashed]
+	item, ok := m.data[keyHash]
 	if !ok {
 		m.Unlock()
 		return
@@ -169,13 +169,13 @@ func (m *lockedMap) Del(hashed uint64, key interface{}) {
 			}
 		}
 	}
-	delete(m.data, hashed)
+	delete(m.data, keyHash)
 	m.Unlock()
 }
 
-func (m *lockedMap) Update(hashed uint64, key, value interface{}) bool {
+func (m *lockedMap) Update(keyHash uint64, key, value interface{}) bool {
 	m.Lock()
-	item, ok := m.data[hashed]
+	item, ok := m.data[keyHash]
 	if !ok {
 		m.Unlock()
 		return false
@@ -188,10 +188,10 @@ func (m *lockedMap) Update(hashed uint64, key, value interface{}) bool {
 			}
 		}
 	}
-	m.data[hashed] = storeItem{
-		hashed: hashed,
-		hashes: item.hashes,
-		value:  value,
+	m.data[keyHash] = storeItem{
+		keyHash: keyHash,
+		hashes:  item.hashes,
+		value:   value,
 	}
 	m.Unlock()
 	return true
