@@ -17,7 +17,7 @@ func TestPolicy(t *testing.T) {
 func TestPolicyMetrics(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.CollectMetrics(newMetrics())
-	if p.stats == nil || p.evict.stats == nil {
+	if p.metrics == nil || p.evict.metrics == nil {
 		t.Fatal("policy metrics initialization error")
 	}
 }
