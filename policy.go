@@ -52,7 +52,7 @@ type policy interface {
 	// Cost returns the cost value of a key or -1 if missing.
 	Cost(uint64) int64
 	// Optionally, set stats object to track how policy is performing.
-	CollectMetrics(stats *metrics)
+	CollectMetrics(*Metrics)
 	// Clear zeroes out all counters and clears hashmaps.
 	Clear()
 }
@@ -67,7 +67,7 @@ type defaultPolicy struct {
 	evict   *sampledLFU
 	itemsCh chan []uint64
 	stop    chan struct{}
-	stats   *metrics
+	metrics *Metrics
 }
 
 func newDefaultPolicy(numCounters, maxCost int64) *defaultPolicy {
@@ -81,9 +81,9 @@ func newDefaultPolicy(numCounters, maxCost int64) *defaultPolicy {
 	return p
 }
 
-func (p *defaultPolicy) CollectMetrics(stats *metrics) {
-	p.stats = stats
-	p.evict.stats = stats
+func (p *defaultPolicy) CollectMetrics(metrics *Metrics) {
+	p.metrics = metrics
+	p.evict.metrics = metrics
 }
 
 type policyPair struct {
@@ -110,10 +110,10 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 	}
 	select {
 	case p.itemsCh <- keys:
-		p.stats.Add(keepGets, keys[0], uint64(len(keys)))
+		p.metrics.add(keepGets, keys[0], uint64(len(keys)))
 		return true
 	default:
-		p.stats.Add(dropGets, keys[0], uint64(len(keys)))
+		p.metrics.add(dropGets, keys[0], uint64(len(keys)))
 		return false
 	}
 }
@@ -164,7 +164,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		}
 		// if the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
-			p.stats.Add(rejectSets, key, 1)
+			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
 		// delete the victim from metadata
@@ -237,7 +237,7 @@ type sampledLFU struct {
 	keyCosts map[uint64]int64
 	maxCost  int64
 	used     int64
-	stats    *metrics
+	metrics  *Metrics
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
@@ -269,15 +269,15 @@ func (p *sampledLFU) del(key uint64) {
 	if !ok {
 		return
 	}
-	p.stats.Add(keyEvict, key, 1)
-	p.stats.Add(costEvict, key, uint64(cost))
+	p.metrics.add(keyEvict, key, 1)
+	p.metrics.add(costEvict, key, uint64(cost))
 	p.used -= cost
 	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
-	p.stats.Add(keyAdd, key, 1)
-	p.stats.Add(costAdd, key, uint64(cost))
+	p.metrics.add(keyAdd, key, 1)
+	p.metrics.add(costAdd, key, uint64(cost))
 	p.keyCosts[key] = cost
 	p.used += cost
 }
@@ -286,7 +286,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 	if prev, found := p.keyCosts[key]; found {
 		// update the cost of an existing key, but don't worry about evicting,
 		// evictions will be handled the next time a new item is added
-		p.stats.Add(keyUpdate, key, 1)
+		p.metrics.add(keyUpdate, key, 1)
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
