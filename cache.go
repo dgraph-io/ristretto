@@ -52,7 +52,7 @@ type Cache struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}) uint64
+	keyToHash func(interface{}, uint8) uint64
 	// stop is used to stop the processItems goroutine
 	stop chan struct{}
 	// cost calculates cost from a value
@@ -98,11 +98,19 @@ type Config struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}) uint64
+	KeyToHash func(key interface{}, seed uint8) uint64
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
 	Cost func(value interface{}) int64
+	// Hashes is the number of 64-bit hashes to chain and use as each item's
+	// unique identifier. For example, setting Hashes to 2 will set internal
+	// keys to 128-bits and therefore very little probability of colliding with
+	// another key-value item in the cache. To just use 64-bit keys, set this
+	// value to 0 or 1.
+	//
+	// The larger this value is, the worse throughput performance will be.
+	Hashes uint8
 }
 
 type itemFlag byte
@@ -115,10 +123,11 @@ const (
 
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
-	flag  itemFlag
-	key   uint64
-	value interface{}
-	cost  int64
+	flag    itemFlag
+	key     interface{}
+	keyHash uint64
+	value   interface{}
+	cost    int64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -133,7 +142,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:     newStore(),
+		store:     newStore(config.Hashes),
 		policy:    policy,
 		getBuf:    newRingBuffer(policy, config.BufferItems),
 		setBuf:    make(chan *item, setBufSize),
@@ -159,18 +168,18 @@ func NewCache(config *Config) (*Cache, error) {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	if c == nil {
+	if c == nil || key == nil {
 		return nil, false
 	}
-	hash := c.keyToHash(key)
-	c.getBuf.Push(hash)
-	val, ok := c.store.Get(hash)
+	hashed := z.KeyToHash(key, 0)
+	c.getBuf.Push(hashed)
+	value, ok := c.store.Get(hashed, key)
 	if ok {
-		c.Metrics.add(hit, hash, 1)
+		c.Metrics.add(hit, hashed, 1)
 	} else {
-		c.Metrics.add(miss, hash, 1)
+		c.Metrics.add(miss, hashed, 1)
 	}
-	return val, ok
+	return value, ok
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -183,18 +192,19 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
 func (c *Cache) Set(key, value interface{}, cost int64) bool {
-	if c == nil {
+	if c == nil || key == nil {
 		return false
 	}
 	i := &item{
-		flag:  itemNew,
-		key:   c.keyToHash(key),
-		value: value,
-		cost:  cost,
+		flag:    itemNew,
+		key:     key,
+		keyHash: z.KeyToHash(key, 0),
+		value:   value,
+		cost:    cost,
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
-	if c.store.Update(i.key, i.value) {
+	if c.store.Update(i.keyHash, i.key, i.value) {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
@@ -202,19 +212,20 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	case c.setBuf <- i:
 		return true
 	default:
-		c.Metrics.add(dropSets, i.key, 1)
+		c.Metrics.add(dropSets, i.keyHash, 1)
 		return false
 	}
 }
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil {
+	if c == nil || key == nil {
 		return
 	}
 	c.setBuf <- &item{
-		flag: itemDelete,
-		key:  c.keyToHash(key),
+		flag:    itemDelete,
+		key:     key,
+		keyHash: z.KeyToHash(key, 0),
 	}
 }
 
@@ -257,24 +268,28 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.key, i.cost); added {
+				if victims, added := c.policy.Add(i.keyHash, i.cost); added {
 					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.key, i.value)
+					c.store.Set(i.keyHash, i.key, i.value)
 					// delete victims
 					for _, victim := range victims {
 						// TODO: make Get-Delete atomic
 						if c.onEvict != nil {
-							victim.value, _ = c.store.Get(victim.key)
-							c.onEvict(victim.key, victim.value, victim.cost)
+							// force get with no collision checking because
+							// we don't have access to the victim's key
+							victim.value, _ = c.store.Get(victim.keyHash, nil)
+							c.onEvict(victim.keyHash, victim.value, victim.cost)
 						}
-						c.store.Del(victim.key)
+						// force delete with no collision checking because we
+						// don't have access to the original, unhashed key
+						c.store.Del(victim.keyHash, nil)
 					}
 				}
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
+				c.policy.Update(i.keyHash, i.cost)
 			case itemDelete:
-				c.policy.Del(i.key)
-				c.store.Del(i.key)
+				c.policy.Del(i.keyHash)
+				c.store.Del(i.keyHash, i.key)
 			}
 		case <-c.stop:
 			return
