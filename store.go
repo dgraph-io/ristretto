@@ -41,7 +41,7 @@ type store interface {
 	// already present.
 	Set(uint64, interface{}, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del(uint64, interface{})
+	Del(uint64, interface{}) interface{}
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
 	Update(uint64, interface{}, interface{}) bool
@@ -78,8 +78,8 @@ func (sm *shardedMap) Set(hashed uint64, key, value interface{}) {
 	sm.shards[hashed%numShards].Set(hashed, key, value)
 }
 
-func (sm *shardedMap) Del(hashed uint64, key interface{}) {
-	sm.shards[hashed%numShards].Del(hashed, key)
+func (sm *shardedMap) Del(hashed uint64, key interface{}) interface{} {
+	return sm.shards[hashed%numShards].Del(hashed, key)
 }
 
 func (sm *shardedMap) Update(hashed uint64, key, value interface{}) bool {
@@ -154,23 +154,24 @@ func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(keyHash uint64, key interface{}) {
+func (m *lockedMap) Del(keyHash uint64, key interface{}) interface{} {
 	m.Lock()
 	item, ok := m.data[keyHash]
 	if !ok {
 		m.Unlock()
-		return
+		return nil
 	}
 	if key != nil {
 		for i := uint8(1); i < m.rounds; i++ {
 			if z.KeyToHash(key, i) != item.hashes[i-1] {
 				m.Unlock()
-				return
+				return nil
 			}
 		}
 	}
 	delete(m.data, keyHash)
 	m.Unlock()
+	return item.value
 }
 
 func (m *lockedMap) Update(keyHash uint64, key, value interface{}) bool {
