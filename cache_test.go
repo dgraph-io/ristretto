@@ -8,6 +8,8 @@ import (
 	"github.com/dgraph-io/ristretto/z"
 )
 
+var wait time.Duration = time.Millisecond * 10
+
 func TestCache(t *testing.T) {
 	if _, err := NewCache(&Config{
 		NumCounters: 0,
@@ -56,6 +58,7 @@ func TestCacheProcessItems(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
 	c.setBuf <- &item{
 		flag:   itemNew,
 		key:    1,
@@ -63,7 +66,7 @@ func TestCacheProcessItems(t *testing.T) {
 		value:  1,
 		cost:   0,
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
 		t.Fatal("cache processItems didn't add new item")
 	}
@@ -74,7 +77,7 @@ func TestCacheProcessItems(t *testing.T) {
 		value:  2,
 		cost:   0,
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
 	}
@@ -83,7 +86,7 @@ func TestCacheProcessItems(t *testing.T) {
 		key:    1,
 		hashed: z.KeyToHash(1, 0),
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if val, ok := c.store.Get(1, z.KeyToHash(1, 0)); val != nil || ok {
 		t.Fatal("cache processItems didn't delete item")
 	}
@@ -118,7 +121,7 @@ func TestCacheProcessItems(t *testing.T) {
 		value:  3,
 		cost:   5,
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	m.Lock()
 	if len(evicted) == 0 {
 		m.Unlock()
@@ -171,7 +174,7 @@ func TestCacheSet(t *testing.T) {
 		panic(err)
 	}
 	if c.Set(1, 1, 1) {
-		time.Sleep(time.Millisecond)
+		time.Sleep(wait)
 		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
 			t.Fatal("set/get returned wrong value")
 		}
@@ -220,7 +223,7 @@ func TestCacheDel(t *testing.T) {
 	}
 	c.Set(1, 1, 1)
 	c.Del(1)
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if val, ok := c.Get(1); val != nil || ok {
 		t.Fatal("del didn't delete")
 	}
@@ -246,7 +249,7 @@ func TestCacheClear(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	if c.stats.Get(keyAdd) != 10 {
 		t.Fatal("range of sets not being processed")
 	}
@@ -274,7 +277,7 @@ func TestCacheMetrics(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(wait)
 	m := c.Metrics()
 	if m.KeysAdded != 10 {
 		t.Fatal("metrics exporting incorrect fields")
