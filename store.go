@@ -47,6 +47,7 @@ type store interface {
 	Update(uint64, interface{}, interface{}) bool
 	// Clear clears all contents of the store.
 	Clear()
+	SetAll(items []*item)
 }
 
 // newStore returns the default store implementation.
@@ -92,6 +93,24 @@ func (sm *shardedMap) Clear() {
 	}
 }
 
+func (sm *shardedMap) SetAll(items []*item) {
+	// acquire lock on all shards
+	for i := uint64(0); i < numShards; i++ {
+		sm.shards[i].Lock()
+	}
+	for i := range items {
+		sm.shards[items[i].keyHash%numShards].set(
+			items[i].keyHash,
+			items[i].key,
+			items[i].value,
+		)
+	}
+	// unlock all shards
+	for i := uint64(0); i < numShards; i++ {
+		sm.shards[i].Unlock()
+	}
+}
+
 type lockedMap struct {
 	sync.RWMutex
 	data   map[uint64]storeItem
@@ -122,8 +141,7 @@ func (m *lockedMap) Get(keyHash uint64, key interface{}) (interface{}, bool) {
 	return item.value, true
 }
 
-func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
-	m.Lock()
+func (m *lockedMap) set(keyHash uint64, key, value interface{}) {
 	item, ok := m.data[keyHash]
 	if !ok {
 		hashes := make([]uint64, m.rounds)
@@ -135,13 +153,11 @@ func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
 			hashes:  hashes,
 			value:   value,
 		}
-		m.Unlock()
 		return
 	}
 	if key != nil {
 		for i := uint8(1); i < m.rounds; i++ {
 			if z.KeyToHash(key, i) != item.hashes[i-1] {
-				m.Unlock()
 				return
 			}
 		}
@@ -151,6 +167,11 @@ func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
 		hashes:  item.hashes,
 		value:   value,
 	}
+}
+
+func (m *lockedMap) Set(keyHash uint64, key, value interface{}) {
+	m.Lock()
+	m.set(keyHash, key, value)
 	m.Unlock()
 }
 

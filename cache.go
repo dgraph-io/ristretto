@@ -182,6 +182,29 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return value, ok
 }
 
+type Item struct {
+	Key   interface{}
+	Value interface{}
+	Cost  int64
+}
+
+func (c *Cache) SetAll(items []*Item) (int, bool) {
+	if c == nil || items == nil {
+		return 0, false
+	}
+	hashedItems := make([]*item, len(items))
+	for i := range items {
+		hashedItems[i] = &item{
+			flag:    itemNew,
+			key:     items[i].Key,
+			keyHash: z.KeyToHash(items[i].Key, 0),
+			value:   items[i].Value,
+			cost:    items[i].Cost,
+		}
+	}
+	return 0, false
+}
+
 // Set attempts to add the key-value item to the cache. If it returns false,
 // then the Set was dropped and the key-value item isn't added to the cache. If
 // it returns true, there's still a chance it could be dropped by the policy if
