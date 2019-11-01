@@ -16,28 +16,32 @@
 
 package z
 
-// KeyToHash interprets the type of key and converts it to a uint64 hash.
-func KeyToHash(key interface{}, seed uint8) uint64 {
+import (
+	"github.com/cespare/xxhash"
+)
+
+func KeyToHash(key interface{}) [2]uint64 {
 	if key == nil {
-		return 0 + uint64(seed)
+		return [2]uint64{0, 0}
 	}
 	switch k := key.(type) {
 	case uint64:
-		return k
+		return [2]uint64{k, 0}
 	case string:
-		return MemHash(append([]byte(k), seed))
+		raw := []byte(k)
+		return [2]uint64{MemHash(raw), xxhash.Sum64(raw)}
 	case []byte:
-		return MemHash(append(k, seed))
+		return [2]uint64{MemHash(k), xxhash.Sum64(k)}
 	case byte:
-		return uint64(k)
+		return [2]uint64{uint64(k), 0}
 	case int:
-		return uint64(k)
+		return [2]uint64{uint64(k), 0}
 	case int32:
-		return uint64(k)
+		return [2]uint64{uint64(k), 0}
 	case uint32:
-		return uint64(k)
+		return [2]uint64{uint64(k), 0}
 	case int64:
-		return uint64(k)
+		return [2]uint64{uint64(k), 0}
 	default:
 		panic("Key type not supported")
 	}
