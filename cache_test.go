@@ -61,7 +61,6 @@ func TestCacheProcessItems(t *testing.T) {
 
 	c.setBuf <- &item{
 		flag:   itemNew,
-		key:    1,
 		hashes: z.KeyToHash(1),
 		value:  1,
 		cost:   0,
@@ -72,7 +71,6 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	c.setBuf <- &item{
 		flag:   itemUpdate,
-		key:    1,
 		hashes: z.KeyToHash(1),
 		value:  2,
 		cost:   0,
@@ -83,7 +81,6 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	c.setBuf <- &item{
 		flag:   itemDelete,
-		key:    1,
 		hashes: z.KeyToHash(1),
 	}
 	time.Sleep(wait)
@@ -95,28 +92,24 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	c.setBuf <- &item{
 		flag:   itemNew,
-		key:    2,
 		hashes: z.KeyToHash(2),
 		value:  2,
 		cost:   3,
 	}
 	c.setBuf <- &item{
 		flag:   itemNew,
-		key:    3,
 		hashes: z.KeyToHash(3),
 		value:  3,
 		cost:   3,
 	}
 	c.setBuf <- &item{
 		flag:   itemNew,
-		key:    4,
 		hashes: z.KeyToHash(4),
 		value:  3,
 		cost:   3,
 	}
 	c.setBuf <- &item{
 		flag:   itemNew,
-		key:    5,
 		hashes: z.KeyToHash(5),
 		value:  3,
 		cost:   5,
@@ -193,7 +186,6 @@ func TestCacheSet(t *testing.T) {
 	for i := 0; i < setBufSize; i++ {
 		c.setBuf <- &item{
 			flag:   itemUpdate,
-			key:    1,
 			hashes: z.KeyToHash(1),
 			value:  1,
 			cost:   1,

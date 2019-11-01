@@ -116,7 +116,6 @@ const (
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
 	flag   itemFlag
-	key    interface{}
 	hashes [2]uint64
 	value  interface{}
 	cost   int64
@@ -189,7 +188,6 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	}
 	i := &item{
 		flag:   itemNew,
-		key:    key,
 		hashes: z.KeyToHash(key),
 		value:  value,
 		cost:   cost,
@@ -216,7 +214,6 @@ func (c *Cache) Del(key interface{}) {
 	}
 	c.setBuf <- &item{
 		flag:   itemDelete,
-		key:    key,
 		hashes: z.KeyToHash(key),
 	}
 }
