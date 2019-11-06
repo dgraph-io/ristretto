@@ -1,6 +1,7 @@
 package ristretto
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -282,6 +283,35 @@ func TestCacheMetrics(t *testing.T) {
 	m := c.Metrics
 	if m.KeysAdded() != 10 {
 		t.Fatal("metrics exporting incorrect fields")
+	}
+}
+
+func TestCacheMaxCost(t *testing.T) {
+	runtime.MemProfileRate = 1
+	c, err := NewCache(&Config{
+		NumCounters: 1000,
+		MaxCost:     100,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	oldSize, iter := uint64(0), 0
+	for i := 0; i < 1000; i++ {
+		if i != 0 {
+			c.Get(i)
+		}
+		c.Set(i, i, 1)
+		newSize := c.store.Size()
+		if newSize > 100 && newSize > oldSize {
+			oldSize = newSize
+			if iter++; iter > 5 {
+				t.Fatal("cache size exceeding MaxCost")
+			}
+		} else {
+			oldSize, iter = 0, 0
+		}
 	}
 }
 

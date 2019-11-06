@@ -47,6 +47,7 @@ type store interface {
 	Update(uint64, interface{}, interface{}) bool
 	// Clear clears all contents of the store.
 	Clear()
+	Size() uint64
 }
 
 // newStore returns the default store implementation.
@@ -90,6 +91,16 @@ func (sm *shardedMap) Clear() {
 	for i := uint64(0); i < numShards; i++ {
 		sm.shards[i].Clear()
 	}
+}
+
+func (sm *shardedMap) Size() uint64 {
+	total := uint64(0)
+	for _, shard := range sm.shards {
+		shard.RLock()
+		total += uint64(len(shard.data))
+		shard.RUnlock()
+	}
+	return total
 }
 
 type lockedMap struct {
