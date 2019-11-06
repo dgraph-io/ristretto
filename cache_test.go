@@ -1,7 +1,6 @@
 package ristretto
 
 import (
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -287,7 +286,6 @@ func TestCacheMetrics(t *testing.T) {
 }
 
 func TestCacheMaxCost(t *testing.T) {
-	runtime.MemProfileRate = 1
 	c, err := NewCache(&Config{
 		NumCounters: 1000,
 		MaxCost:     100,
