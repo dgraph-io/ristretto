@@ -1,6 +1,8 @@
 package ristretto
 
 import (
+	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -286,30 +288,57 @@ func TestCacheMetrics(t *testing.T) {
 }
 
 func TestCacheMaxCost(t *testing.T) {
+	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
+	key := func() []byte {
+		k := make([]byte, 2)
+		for i := range k {
+			k[i] = charset[rand.Intn(len(charset))]
+		}
+		return k
+	}
 	c, err := NewCache(&Config{
-		NumCounters: 1000,
-		MaxCost:     100,
+		NumCounters: 12960, // 36^2 * 10
+		MaxCost:     1e6,   // 1mb
 		BufferItems: 64,
 		Metrics:     true,
 	})
 	if err != nil {
 		panic(err)
 	}
-	oldSize, iter := uint64(0), 0
-	for i := 0; i < 1000; i++ {
-		if i != 0 {
-			c.Get(i)
-		}
-		c.Set(i, i, 1)
-		newSize := c.store.Size()
-		if newSize > 100 && newSize > oldSize {
-			oldSize = newSize
-			if iter++; iter > 5 {
-				t.Fatal("cache size exceeding MaxCost")
+	stop := make(chan struct{}, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					time.Sleep(time.Millisecond)
+
+					k := key()
+					if _, ok := c.Get(k); !ok {
+						val := ""
+						if rand.Intn(100) < 10 {
+							val = "test"
+						} else {
+							val = strings.Repeat("a", 1000)
+						}
+						c.Set(key(), val, int64(2+len(val)))
+					}
+				}
 			}
-		} else {
-			oldSize, iter = 0, 0
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		time.Sleep(time.Second)
+		cacheCost := c.Metrics.CostAdded() - c.Metrics.CostEvicted()
+		t.Logf("total cache cost: %d\n", cacheCost)
+		if float64(cacheCost) > float64(1e6*1.05) {
+			t.Fatal("cache cost exceeding MaxCost")
 		}
+	}
+	for i := 0; i < 8; i++ {
+		stop <- struct{}{}
 	}
 }
 
