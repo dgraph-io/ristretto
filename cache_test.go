@@ -164,6 +164,34 @@ func TestCacheGet(t *testing.T) {
 	}
 }
 
+func TestCacheKeyToHash(t *testing.T) {
+	keyToHashCount := 0
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		KeyToHash: func(key interface{}, seed uint8) uint64 {
+			keyToHashCount++
+			return z.KeyToHash(key, seed)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	if c.Set(1, 1, 1) {
+		time.Sleep(wait)
+		if val, ok := c.Get(1); val == nil || !ok {
+			t.Fatal("get should be successful")
+		} else {
+			c.Del(1)
+		}
+	}
+	if keyToHashCount != 3 {
+		t.Fatal("custom KeyToHash function should be called three times")
+	}
+}
+
 func TestCacheSet(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
