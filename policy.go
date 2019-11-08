@@ -269,15 +269,11 @@ func (p *sampledLFU) del(key uint64) {
 	if !ok {
 		return
 	}
-	p.metrics.add(keyEvict, key, 1)
-	p.metrics.add(costEvict, key, uint64(cost))
 	p.used -= cost
 	delete(p.keyCosts, key)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
-	p.metrics.add(keyAdd, key, 1)
-	p.metrics.add(costAdd, key, uint64(cost))
 	p.keyCosts[key] = cost
 	p.used += cost
 }

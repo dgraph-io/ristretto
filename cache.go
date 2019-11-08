@@ -257,22 +257,26 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.hashes[0], i.cost); added {
+				victims, added := c.policy.Add(i.hashes[0], i.cost)
+				if added {
 					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.hashes, i.value)
-					// delete victims
-					for _, victim := range victims {
-						// TODO: make Get-Delete atomic
-						if c.onEvict != nil {
-							// force get with no collision checking because
-							// we don't have access to the victim's key
-							victim.value, _ = c.store.Get(victim.hashes)
-							c.onEvict(victim.hashes, victim.value, victim.cost)
-						}
-						// force delete with no collision checking because we
-						// don't have access to the original, unhashed key
-						c.store.Del(victim.hashes)
+					c.store.Set(i.hashes, i.key, i.value)
+					c.Metrics.add(keyAdd, i.hashes[0], 1)
+					c.Metrics.add(costAdd, i.hashes[0], uint64(i.cost))
+				}
+				for _, victim := range victims {
+					// TODO: make Get-Delete atomic
+					if c.onEvict != nil {
+						// force get with no collision checking because
+						// we don't have access to the victim's key
+						victim.value, _ = c.store.Get(victim.hashes)
+						c.onEvict(victim.hashes, victim.value, victim.cost)
 					}
+					// force delete with no collision checking because we
+					// don't have access to the original, unhashed key
+					c.store.Del(victim.hashes)
+					c.Metrics.add(keyEvict, victim.hashes[0], 1)
+					c.Metrics.add(costEvict, victim.hashes[0], uint64(victim.cost))
 				}
 			case itemUpdate:
 				c.policy.Update(i.hashes[0], i.cost)
