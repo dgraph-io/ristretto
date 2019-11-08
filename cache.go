@@ -268,12 +268,14 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.keyHash, i.cost);
+				victims, added := c.policy.Add(i.keyHash, i.cost)
 				if added {
 					// item was accepted by the policy, so add to the hashmap
 					c.store.Set(i.keyHash, i.key, i.value)
+					c.Metrics.add(keyAdd, i.keyHash, 1)
+					c.Metrics.add(costAdd, i.keyHash, uint64(i.cost))
+					// delete victims
 				}
-				// delete victims
 				for _, victim := range victims {
 					// TODO: make Get-Delete atomic
 					if c.onEvict != nil {
@@ -285,6 +287,8 @@ func (c *Cache) processItems() {
 					// force delete with no collision checking because we
 					// don't have access to the original, unhashed key
 					c.store.Del(victim.keyHash, nil)
+					c.Metrics.add(keyEvict, victim.keyHash, 1)
+					c.Metrics.add(costEvict, victim.keyHash, uint64(victim.cost))
 				}
 			case itemUpdate:
 				c.policy.Update(i.keyHash, i.cost)
