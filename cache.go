@@ -171,7 +171,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil || key == nil {
 		return nil, false
 	}
-	hashed := z.KeyToHash(key, 0)
+	hashed := c.keyToHash(key, 0)
 	c.getBuf.Push(hashed)
 	value, ok := c.store.Get(hashed, key)
 	if ok {
@@ -198,7 +198,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	i := &item{
 		flag:    itemNew,
 		key:     key,
-		keyHash: z.KeyToHash(key, 0),
+		keyHash: c.keyToHash(key, 0),
 		value:   value,
 		cost:    cost,
 	}
@@ -225,7 +225,7 @@ func (c *Cache) Del(key interface{}) {
 	c.setBuf <- &item{
 		flag:    itemDelete,
 		key:     key,
-		keyHash: z.KeyToHash(key, 0),
+		keyHash: c.keyToHash(key, 0),
 	}
 }
 
