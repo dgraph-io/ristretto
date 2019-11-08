@@ -260,7 +260,7 @@ func (c *Cache) processItems() {
 				victims, added := c.policy.Add(i.hashes[0], i.cost)
 				if added {
 					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.hashes, i.key, i.value)
+					c.store.Set(i.hashes, i.value)
 					c.Metrics.add(keyAdd, i.hashes[0], 1)
 					c.Metrics.add(costAdd, i.hashes[0], uint64(i.cost))
 				}

@@ -165,9 +165,9 @@ func TestCacheKeyToHash(t *testing.T) {
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
-		KeyToHash: func(key interface{}, seed uint8) uint64 {
+		KeyToHash: func(key interface{}) [2]uint64 {
 			keyToHashCount++
-			return z.KeyToHash(key, seed)
+			return z.KeyToHash(key)
 		},
 	})
 	if err != nil {
