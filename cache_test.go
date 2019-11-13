@@ -1,6 +1,8 @@
 package ristretto
 
 import (
+	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +11,88 @@ import (
 )
 
 var wait time.Duration = time.Millisecond * 10
+
+func TestCacheKeyToHash(t *testing.T) {
+	keyToHashCount := 0
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		KeyToHash: func(key interface{}) (uint64, uint64) {
+			keyToHashCount++
+			return z.KeyToHash(key)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	if c.Set(1, 1, 1) {
+		time.Sleep(wait)
+		if val, ok := c.Get(1); val == nil || !ok {
+			t.Fatal("get should be successful")
+		} else {
+			c.Del(1)
+		}
+	}
+	if keyToHashCount != 3 {
+		t.Fatal("custom KeyToHash function should be called three times")
+	}
+}
+
+func TestCacheMaxCost(t *testing.T) {
+	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
+	key := func() []byte {
+		k := make([]byte, 2)
+		for i := range k {
+			k[i] = charset[rand.Intn(len(charset))]
+		}
+		return k
+	}
+	c, err := NewCache(&Config{
+		NumCounters: 12960, // 36^2 * 10
+		MaxCost:     1e6,   // 1mb
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	stop := make(chan struct{}, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					time.Sleep(time.Millisecond)
+
+					k := key()
+					if _, ok := c.Get(k); !ok {
+						val := ""
+						if rand.Intn(100) < 10 {
+							val = "test"
+						} else {
+							val = strings.Repeat("a", 1000)
+						}
+						c.Set(key(), val, int64(2+len(val)))
+					}
+				}
+			}
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		time.Sleep(time.Second)
+		cacheCost := c.Metrics.CostAdded() - c.Metrics.CostEvicted()
+		t.Logf("total cache cost: %d\n", cacheCost)
+		if float64(cacheCost) > float64(1e6*1.05) {
+			t.Fatal("cache cost exceeding MaxCost")
+		}
+	}
+	for i := 0; i < 8; i++ {
+		stop <- struct{}{}
+	}
+}
 
 func TestCache(t *testing.T) {
 	if _, err := NewCache(&Config{
