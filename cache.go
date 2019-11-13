@@ -171,7 +171,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil || key == nil {
 		return nil, false
 	}
-	hashed := z.KeyToHash(key, 0)
+	hashed := c.keyToHash(key, 0)
 	c.getBuf.Push(hashed)
 	value, ok := c.store.Get(hashed, key)
 	if ok {
@@ -198,7 +198,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	i := &item{
 		flag:    itemNew,
 		key:     key,
-		keyHash: z.KeyToHash(key, 0),
+		keyHash: c.keyToHash(key, 0),
 		value:   value,
 		cost:    cost,
 	}
@@ -225,7 +225,7 @@ func (c *Cache) Del(key interface{}) {
 	c.setBuf <- &item{
 		flag:    itemDelete,
 		key:     key,
-		keyHash: z.KeyToHash(key, 0),
+		keyHash: c.keyToHash(key, 0),
 	}
 }
 
@@ -268,18 +268,22 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.keyHash, i.cost); added {
+				victims, added := c.policy.Add(i.keyHash, i.cost)
+				if added {
 					// item was accepted by the policy, so add to the hashmap
 					c.store.Set(i.keyHash, i.key, i.value)
-					// delete victims
-					for _, victim := range victims {
-						// force delete with no collision checking because we
-						// don't have access to the original, unhashed key
-						victim.value = c.store.Del(victim.keyHash, nil)
-						if c.onEvict != nil {
-							c.onEvict(victim.keyHash, victim.value, victim.cost)
-						}
+					c.Metrics.add(keyAdd, i.keyHash, 1)
+					c.Metrics.add(costAdd, i.keyHash, uint64(i.cost))
+				}
+				for _, victim := range victims {
+          // force get with no collision checking because
+					// we don't have access to the victim's key
+					victim.value = c.store.Del(victim.keyHash, nil)
+					if c.onEvict != nil {
+						c.onEvict(victim.keyHash, victim.value, victim.cost)
 					}
+					c.Metrics.add(keyEvict, victim.keyHash, 1)
+					c.Metrics.add(costEvict, victim.keyHash, uint64(victim.cost))
 				}
 			case itemUpdate:
 				c.policy.Update(i.keyHash, i.cost)
