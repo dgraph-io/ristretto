@@ -21,19 +21,35 @@ import (
 	"testing"
 )
 
-func verifyHashProduct(t *testing.T, wants, got [2]uint64) {
-	if wants[0] != got[0] || wants[1] != got[1] {
-		t.Errorf("expected [2]uint64{%d, %d}, but got [2]uint64{%d, %d}\n",
-			wants[0], wants[1], got[0], got[1])
+func verifyHashProduct(t *testing.T, wantKey, wantConflict, key, conflict uint64) {
+	if wantKey != key || wantConflict != conflict {
+		t.Errorf("expected (%d, %d) but got (%d, %d)\n",
+			wantKey, wantConflict, key, conflict)
 	}
 }
 
 func TestKeyToHash(t *testing.T) {
-	verifyHashProduct(t, [2]uint64{1, 0}, KeyToHash(uint64(1)))
-	verifyHashProduct(t, [2]uint64{1, 0}, KeyToHash(1))
-	verifyHashProduct(t, [2]uint64{2, 0}, KeyToHash(int32(2)))
-	verifyHashProduct(t, [2]uint64{math.MaxUint64 - 1, 0}, KeyToHash(int32(-2)))
-	verifyHashProduct(t, [2]uint64{math.MaxUint64 - 1, 0}, KeyToHash(int64(-2)))
-	verifyHashProduct(t, [2]uint64{3, 0}, KeyToHash(uint32(3)))
-	verifyHashProduct(t, [2]uint64{3, 0}, KeyToHash(int64(3)))
+	var key uint64
+	var conflict uint64
+
+	key, conflict = KeyToHash(uint64(1))
+	verifyHashProduct(t, 1, 0, key, conflict)
+
+	key, conflict = KeyToHash(1)
+	verifyHashProduct(t, 1, 0, key, conflict)
+
+	key, conflict = KeyToHash(int32(2))
+	verifyHashProduct(t, 2, 0, key, conflict)
+
+	key, conflict = KeyToHash(int32(-2))
+	verifyHashProduct(t, math.MaxUint64-1, 0, key, conflict)
+
+	key, conflict = KeyToHash(int64(-2))
+	verifyHashProduct(t, math.MaxUint64-1, 0, key, conflict)
+
+	key, conflict = KeyToHash(uint32(3))
+	verifyHashProduct(t, 3, 0, key, conflict)
+
+	key, conflict = KeyToHash(int64(3))
+	verifyHashProduct(t, 3, 0, key, conflict)
 }

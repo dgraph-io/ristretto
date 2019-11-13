@@ -48,11 +48,11 @@ type Cache struct {
 	// contention
 	setBuf chan *item
 	// onEvict is called for item evictions
-	onEvict func([2]uint64, interface{}, int64)
+	onEvict func(uint64, uint64, interface{}, int64)
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}) [2]uint64
+	keyToHash func(interface{}) (uint64, uint64)
 	// stop is used to stop the processItems goroutine
 	stop chan struct{}
 	// cost calculates cost from a value
@@ -94,11 +94,11 @@ type Config struct {
 	Metrics bool
 	// OnEvict is called for every eviction and passes the hashed key, value,
 	// and cost to the function.
-	OnEvict func(key [2]uint64, value interface{}, cost int64)
+	OnEvict func(key, conflict uint64, value interface{}, cost int64)
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}) [2]uint64
+	KeyToHash func(key interface{}) (uint64, uint64)
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
@@ -115,10 +115,11 @@ const (
 
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
-	flag   itemFlag
-	hashes [2]uint64
-	value  interface{}
-	cost   int64
+	flag     itemFlag
+	key      uint64
+	conflict uint64
+	value    interface{}
+	cost     int64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -162,13 +163,13 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil || key == nil {
 		return nil, false
 	}
-	hashes := c.keyToHash(key)
-	c.getBuf.Push(hashes[0])
-	value, ok := c.store.Get(hashes)
+	keyHash, conflictHash := c.keyToHash(key)
+	c.getBuf.Push(keyHash)
+	value, ok := c.store.Get(keyHash, conflictHash)
 	if ok {
-		c.Metrics.add(hit, hashes[0], 1)
+		c.Metrics.add(hit, keyHash, 1)
 	} else {
-		c.Metrics.add(miss, hashes[0], 1)
+		c.Metrics.add(miss, keyHash, 1)
 	}
 	return value, ok
 }
@@ -186,15 +187,17 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	if c == nil || key == nil {
 		return false
 	}
+	keyHash, conflictHash := c.keyToHash(key)
 	i := &item{
-		flag:   itemNew,
-		hashes: c.keyToHash(key),
-		value:  value,
-		cost:   cost,
+		flag:     itemNew,
+		key:      keyHash,
+		conflict: conflictHash,
+		value:    value,
+		cost:     cost,
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
-	if c.store.Update(i.hashes, i.value) {
+	if c.store.Update(keyHash, conflictHash, i.value) {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
@@ -202,7 +205,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 	case c.setBuf <- i:
 		return true
 	default:
-		c.Metrics.add(dropSets, i.hashes[0], 1)
+		c.Metrics.add(dropSets, keyHash, 1)
 		return false
 	}
 }
@@ -212,9 +215,11 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil || key == nil {
 		return
 	}
+	keyHash, conflictHash := c.keyToHash(key)
 	c.setBuf <- &item{
-		flag:   itemDelete,
-		hashes: c.keyToHash(key),
+		flag:     itemDelete,
+		key:      keyHash,
+		conflict: conflictHash,
 	}
 }
 
@@ -257,28 +262,21 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				if victims, added := c.policy.Add(i.hashes[0], i.cost); added {
-					// item was accepted by the policy, so add to the hashmap
-					c.store.Set(i.hashes, i.value)
-					// delete victims
-					for _, victim := range victims {
-						// TODO: make Get-Delete atomic
-						if c.onEvict != nil {
-							// force get with no collision checking because
-							// we don't have access to the victim's key
-							victim.value, _ = c.store.Get(victim.hashes)
-							c.onEvict(victim.hashes, victim.value, victim.cost)
-						}
-						// force delete with no collision checking because we
-						// don't have access to the original, unhashed key
-						c.store.Del(victim.hashes)
+				victims, added := c.policy.Add(i.key, i.cost)
+				if added {
+					c.store.Set(i.key, i.conflict, i.value)
+				}
+				for _, victim := range victims {
+					victim.conflict, victim.value = c.store.Del(victim.key, 0)
+					if c.onEvict != nil {
+						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
 					}
 				}
 			case itemUpdate:
-				c.policy.Update(i.hashes[0], i.cost)
+				c.policy.Update(i.key, i.cost)
 			case itemDelete:
-				c.policy.Del(i.hashes[0])
-				c.store.Del(i.hashes)
+				c.policy.Del(i.key)
+				c.store.Del(i.key, i.conflict)
 			}
 		case <-c.stop:
 			return

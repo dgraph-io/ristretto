@@ -49,70 +49,88 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
-		OnEvict: func(key [2]uint64, value interface{}, cost int64) {
+		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key[0]] = struct{}{}
+			evicted[key] = struct{}{}
 		},
 	})
 	if err != nil {
 		panic(err)
 	}
 
+	var key uint64
+	var conflict uint64
+
+	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &item{
-		flag:   itemNew,
-		hashes: z.KeyToHash(1),
-		value:  1,
-		cost:   0,
+		flag:     itemNew,
+		key:      key,
+		conflict: conflict,
+		value:    1,
+		cost:     0,
 	}
 	time.Sleep(wait)
 	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
 		t.Fatal("cache processItems didn't add new item")
 	}
+	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &item{
-		flag:   itemUpdate,
-		hashes: z.KeyToHash(1),
-		value:  2,
-		cost:   0,
+		flag:     itemUpdate,
+		key:      key,
+		conflict: conflict,
+		value:    2,
+		cost:     0,
 	}
 	time.Sleep(wait)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
 	}
+	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &item{
-		flag:   itemDelete,
-		hashes: z.KeyToHash(1),
+		flag:     itemDelete,
+		key:      key,
+		conflict: conflict,
 	}
 	time.Sleep(wait)
-	if val, ok := c.store.Get(z.KeyToHash(1)); val != nil || ok {
+	key, conflict = z.KeyToHash(1)
+	if val, ok := c.store.Get(key, conflict); val != nil || ok {
 		t.Fatal("cache processItems didn't delete item")
 	}
 	if c.policy.Has(1) {
 		t.Fatal("cache processItems didn't delete item")
 	}
+	key, conflict = z.KeyToHash(2)
 	c.setBuf <- &item{
-		flag:   itemNew,
-		hashes: z.KeyToHash(2),
-		value:  2,
-		cost:   3,
+		flag:     itemNew,
+		key:      key,
+		conflict: conflict,
+		value:    2,
+		cost:     3,
 	}
+	key, conflict = z.KeyToHash(3)
 	c.setBuf <- &item{
-		flag:   itemNew,
-		hashes: z.KeyToHash(3),
-		value:  3,
-		cost:   3,
+		flag:     itemNew,
+		key:      key,
+		conflict: conflict,
+		value:    3,
+		cost:     3,
 	}
+	key, conflict = z.KeyToHash(4)
 	c.setBuf <- &item{
-		flag:   itemNew,
-		hashes: z.KeyToHash(4),
-		value:  3,
-		cost:   3,
+		flag:     itemNew,
+		key:      key,
+		conflict: conflict,
+		value:    3,
+		cost:     3,
 	}
+	key, conflict = z.KeyToHash(5)
 	c.setBuf <- &item{
-		flag:   itemNew,
-		hashes: z.KeyToHash(5),
-		value:  3,
-		cost:   5,
+		flag:     itemNew,
+		key:      key,
+		conflict: conflict,
+		value:    3,
+		cost:     5,
 	}
 	time.Sleep(wait)
 	m.Lock()
@@ -140,7 +158,8 @@ func TestCacheGet(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.store.Set(z.KeyToHash(1), 1)
+	key, conflict := z.KeyToHash(1)
+	c.store.Set(key, conflict, 1)
 	if val, ok := c.Get(1); val == nil || !ok {
 		t.Fatal("get should be successful")
 	}
@@ -184,11 +203,13 @@ func TestCacheSet(t *testing.T) {
 	}
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
+		key, conflict := z.KeyToHash(1)
 		c.setBuf <- &item{
-			flag:   itemUpdate,
-			hashes: z.KeyToHash(1),
-			value:  1,
-			cost:   1,
+			flag:     itemUpdate,
+			key:      key,
+			conflict: conflict,
+			value:    1,
+			cost:     1,
 		}
 	}
 	if c.Set(2, 2, 1) {

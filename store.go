@@ -21,8 +21,9 @@ import (
 )
 
 type storeItem struct {
-	hashes [2]uint64
-	value  interface{}
+	key      uint64
+	conflict uint64
+	value    interface{}
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -33,15 +34,15 @@ type storeItem struct {
 // Every store is safe for concurrent usage.
 type store interface {
 	// Get returns the value associated with the key parameter.
-	Get([2]uint64) (interface{}, bool)
+	Get(uint64, uint64) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present.
-	Set([2]uint64, interface{})
+	Set(uint64, uint64, interface{})
 	// Del deletes the key-value pair from the Map.
-	Del([2]uint64)
+	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update([2]uint64, interface{}) bool
+	Update(uint64, uint64, interface{}) bool
 	// Clear clears all contents of the store.
 	Clear()
 }
@@ -67,20 +68,20 @@ func newShardedMap() *shardedMap {
 	return sm
 }
 
-func (sm *shardedMap) Get(hashes [2]uint64) (interface{}, bool) {
-	return sm.shards[hashes[0]%numShards].Get(hashes)
+func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
+	return sm.shards[key%numShards].Get(key, conflict)
 }
 
-func (sm *shardedMap) Set(hashes [2]uint64, value interface{}) {
-	sm.shards[hashes[0]%numShards].Set(hashes, value)
+func (sm *shardedMap) Set(key, conflict uint64, value interface{}) {
+	sm.shards[key%numShards].Set(key, conflict, value)
 }
 
-func (sm *shardedMap) Del(hashes [2]uint64) {
-	sm.shards[hashes[0]%numShards].Del(hashes)
+func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
+	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(hashes [2]uint64, value interface{}) bool {
-	return sm.shards[hashes[0]%numShards].Update(hashes, value)
+func (sm *shardedMap) Update(key, conflict uint64, value interface{}) bool {
+	return sm.shards[key%numShards].Update(key, conflict, value)
 }
 
 func (sm *shardedMap) Clear() {
@@ -100,70 +101,74 @@ func newLockedMap() *lockedMap {
 	}
 }
 
-func (m *lockedMap) Get(hashes [2]uint64) (interface{}, bool) {
+func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
 	m.RLock()
-	item, ok := m.data[hashes[0]]
+	item, ok := m.data[key]
 	m.RUnlock()
 	if !ok {
 		return nil, false
 	}
-	if (item.hashes[1] != hashes[1]) && hashes[1] != 0 {
+	if conflict != 0 && (conflict != item.conflict) {
 		return nil, false
 	}
 	return item.value, true
 }
 
-func (m *lockedMap) Set(hashes [2]uint64, value interface{}) {
+func (m *lockedMap) Set(key, conflict uint64, value interface{}) {
 	m.Lock()
-	item, ok := m.data[hashes[0]]
+	item, ok := m.data[key]
 	if !ok {
-		m.data[hashes[0]] = storeItem{
-			hashes: hashes,
-			value:  value,
+		m.data[key] = storeItem{
+			key:      key,
+			conflict: conflict,
+			value:    value,
 		}
 		m.Unlock()
 		return
 	}
-	if (item.hashes[1] != hashes[1]) && hashes[1] != 0 {
+	if conflict != 0 && (conflict != item.conflict) {
 		m.Unlock()
 		return
 	}
-	m.data[hashes[0]] = storeItem{
-		hashes: item.hashes,
-		value:  value,
+	m.data[key] = storeItem{
+		key:      key,
+		conflict: conflict,
+		value:    value,
 	}
 	m.Unlock()
 }
 
-func (m *lockedMap) Del(hashes [2]uint64) {
+func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	m.Lock()
-	item, ok := m.data[hashes[0]]
+	item, ok := m.data[key]
 	if !ok {
 		m.Unlock()
-		return
+		return 0, nil
 	}
-	if (item.hashes[1] != hashes[1]) && hashes[1] != 0 {
+	if conflict != 0 && (conflict != item.conflict) {
 		m.Unlock()
-		return
+		return 0, nil
 	}
-	delete(m.data, hashes[0])
+	delete(m.data, key)
 	m.Unlock()
+	return item.conflict, item.value
 }
 
-func (m *lockedMap) Update(hashes [2]uint64, value interface{}) bool {
+func (m *lockedMap) Update(key, conflict uint64, value interface{}) bool {
 	m.Lock()
-	item, ok := m.data[hashes[0]]
+	item, ok := m.data[key]
 	if !ok {
 		m.Unlock()
 		return false
 	}
-	if (item.hashes[1] != hashes[1]) && hashes[1] != 0 {
+	if conflict != 0 && (conflict != item.conflict) {
 		m.Unlock()
 		return false
 	}
-	m.data[hashes[0]] = storeItem{
-		hashes: item.hashes,
-		value:  value,
+	m.data[key] = storeItem{
+		key:      key,
+		conflict: conflict,
+		value:    value,
 	}
 	m.Unlock()
 	return true
