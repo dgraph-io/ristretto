@@ -274,19 +274,14 @@ func (c *Cache) processItems() {
 					c.store.Set(i.keyHash, i.key, i.value)
 					c.Metrics.add(keyAdd, i.keyHash, 1)
 					c.Metrics.add(costAdd, i.keyHash, uint64(i.cost))
-					// delete victims
 				}
 				for _, victim := range victims {
-					// TODO: make Get-Delete atomic
+          // force get with no collision checking because
+					// we don't have access to the victim's key
+					victim.value = c.store.Del(victim.keyHash, nil)
 					if c.onEvict != nil {
-						// force get with no collision checking because
-						// we don't have access to the victim's key
-						victim.value, _ = c.store.Get(victim.keyHash, nil)
 						c.onEvict(victim.keyHash, victim.value, victim.cost)
 					}
-					// force delete with no collision checking because we
-					// don't have access to the original, unhashed key
-					c.store.Del(victim.keyHash, nil)
 					c.Metrics.add(keyEvict, victim.keyHash, 1)
 					c.Metrics.add(costEvict, victim.keyHash, uint64(victim.cost))
 				}

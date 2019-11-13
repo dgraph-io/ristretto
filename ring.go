@@ -62,8 +62,7 @@ func (s *ringStripe) Push(item uint64) {
 // This implements the "batching" process described in the BP-Wrapper paper
 // (section III part A).
 type ringBuffer struct {
-	stripes []*ringStripe
-	pool    *sync.Pool
+	pool *sync.Pool
 }
 
 // newRingBuffer returns a striped ring buffer. The Consumer in ringConfig will
