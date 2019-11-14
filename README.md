@@ -38,7 +38,6 @@ Ristretto is usable but still under active development. We expect it to be produ
 		* [OnEvict](#Config)
 		* [KeyToHash](#Config)
         * [Cost](#Config)
-        * [Hashes](#Config)
 * [Benchmarks](#Benchmarks)
 	* [Hit Ratios](#Hit-Ratios)
 		* [Search](#Search)
@@ -109,13 +108,17 @@ If for some reason you see Get performance decreasing with lots of contention (y
 
 Metrics is true when you want real-time logging of a variety of stats. The reason this is a Config flag is because there's a 10% throughput performance overhead. 
 
-**OnEvict** `func(keyHash uint64, value interface{}, cost int64)`
+**OnEvict** `func(hashes [2]uint64, value interface{}, cost int64)`
 
 OnEvict is called for every eviction.
 
-**KeyToHash** `func(key interface{}) uint64`
+**KeyToHash** `func(key interface{}) [2]uint64`
 
 KeyToHash is the hashing algorithm used for every key. If this is nil, Ristretto has a variety of [defaults depending on the underlying interface type](https://github.com/dgraph-io/ristretto/blob/master/z/z.go#L19-L41).
+
+Note that if you want 128bit hashes you should use the full `[2]uint64`,
+otherwise just fill the `uint64` at the `0` position and it will behave like
+any 64bit hash.
 
 **Cost** `func(value interface{}) int64`
 
@@ -128,15 +131,6 @@ To signal to Ristretto that you'd like to use this Cost function:
 
 1. Set the Cost field to a non-nil function.
 2. When calling Set for new items or item updates, use a `cost` of 0.
-
-**Hashes** `uint8`
-
-Hashes is the number of 64-bit hashes to chain and use as unique identifiers.
-For example, if Hashes is 2, Ristretto will use 128-bit hashes to verify and
-protect against collisions. If Hashes is 3, Ristretto will use 192-bit hashes,
-etc.
-
-If this value is 0 or 1, 64-bit hashes will be used.
 
 ## Benchmarks
 

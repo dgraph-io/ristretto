@@ -174,8 +174,9 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
 		victims = append(victims, &item{
-			keyHash: minKey,
-			cost:    minCost,
+			key:      minKey,
+			conflict: 0,
+			cost:     minCost,
 		})
 	}
 	p.evict.add(key, cost)
