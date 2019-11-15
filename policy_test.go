@@ -61,32 +61,32 @@ func TestPolicyPush(t *testing.T) {
 
 func TestPolicyAdd(t *testing.T) {
 	p := newDefaultPolicy(1000, 100)
-	if victims, added := p.Add(1, 101); victims != nil || added {
+	if victims, added := p.Add(1, 101, -1); victims != nil || added {
 		t.Fatal("can't add an item bigger than entire cache")
 	}
 	p.Lock()
-	p.evict.add(1, 1)
+	p.evict.add(1, 1, -1)
 	p.admit.Increment(1)
 	p.admit.Increment(2)
 	p.admit.Increment(3)
 	p.Unlock()
-	if victims, added := p.Add(1, 1); victims != nil || !added {
+	if victims, added := p.Add(1, 1, -1); victims != nil || !added {
 		t.Fatal("item should already exist")
 	}
-	if victims, added := p.Add(2, 20); victims != nil || !added {
+	if victims, added := p.Add(2, 20, -1); victims != nil || !added {
 		t.Fatal("item should be added with no eviction")
 	}
-	if victims, added := p.Add(3, 90); victims == nil || !added {
+	if victims, added := p.Add(3, 90, -1); victims == nil || !added {
 		t.Fatal("item should be added with eviction")
 	}
-	if victims, added := p.Add(4, 20); victims == nil || added {
+	if victims, added := p.Add(4, 20, -1); victims == nil || added {
 		t.Fatal("item should not be added")
 	}
 }
 
 func TestPolicyHas(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
+	p.Add(1, 1, -1)
 	if !p.Has(1) {
 		t.Fatal("policy should have key")
 	}
@@ -97,7 +97,7 @@ func TestPolicyHas(t *testing.T) {
 
 func TestPolicyDel(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
+	p.Add(1, 1, -1)
 	p.Del(1)
 	p.Del(2)
 	if p.Has(1) {
@@ -110,7 +110,7 @@ func TestPolicyDel(t *testing.T) {
 
 func TestPolicyCap(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
+	p.Add(1, 1, -1)
 	if p.Cap() != 9 {
 		t.Fatal("cap returned wrong value")
 	}
@@ -118,10 +118,10 @@ func TestPolicyCap(t *testing.T) {
 
 func TestPolicyUpdate(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
-	p.Update(1, 2)
+	p.Add(1, 1, -1)
+	p.Update(1, 2, -1)
 	p.Lock()
-	if p.evict.keyCosts[1] != 2 {
+	if p.evict.keys[1].cost != 2 {
 		p.Unlock()
 		t.Fatal("update failed")
 	}
@@ -130,7 +130,7 @@ func TestPolicyUpdate(t *testing.T) {
 
 func TestPolicyCost(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 2)
+	p.Add(1, 2, -1)
 	if p.Cost(1) != 2 {
 		t.Fatal("cost for existing key returned wrong value")
 	}
@@ -141,9 +141,9 @@ func TestPolicyCost(t *testing.T) {
 
 func TestPolicyClear(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
-	p.Add(2, 2)
-	p.Add(3, 3)
+	p.Add(1, 1, -1)
+	p.Add(2, 2, -1)
+	p.Add(3, 3, -1)
 	p.Clear()
 	if p.Cap() != 10 || p.Has(1) || p.Has(2) || p.Has(3) {
 		t.Fatal("clear didn't clear properly")
@@ -157,33 +157,33 @@ func TestPolicyClose(t *testing.T) {
 		}
 	}()
 	p := newDefaultPolicy(100, 10)
-	p.Add(1, 1)
+	p.Add(1, 1, -1)
 	p.Close()
 	p.itemsCh <- []uint64{1}
 }
 
 func TestSampledLFUAdd(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1)
-	e.add(2, 2)
-	e.add(3, 1)
+	e.add(1, 1, -1)
+	e.add(2, 2, -1)
+	e.add(3, 1, -1)
 	if e.used != 4 {
 		t.Fatal("used not being incremented")
 	}
-	if e.keyCosts[2] != 2 {
+	if e.keys[2].cost != 2 {
 		t.Fatal("keyCosts not being updated")
 	}
 }
 
 func TestSampledLFUDel(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1)
-	e.add(2, 2)
+	e.add(1, 1, -1)
+	e.add(2, 2, -1)
 	e.del(2)
 	if e.used != 1 {
 		t.Fatal("del not updating used field")
 	}
-	if _, ok := e.keyCosts[2]; ok {
+	if _, ok := e.keys[2]; ok {
 		t.Fatal("del not deleting value from keyCosts")
 	}
 	e.del(4)
@@ -191,34 +191,34 @@ func TestSampledLFUDel(t *testing.T) {
 
 func TestSampledLFUUpdate(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1)
-	if !e.updateIfHas(1, 2) {
+	e.add(1, 1, -1)
+	if !e.updateIfHas(1, 2, -1) {
 		t.Fatal("update should be possible")
 	}
 	if e.used != 2 {
 		t.Fatal("update not changing used field")
 	}
-	if e.updateIfHas(2, 2) {
+	if e.updateIfHas(2, 2, -1) {
 		t.Fatal("update shouldn't be possible")
 	}
 }
 
 func TestSampledLFUClear(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1)
-	e.add(2, 2)
-	e.add(3, 1)
+	e.add(1, 1, -1)
+	e.add(2, 2, -1)
+	e.add(3, 1, -1)
 	e.clear()
-	if len(e.keyCosts) != 0 || e.used != 0 {
+	if len(e.keys) != 0 || e.used != 0 {
 		t.Fatal("clear not deleting keyCosts or zeroing used field")
 	}
 }
 
 func TestSampledLFURoom(t *testing.T) {
 	e := newSampledLFU(16)
-	e.add(1, 1)
-	e.add(2, 2)
-	e.add(3, 3)
+	e.add(1, 1, -1)
+	e.add(2, 2, -1)
+	e.add(3, 3, -1)
 	if e.roomLeft(4) != 6 {
 		t.Fatal("roomLeft returning wrong value")
 	}
@@ -226,12 +226,12 @@ func TestSampledLFURoom(t *testing.T) {
 
 func TestSampledLFUSample(t *testing.T) {
 	e := newSampledLFU(16)
-	e.add(4, 4)
-	e.add(5, 5)
+	e.add(4, 4, -1)
+	e.add(5, 5, -1)
 	sample := e.fillSample([]*policyPair{
-		{1, 1},
-		{2, 2},
-		{3, 3},
+		{1, 1, -1},
+		{2, 2, -1},
+		{3, 3, -1},
 	})
 	k := sample[len(sample)-1].key
 	if len(sample) != 5 || k == 1 || k == 2 || k == 3 {

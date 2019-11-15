@@ -23,7 +23,7 @@ func TestStressSetGet(t *testing.T) {
 		panic(err)
 	}
 	for i := 0; i < 100; i++ {
-		c.Set(i, i, 1)
+		c.Set(i, i, 1, -1)
 	}
 	time.Sleep(wait)
 	wg := &sync.WaitGroup{}
@@ -74,7 +74,7 @@ func TestStressHitRatio(t *testing.T) {
 			o.Set(k, k, 1)
 		}
 		if _, ok := c.Get(k); !ok {
-			c.Set(k, k, 1)
+			c.Set(k, k, 1, -1)
 		}
 	}
 	t.Logf("actual: %.2f, optimal: %.2f", c.Metrics.Ratio(), o.Metrics().Ratio())

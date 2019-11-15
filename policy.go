@@ -38,7 +38,7 @@ type policy interface {
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added. If it returns true, the key should be stored in cache.
-	Add(uint64, int64) ([]*item, bool)
+	Add(uint64, int64, int64) ([]*item, bool)
 	// Has returns true if the key exists in the Policy.
 	Has(uint64) bool
 	// Del deletes the key from the Policy.
@@ -48,7 +48,7 @@ type policy interface {
 	// Close stops all goroutines and closes all channels.
 	Close()
 	// Update updates the cost value for the key.
-	Update(uint64, int64)
+	Update(uint64, int64, int64)
 	// Cost returns the cost value of a key or -1 if missing.
 	Cost(uint64) int64
 	// Optionally, set stats object to track how policy is performing.
@@ -89,6 +89,7 @@ func (p *defaultPolicy) CollectMetrics(metrics *Metrics) {
 type policyPair struct {
 	key  uint64
 	cost int64
+	ttl  int64
 }
 
 func (p *defaultPolicy) processItems() {
@@ -118,7 +119,7 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 	}
 }
 
-func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
+func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 	p.Lock()
 	defer p.Unlock()
 	// can't add an item bigger than entire cache
@@ -126,7 +127,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		return nil, false
 	}
 	// we don't need to go any further if the item is already in the cache
-	if has := p.evict.updateIfHas(key, cost); has {
+	if has := p.evict.updateIfHas(key, cost, ttl); has {
 		return nil, true
 	}
 	// if we got this far, this key doesn't exist in the cache
@@ -136,7 +137,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	if room >= 0 {
 		// there's enough room in the cache to store the new item without
 		// overflowing, so we can do that now and stop here
-		p.evict.add(key, cost)
+		p.evict.add(key, cost, ttl)
 		return nil, true
 	}
 	// incHits is the hit count for the incoming item
@@ -179,13 +180,13 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 			cost:     minCost,
 		})
 	}
-	p.evict.add(key, cost)
+	p.evict.add(key, cost, ttl)
 	return victims, true
 }
 
 func (p *defaultPolicy) Has(key uint64) bool {
 	p.Lock()
-	_, exists := p.evict.keyCosts[key]
+	_, exists := p.evict.keys[key]
 	p.Unlock()
 	return exists
 }
@@ -203,17 +204,17 @@ func (p *defaultPolicy) Cap() int64 {
 	return capacity
 }
 
-func (p *defaultPolicy) Update(key uint64, cost int64) {
+func (p *defaultPolicy) Update(key uint64, cost, ttl int64) {
 	p.Lock()
-	p.evict.updateIfHas(key, cost)
+	p.evict.updateIfHas(key, cost, ttl)
 	p.Unlock()
 }
 
 func (p *defaultPolicy) Cost(key uint64) int64 {
 	p.Lock()
-	if cost, found := p.evict.keyCosts[key]; found {
+	if meta, found := p.evict.keys[key]; found {
 		p.Unlock()
-		return cost
+		return meta.cost
 	}
 	p.Unlock()
 	return -1
@@ -233,18 +234,23 @@ func (p *defaultPolicy) Close() {
 	close(p.itemsCh)
 }
 
+type metadata struct {
+	cost int64
+	ttl  int64
+}
+
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	keyCosts map[uint64]int64
-	maxCost  int64
-	used     int64
-	metrics  *Metrics
+	keys    map[uint64]*metadata
+	maxCost int64
+	used    int64
+	metrics *Metrics
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
 	return &sampledLFU{
-		keyCosts: make(map[uint64]int64),
-		maxCost:  maxCost,
+		keys:    make(map[uint64]*metadata),
+		maxCost: maxCost,
 	}
 }
 
@@ -256,8 +262,8 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 	if len(in) >= lfuSample {
 		return in
 	}
-	for key, cost := range p.keyCosts {
-		in = append(in, &policyPair{key, cost})
+	for key, meta := range p.keys {
+		in = append(in, &policyPair{key, meta.cost, meta.ttl})
 		if len(in) >= lfuSample {
 			return in
 		}
@@ -266,26 +272,27 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 }
 
 func (p *sampledLFU) del(key uint64) {
-	cost, ok := p.keyCosts[key]
+	meta, ok := p.keys[key]
 	if !ok {
 		return
 	}
-	p.used -= cost
-	delete(p.keyCosts, key)
+	p.used -= meta.cost
+	delete(p.keys, key)
 }
 
-func (p *sampledLFU) add(key uint64, cost int64) {
-	p.keyCosts[key] = cost
+func (p *sampledLFU) add(key uint64, cost, ttl int64) {
+	p.keys[key] = &metadata{cost: cost, ttl: ttl}
 	p.used += cost
 }
 
-func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
-	if prev, found := p.keyCosts[key]; found {
+func (p *sampledLFU) updateIfHas(key uint64, cost, ttl int64) bool {
+	if prev, found := p.keys[key]; found {
 		// update the cost of an existing key, but don't worry about evicting,
 		// evictions will be handled the next time a new item is added
 		p.metrics.add(keyUpdate, key, 1)
-		p.used += cost - prev
-		p.keyCosts[key] = cost
+		p.used += cost - prev.cost
+		p.keys[key].cost = cost
+		p.keys[key].ttl = ttl
 		return true
 	}
 	return false
@@ -293,7 +300,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 
 func (p *sampledLFU) clear() {
 	p.used = 0
-	p.keyCosts = make(map[uint64]int64)
+	p.keys = make(map[uint64]*metadata)
 }
 
 // tinyLFU is an admission helper that keeps track of access frequency using

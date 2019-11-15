@@ -120,6 +120,7 @@ type item struct {
 	conflict uint64
 	value    interface{}
 	cost     int64
+	ttl      int64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -183,7 +184,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // To dynamically evaluate the items cost using the Config.Coster function, set
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
-func (c *Cache) Set(key, value interface{}, cost int64) bool {
+func (c *Cache) Set(key, value interface{}, cost, ttl int64) bool {
 	if c == nil || key == nil {
 		return false
 	}
@@ -194,6 +195,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 		conflict: conflictHash,
 		value:    value,
 		cost:     cost,
+		ttl:      ttl,
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
@@ -262,7 +264,7 @@ func (c *Cache) processItems() {
 			}
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.key, i.cost)
+				victims, added := c.policy.Add(i.key, i.cost, i.ttl)
 				if added {
 					c.store.Set(i.key, i.conflict, i.value)
 					c.Metrics.add(keyAdd, i.key, 1)
@@ -277,7 +279,7 @@ func (c *Cache) processItems() {
 					c.Metrics.add(costEvict, victim.key, uint64(victim.cost))
 				}
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
+				c.policy.Update(i.key, i.cost, i.ttl)
 			case itemDelete:
 				c.policy.Del(i.key)
 				c.store.Del(i.key, i.conflict)

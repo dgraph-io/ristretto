@@ -26,7 +26,7 @@ func TestCacheKeyToHash(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if c.Set(1, 1, 1) {
+	if c.Set(1, 1, 1, -1) {
 		time.Sleep(wait)
 		if val, ok := c.Get(1); val == nil || !ok {
 			t.Fatal("get should be successful")
@@ -75,7 +75,7 @@ func TestCacheMaxCost(t *testing.T) {
 						} else {
 							val = strings.Repeat("a", 1000)
 						}
-						c.Set(key(), val, int64(2+len(val)))
+						c.Set(key(), val, int64(2+len(val)), -1)
 					}
 				}
 			}
@@ -270,7 +270,7 @@ func TestCacheSet(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if c.Set(1, 1, 1) {
+	if c.Set(1, 1, 1, -1) {
 		time.Sleep(wait)
 		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
 			t.Fatal("set/get returned wrong value")
@@ -280,7 +280,7 @@ func TestCacheSet(t *testing.T) {
 			t.Fatal("set was dropped but value still added")
 		}
 	}
-	c.Set(1, 2, 2)
+	c.Set(1, 2, 2, -1)
 	val, ok := c.store.Get(z.KeyToHash(1))
 	if val == nil || val.(int) != 2 || !ok {
 		t.Fatal("set/update was unsuccessful")
@@ -296,7 +296,7 @@ func TestCacheSet(t *testing.T) {
 			cost:     1,
 		}
 	}
-	if c.Set(2, 2, 1) {
+	if c.Set(2, 2, 1, -1) {
 		t.Fatal("set should be dropped with full setBuf")
 	}
 	if c.Metrics.SetsDropped() != 1 {
@@ -305,7 +305,7 @@ func TestCacheSet(t *testing.T) {
 	close(c.setBuf)
 	close(c.stop)
 	c = nil
-	if c.Set(1, 1, 1) {
+	if c.Set(1, 1, 1, -1) {
 		t.Fatal("set shouldn't be successful with nil cache")
 	}
 }
@@ -319,7 +319,7 @@ func TestCacheDel(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.Set(1, 1, 1)
+	c.Set(1, 1, 1, -1)
 	c.Del(1)
 	time.Sleep(wait)
 	if val, ok := c.Get(1); val != nil || ok {
@@ -345,7 +345,7 @@ func TestCacheClear(t *testing.T) {
 		panic(err)
 	}
 	for i := 0; i < 10; i++ {
-		c.Set(i, i, 1)
+		c.Set(i, i, 1, -1)
 	}
 	time.Sleep(wait)
 	if c.Metrics.KeysAdded() != 10 {
@@ -373,7 +373,7 @@ func TestCacheMetrics(t *testing.T) {
 		panic(err)
 	}
 	for i := 0; i < 10; i++ {
-		c.Set(i, i, 1)
+		c.Set(i, i, 1, -1)
 	}
 	time.Sleep(wait)
 	m := c.Metrics
@@ -460,7 +460,7 @@ func TestCacheMetricsClear(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.Set(1, 1, 1)
+	c.Set(1, 1, 1, -1)
 	stop := make(chan struct{})
 	go func() {
 		for {
