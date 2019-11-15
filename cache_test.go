@@ -51,11 +51,16 @@ func TestCacheTTL(t *testing.T) {
 	// wait for new set to go through
 	time.Sleep(time.Millisecond)
 	m.Lock()
-	if _, ok := evicted[1]; !ok || len(evicted) != 2 {
-		m.Unlock()
-		t.Fatal("item should have expired")
+	defer m.Unlock()
+	if len(evicted) != 2 {
+		t.Fatal("items 1 and 2 should have expired")
 	}
-	m.Unlock()
+	if _, ok := evicted[1]; !ok {
+		t.Fatal("items 1 and 2 should have expired")
+	}
+	if _, ok := evicted[2]; !ok {
+		t.Fatal("items 1 and 2 should have expired")
+	}
 }
 
 func TestCacheKeyToHash(t *testing.T) {
