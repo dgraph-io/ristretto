@@ -185,6 +185,9 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // To dynamically evaluate the items cost using the Config.Coster function, set
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
+//
+// TTL is the amount of time (in seconds) that the item will remain in the
+// cache. To make an item stay indefinitely, set TTL to -1.
 func (c *Cache) Set(key, value interface{}, cost, ttl int64) bool {
 	if c == nil || key == nil {
 		return false
