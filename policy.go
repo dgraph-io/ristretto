@@ -19,6 +19,7 @@ package ristretto
 import (
 	"math"
 	"sync"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -158,6 +159,11 @@ func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 		// find minimally used item in sample
 		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
 		for i, pair := range sample {
+			// if item is expired make sure to evict it
+			if pair.ttl != -1 && pair.ttl < time.Now().Unix() {
+				minKey, minId, minCost = pair.key, i, pair.cost
+				goto evict
+			}
 			// look up hit count for sample key
 			if hits := p.admit.Estimate(pair.key); hits < minHits {
 				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
@@ -168,17 +174,14 @@ func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
+	evict:
 		// delete the victim from metadata
 		p.evict.del(minKey)
 		// delete the victim from sample
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// store victim in evicted victims slice
-		victims = append(victims, &item{
-			key:      minKey,
-			conflict: 0,
-			cost:     minCost,
-		})
+		victims = append(victims, &item{key: minKey, cost: minCost})
 	}
 	p.evict.add(key, cost, ttl)
 	return victims, true

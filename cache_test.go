@@ -12,6 +12,35 @@ import (
 
 var wait time.Duration = time.Millisecond * 10
 
+func TestCacheTTL(t *testing.T) {
+	m := &sync.Mutex{}
+	evicted := make(map[uint64]struct{})
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+			m.Lock()
+			defer m.Unlock()
+			evicted[key] = struct{}{}
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Set(1, 1, 1, 1)
+	c.Set(2, 2, 1, -1)
+	time.Sleep(time.Second * 2)
+	c.Set(3, 3, 9, -1)
+	time.Sleep(time.Second)
+	m.Lock()
+	if _, ok := evicted[1]; !ok {
+		m.Unlock()
+		t.Fatal("item should have expired")
+	}
+	m.Unlock()
+}
+
 func TestCacheKeyToHash(t *testing.T) {
 	keyToHashCount := 0
 	c, err := NewCache(&Config{

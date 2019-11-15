@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -189,6 +190,9 @@ func (c *Cache) Set(key, value interface{}, cost, ttl int64) bool {
 		return false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
+	if ttl != -1 {
+		ttl = time.Now().Unix() + ttl
+	}
 	i := &item{
 		flag:     itemNew,
 		key:      keyHash,
