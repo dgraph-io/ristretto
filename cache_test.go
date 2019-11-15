@@ -28,13 +28,30 @@ func TestCacheTTL(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	c.Set(1, 1, 1, 1)
-	c.Set(2, 2, 1, -1)
-	time.Sleep(time.Second * 2)
-	c.Set(3, 3, 9, -1)
-	time.Sleep(time.Second)
+	// item 1 will live for 1 second
+	c.Set(1, 1, 2, 1)
+	// item 2 will live for 2 seconds
+	c.Set(2, 2, 3, 2)
+	// items 11-14 will live indefinitely
+	c.Set(11, 1, 1, -1)
+	c.Set(12, 1, 1, -1)
+	c.Set(13, 1, 1, -1)
+	c.Set(14, 1, 1, -1)
+	// sleep for 3 seconds (2+1 for good measure)
+	time.Sleep(time.Second * 3)
+	// gets to simulate load (1 and 2 should be evicted despite this because
+	// they're expiring)
+	c.Get(1)
+	c.Get(1)
+	c.Get(1)
+	c.Get(2)
+	c.Get(2)
+	// try to set a new item to force 1 and 2 expiration
+	c.Set(3, 3, 5, -1)
+	// wait for new set to go through
+	time.Sleep(time.Millisecond)
 	m.Lock()
-	if _, ok := evicted[1]; !ok {
+	if _, ok := evicted[1]; !ok || len(evicted) != 2 {
 		m.Unlock()
 		t.Fatal("item should have expired")
 	}
