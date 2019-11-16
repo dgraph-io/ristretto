@@ -152,6 +152,7 @@ func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 	// delete expired items before doing any evictions, we may not even need to
 	for e := p.times.Back(); e != nil; e = e.Prev() {
 		i := e.Value.([2]uint64)
+		fmt.Println("looking:", i[0])
 		if i[1] > uint64(time.Now().Unix()) {
 			break
 		}
@@ -262,11 +263,6 @@ func (p *defaultPolicy) Close() {
 	p.stop <- struct{}{}
 	close(p.stop)
 	close(p.itemsCh)
-}
-
-type metadata struct {
-	cost int64
-	ttl  int64
 }
 
 // sampledLFU is an eviction helper storing key-cost pairs.
