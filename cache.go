@@ -286,7 +286,7 @@ func (c *Cache) processItems() {
 					c.Metrics.add(costEvict, victim.key, uint64(victim.cost))
 				}
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost, i.ttl)
+				c.policy.Update(i.key, i.cost)
 			case itemDelete:
 				c.policy.Del(i.key)
 				c.store.Del(i.key, i.conflict)

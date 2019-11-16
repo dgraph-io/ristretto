@@ -65,7 +65,7 @@ func TestPolicyAdd(t *testing.T) {
 		t.Fatal("can't add an item bigger than entire cache")
 	}
 	p.Lock()
-	p.evict.add(1, 1, -1)
+	p.evict.add(1, 1)
 	p.admit.Increment(1)
 	p.admit.Increment(2)
 	p.admit.Increment(3)
@@ -119,9 +119,9 @@ func TestPolicyCap(t *testing.T) {
 func TestPolicyUpdate(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.Add(1, 1, -1)
-	p.Update(1, 2, -1)
+	p.Update(1, 2)
 	p.Lock()
-	if p.evict.keys[1].cost != 2 {
+	if p.evict.keys[1] != 2 {
 		p.Unlock()
 		t.Fatal("update failed")
 	}
@@ -164,21 +164,21 @@ func TestPolicyClose(t *testing.T) {
 
 func TestSampledLFUAdd(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1, -1)
-	e.add(2, 2, -1)
-	e.add(3, 1, -1)
+	e.add(1, 1)
+	e.add(2, 2)
+	e.add(3, 1)
 	if e.used != 4 {
 		t.Fatal("used not being incremented")
 	}
-	if e.keys[2].cost != 2 {
+	if e.keys[2] != 2 {
 		t.Fatal("keyCosts not being updated")
 	}
 }
 
 func TestSampledLFUDel(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1, -1)
-	e.add(2, 2, -1)
+	e.add(1, 1)
+	e.add(2, 2)
 	e.del(2)
 	if e.used != 1 {
 		t.Fatal("del not updating used field")
@@ -191,23 +191,23 @@ func TestSampledLFUDel(t *testing.T) {
 
 func TestSampledLFUUpdate(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1, -1)
-	if !e.updateIfHas(1, 2, -1) {
+	e.add(1, 1)
+	if !e.updateIfHas(1, 2) {
 		t.Fatal("update should be possible")
 	}
 	if e.used != 2 {
 		t.Fatal("update not changing used field")
 	}
-	if e.updateIfHas(2, 2, -1) {
+	if e.updateIfHas(2, 2) {
 		t.Fatal("update shouldn't be possible")
 	}
 }
 
 func TestSampledLFUClear(t *testing.T) {
 	e := newSampledLFU(4)
-	e.add(1, 1, -1)
-	e.add(2, 2, -1)
-	e.add(3, 1, -1)
+	e.add(1, 1)
+	e.add(2, 2)
+	e.add(3, 1)
 	e.clear()
 	if len(e.keys) != 0 || e.used != 0 {
 		t.Fatal("clear not deleting keyCosts or zeroing used field")
@@ -216,9 +216,9 @@ func TestSampledLFUClear(t *testing.T) {
 
 func TestSampledLFURoom(t *testing.T) {
 	e := newSampledLFU(16)
-	e.add(1, 1, -1)
-	e.add(2, 2, -1)
-	e.add(3, 3, -1)
+	e.add(1, 1)
+	e.add(2, 2)
+	e.add(3, 3)
 	if e.roomLeft(4) != 6 {
 		t.Fatal("roomLeft returning wrong value")
 	}
@@ -226,12 +226,12 @@ func TestSampledLFURoom(t *testing.T) {
 
 func TestSampledLFUSample(t *testing.T) {
 	e := newSampledLFU(16)
-	e.add(4, 4, -1)
-	e.add(5, 5, -1)
+	e.add(4, 4)
+	e.add(5, 5)
 	sample := e.fillSample([]*policyPair{
-		{1, 1, -1},
-		{2, 2, -1},
-		{3, 3, -1},
+		{1, 1},
+		{2, 2},
+		{3, 3},
 	})
 	k := sample[len(sample)-1].key
 	if len(sample) != 5 || k == 1 || k == 2 || k == 3 {
