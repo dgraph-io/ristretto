@@ -108,11 +108,12 @@ If for some reason you see Get performance decreasing with lots of contention (y
 
 Metrics is true when you want real-time logging of a variety of stats. The reason this is a Config flag is because there's a 10% throughput performance overhead. 
 
-**OnEvict** `func(hashes [2]uint64, value interface{}, cost int64)`
+**OnEvict** `func(key, conflict uint64, value interface{}, cost int64)` 
 
-OnEvict is called for every eviction.
+OnEvict is called for every eviction. The "key, conflict" param pair is the two
+hashes used internally (the same two hashes returned by KeyToHash).
 
-**KeyToHash** `func(key interface{}) [2]uint64`
+**KeyToHash** `func(key interface{}) (uint64, uint64)`
 
 KeyToHash is the hashing algorithm used for every key. If this is nil, Ristretto has a variety of [defaults depending on the underlying interface type](https://github.com/dgraph-io/ristretto/blob/master/z/z.go#L19-L41).
 
