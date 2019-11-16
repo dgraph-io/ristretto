@@ -36,7 +36,7 @@ func TestCacheTTL(t *testing.T) {
 	c.Set(11, 1, 1, -1)
 	c.Set(12, 1, 1, -1)
 	c.Set(13, 1, 1, -1)
-	c.Set(14, 1, 1, -1)
+	c.Set(14, 1, 1, 10)
 	// sleep for 3 seconds (2+1 for good measure)
 	time.Sleep(time.Second * 3)
 	// gets to simulate load (1 and 2 should be evicted despite this because
@@ -47,12 +47,13 @@ func TestCacheTTL(t *testing.T) {
 	c.Get(2)
 	c.Get(2)
 	// try to set a new item to force 1 and 2 expiration
-	c.Set(3, 3, 5, -1)
+	c.Set(3, 3, 7, 3)
 	// wait for new set to go through
 	time.Sleep(time.Millisecond)
 	m.Lock()
 	defer m.Unlock()
-	if len(evicted) != 2 {
+	// should be 1, 2, and some other item with a cost of 1
+	if len(evicted) != 3 {
 		t.Fatal("items 1 and 2 should have expired")
 	}
 	if _, ok := evicted[1]; !ok {
