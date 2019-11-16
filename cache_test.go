@@ -1,7 +1,6 @@
 package ristretto
 
 import (
-	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
@@ -53,7 +52,6 @@ func TestCacheTTL(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	m.Lock()
 	defer m.Unlock()
-	fmt.Println(evicted)
 	if len(evicted) != 2 {
 		t.Fatal("items 1 and 2 should have expired")
 	}

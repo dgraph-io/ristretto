@@ -18,7 +18,6 @@ package ristretto
 
 import (
 	"container/list"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -150,14 +149,14 @@ func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 	// as items are evicted they will be appended to victims
 	victims := make([]*item, 0)
 	// delete expired items before doing any evictions, we may not even need to
-	for e := p.times.Back(); e != nil; e = e.Prev() {
+	for e := p.times.Back(); e != nil; {
 		i := e.Value.([2]uint64)
-		fmt.Println("looking:", i[0])
 		if i[1] > uint64(time.Now().Unix()) {
 			break
 		}
-		fmt.Println("evicting:", i[0])
+		next := e.Prev()
 		p.times.Remove(e)
+		e = next
 		p.evict.del(i[0])
 		victims = append(victims, &item{
 			key: i[0],
@@ -171,8 +170,6 @@ func (p *defaultPolicy) Add(key uint64, cost, ttl int64) ([]*item, bool) {
 			p.times.PushFront([2]uint64{key, uint64(ttl)})
 		}
 		return victims, true
-	} else {
-		fmt.Println("room left:", misc)
 	}
 	// incHits is the hit count for the incoming item
 	incHits := p.admit.Estimate(key)
