@@ -478,3 +478,26 @@ func TestCacheMetricsClear(t *testing.T) {
 	c.Metrics = nil
 	c.Metrics.Clear()
 }
+
+func TestCostAdditionUpdate(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Set("key", "value", 1)
+	// wait for the first key to set
+	time.Sleep(1 * time.Second)
+	for i := 0; i < 100; i++ {
+		c.Set("key", "value", 1)
+
+	}
+	time.Sleep(time.Second)
+	if 1 != c.Metrics.CostAdded() {
+		t.Errorf("expected cost 1 but got %d", c.Metrics.CostAdded())
+	}
+}
