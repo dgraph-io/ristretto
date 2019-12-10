@@ -127,7 +127,8 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	}
 	// we don't need to go any further if the item is already in the cache
 	if has := p.evict.updateIfHas(key, cost); has {
-		return nil, true
+		// If we are just updating, we are not adding, so this should return a false.
+		return nil, false
 	}
 	// if we got this far, this key doesn't exist in the cache
 	//
@@ -137,6 +138,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		// there's enough room in the cache to store the new item without
 		// overflowing, so we can do that now and stop here
 		p.evict.add(key, cost)
+		p.metrics.add(costAdd, key, uint64(cost))
 		return nil, true
 	}
 	// incHits is the hit count for the incoming item
@@ -169,6 +171,8 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		}
 		// delete the victim from metadata
 		p.evict.del(minKey)
+		p.metrics.add(costEvict, minKey, uint64(minCost))
+
 		// delete the victim from sample
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
@@ -180,6 +184,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		})
 	}
 	p.evict.add(key, cost)
+	p.metrics.add(costAdd, key, uint64(cost))
 	return victims, true
 }
 
@@ -272,6 +277,8 @@ func (p *sampledLFU) del(key uint64) {
 	}
 	p.used -= cost
 	delete(p.keyCosts, key)
+	p.metrics.add(costEvict, key, uint64(cost))
+	p.metrics.add(keyEvict, key, 1)
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {
