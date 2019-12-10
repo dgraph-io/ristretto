@@ -278,8 +278,8 @@ func (c *Cache) processItems() {
 				c.policy.Update(i.key, i.cost)
 
 			case itemDelete:
-				// policy.Del deals with metrics updates.
-				c.policy.Del(i.key)
+				c.policy.Del(i.key) // Deals with metrics updates.
+				c.store.Del(i.key, i.conflict)
 			}
 		case <-c.stop:
 			return
