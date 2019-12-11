@@ -1,0 +1,13 @@
+language: go
+go:
+  - 1.10.x
+  - master
+os:
+  - linux
+  - osx
+dist: trusty
+sudo: false
+install: true
+script:
+  - env GO111MODULE=on go build
+  - env GO111MODULE=on go test
