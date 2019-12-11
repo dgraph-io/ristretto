@@ -171,7 +171,6 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		}
 		// delete the victim from metadata
 		p.evict.del(minKey)
-		p.metrics.add(costEvict, minKey, uint64(minCost))
 
 		// delete the victim from sample
 		sample[minId] = sample[len(sample)-1]
