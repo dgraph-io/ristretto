@@ -266,20 +266,19 @@ func (c *Cache) processItems() {
 				if added {
 					c.store.Set(i.key, i.conflict, i.value)
 					c.Metrics.add(keyAdd, i.key, 1)
-					c.Metrics.add(costAdd, i.key, uint64(i.cost))
 				}
 				for _, victim := range victims {
 					victim.conflict, victim.value = c.store.Del(victim.key, 0)
 					if c.onEvict != nil {
 						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
 					}
-					c.Metrics.add(keyEvict, victim.key, 1)
-					c.Metrics.add(costEvict, victim.key, uint64(victim.cost))
 				}
+
 			case itemUpdate:
 				c.policy.Update(i.key, i.cost)
+
 			case itemDelete:
-				c.policy.Del(i.key)
+				c.policy.Del(i.key) // Deals with metrics updates.
 				c.store.Del(i.key, i.conflict)
 			}
 		case <-c.stop:
