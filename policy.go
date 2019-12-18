@@ -290,8 +290,13 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 		// update the cost of an existing key, but don't worry about evicting,
 		// evictions will be handled the next time a new item is added
 		p.metrics.add(keyUpdate, key, 1)
-		p.metrics.add(costAdd, key, ^uint64(uint64(prev)-1))
-		p.metrics.add(costAdd, key, uint64(cost))
+		if prev > cost {
+			diff := prev - cost
+			p.metrics.add(costAdd, key, ^uint64(uint64(diff)-1))
+		} else if cost > prev {
+			diff := cost - prev
+			p.metrics.add(costAdd, key, uint64(diff))
+		}
 		p.used += cost - prev
 		p.keyCosts[key] = cost
 		return true
