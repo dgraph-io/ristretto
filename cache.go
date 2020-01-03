@@ -216,7 +216,10 @@ func (c *Cache) Del(key interface{}) {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
+	// Delete immediately.
 	c.store.Del(keyHash, conflictHash)
+	// we have push to the channel, beacuse if there is already set, it would be applied slightly
+	// So, delete won't happen. It is important to push deleteItem to channel as well.
 	c.setBuf <- &item{
 		flag:     itemDelete,
 		key:      keyHash,
