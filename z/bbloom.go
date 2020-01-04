@@ -176,13 +176,15 @@ func newWithBoolset(bs *[]byte, locs uint64) *Bloom {
 
 // JSONUnmarshal takes JSON-Object (type bloomJSONImExport) as []bytes
 // returns bloom32 / bloom64 object.
-func JSONUnmarshal(dbData []byte) *Bloom {
+func JSONUnmarshal(dbData []byte) (*Bloom, error) {
 	bloomImEx := bloomJSONImExport{}
-	json.Unmarshal(dbData, &bloomImEx)
+	if err := json.Unmarshal(dbData, &bloomImEx); err != nil {
+		return nil, err
+	}
 	buf := bytes.NewBuffer(bloomImEx.FilterSet)
 	bs := buf.Bytes()
 	bf := newWithBoolset(&bs, bloomImEx.SetLocs)
-	return bf
+	return bf, nil
 }
 
 // JSONMarshal returns JSON-object (type bloomJSONImExport) as []byte.
