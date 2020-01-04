@@ -113,8 +113,7 @@ func (bl Bloom) Has(hash uint64) bool {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
 	for i := uint64(0); i < bl.setLocs; i++ {
-		switch bl.IsSet((h + i*l) & bl.size) {
-		case false:
+		if !bl.IsSet((h + i*l) & bl.size) {
 			return false
 		}
 	}
