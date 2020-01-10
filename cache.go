@@ -225,6 +225,9 @@ func (c *Cache) Del(key interface{}) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
+	if c == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	close(c.stop)
@@ -236,6 +239,9 @@ func (c *Cache) Close() {
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
+	if c == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	// swap out the setBuf channel
@@ -391,60 +397,93 @@ func (p *Metrics) get(t metricType) uint64 {
 // Hits is the number of Get calls where a value was found for the corresponding
 // key.
 func (p *Metrics) Hits() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(hit)
 }
 
 // Misses is the number of Get calls where a value was not found for the
 // corresponding key.
 func (p *Metrics) Misses() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(miss)
 }
 
 // KeysAdded is the total number of Set calls where a new key-value item was
 // added.
 func (p *Metrics) KeysAdded() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(keyAdd)
 }
 
 // KeysUpdated is the total number of Set calls where the value was updated.
 func (p *Metrics) KeysUpdated() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(keyUpdate)
 }
 
 // KeysEvicted is the total number of keys evicted.
 func (p *Metrics) KeysEvicted() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(keyEvict)
 }
 
 // CostAdded is the sum of costs that have been added (successful Set calls).
 func (p *Metrics) CostAdded() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(costAdd)
 }
 
 // CostEvicted is the sum of all costs that have been evicted.
 func (p *Metrics) CostEvicted() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(costEvict)
 }
 
 // SetsDropped is the number of Set calls that don't make it into internal
 // buffers (due to contention or some other reason).
 func (p *Metrics) SetsDropped() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(dropSets)
 }
 
 // SetsRejected is the number of Set calls rejected by the policy (TinyLFU).
 func (p *Metrics) SetsRejected() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(rejectSets)
 }
 
 // GetsDropped is the number of Get counter increments that are dropped
 // internally.
 func (p *Metrics) GetsDropped() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(dropGets)
 }
 
 // GetsKept is the number of Get counter increments that are kept.
 func (p *Metrics) GetsKept() uint64 {
+	if p == nil {
+		return 0
+	}
 	return p.get(keepGets)
 }
 
