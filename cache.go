@@ -225,9 +225,13 @@ func (c *Cache) Del(key interface{}) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
+	if c == nil || c.stop == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	close(c.stop)
+	c.stop = nil
 	close(c.setBuf)
 	c.policy.Close()
 }
@@ -236,6 +240,9 @@ func (c *Cache) Close() {
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
+	if c == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	// swap out the setBuf channel
