@@ -285,6 +285,7 @@ func benchmarkRand(b *testing.B, fab func() func() uint32) {
 		}
 	})
 }
+
 func BenchmarkFastRand(b *testing.B) {
 	benchmarkRand(b, func() func() uint32 {
 		return FastRand
@@ -303,6 +304,7 @@ func BenchmarkRandGlobal(b *testing.B) {
 		return func() uint32 { return rand.Uint32() }
 	})
 }
+
 func BenchmarkRandAtomic(b *testing.B) {
 	var x uint32
 	benchmarkRand(b, func() func() uint32 {
