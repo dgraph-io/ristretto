@@ -18,12 +18,14 @@ package ristretto
 
 import (
 	"sync"
+	"time"
 )
 
 type storeItem struct {
-	key      uint64
-	conflict uint64
-	value    interface{}
+	key        uint64
+	conflict   uint64
+	value      interface{}
+	expiration time.Time
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -36,8 +38,9 @@ type store interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (interface{}, bool)
 	// Set adds the key-value pair to the Map or updates the value if it's
-	// already present.
-	Set(uint64, uint64, interface{})
+	// already present. The key-value pair is passed as a pointer to an
+	// item object.
+	Set(*item)
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
@@ -72,8 +75,13 @@ func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
 	return sm.shards[key%numShards].Get(key, conflict)
 }
 
-func (sm *shardedMap) Set(key, conflict uint64, value interface{}) {
-	sm.shards[key%numShards].Set(key, conflict, value)
+func (sm *shardedMap) Set(i *item) {
+	if i == nil {
+		// If item is nil make this Set a no-op.
+		return
+	}
+
+	sm.shards[i.key%numShards].Set(i)
 }
 
 func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
@@ -111,29 +119,43 @@ func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
 	if conflict != 0 && (conflict != item.conflict) {
 		return nil, false
 	}
+
+	// Handle expired items.
+	if !item.expiration.IsZero() {
+		if item.expiration.After(time.Now()) {
+			return nil, false
+		}
+	}
 	return item.value, true
 }
 
-func (m *lockedMap) Set(key, conflict uint64, value interface{}) {
+func (m *lockedMap) Set(i *item) {
+	if i == nil {
+		// If the item is nil make this Set a no-op.
+		return
+	}
+
 	m.Lock()
-	item, ok := m.data[key]
+	item, ok := m.data[i.key]
 	if !ok {
-		m.data[key] = storeItem{
-			key:      key,
-			conflict: conflict,
-			value:    value,
+		m.data[i.key] = storeItem{
+			key:        i.key,
+			conflict:   i.conflict,
+			value:      i.value,
+			expiration: i.expiration,
 		}
 		m.Unlock()
 		return
 	}
-	if conflict != 0 && (conflict != item.conflict) {
+	if i.conflict != 0 && (i.conflict != item.conflict) {
 		m.Unlock()
 		return
 	}
-	m.data[key] = storeItem{
-		key:      key,
-		conflict: conflict,
-		value:    value,
+	m.data[i.key] = storeItem{
+		key:        i.key,
+		conflict:   i.conflict,
+		value:      i.value,
+		expiration: i.expiration,
 	}
 	m.Unlock()
 }

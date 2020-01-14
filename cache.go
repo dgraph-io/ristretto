@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -115,11 +116,12 @@ const (
 
 // item is passed to setBuf so items can eventually be added to the cache
 type item struct {
-	flag     itemFlag
-	key      uint64
-	conflict uint64
-	value    interface{}
-	cost     int64
+	flag       itemFlag
+	key        uint64
+	conflict   uint64
+	value      interface{}
+	cost       int64
+	expiration time.Time
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -153,6 +155,7 @@ func NewCache(config *Config) (*Cache, error) {
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
 	go cache.processItems()
+	go cache.cleanupItems()
 	return cache, nil
 }
 
@@ -184,16 +187,32 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
 func (c *Cache) Set(key, value interface{}, cost int64) bool {
+	return c.SetWithTTL(key, value, cost, 0*time.Second)
+}
+
+// SetWithTTL works like Set but adds a key-value pair to the cache that will expire
+// after the specified TTL (time to live) has passed. A zero or negative value will
+// cause the value to  never expire, which is identical to calling Set.
+func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || key == nil {
 		return false
 	}
+
+	now := time.Now()
+	expiration := now.Add(ttl)
+	if !expiration.After(now) {
+		// The TTL is either zero or negative. Treat this item as one without a TTL.
+		expiration = time.Time{}
+	}
+
 	keyHash, conflictHash := c.keyToHash(key)
 	i := &item{
-		flag:     itemNew,
-		key:      keyHash,
-		conflict: conflictHash,
-		value:    value,
-		cost:     cost,
+		flag:       itemNew,
+		key:        keyHash,
+		conflict:   conflictHash,
+		value:      value,
+		cost:       cost,
+		expiration: expiration,
 	}
 	// attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated
@@ -264,7 +283,7 @@ func (c *Cache) processItems() {
 			case itemNew:
 				victims, added := c.policy.Add(i.key, i.cost)
 				if added {
-					c.store.Set(i.key, i.conflict, i.value)
+					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.key, 1)
 				}
 				for _, victim := range victims {
@@ -285,6 +304,10 @@ func (c *Cache) processItems() {
 			return
 		}
 	}
+}
+
+func (c *Cache) cleanupItems() {
+
 }
 
 // collectMetrics just creates a new *Metrics instance and adds the pointers
