@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -56,7 +58,8 @@ func TestM_JSON(t *testing.T) {
 	Json := bf.JSONMarshal()
 
 	// create new bloomfilter from bloomfilter's JSON representation
-	bf2 := JSONUnmarshal(Json)
+	bf2, err := JSONUnmarshal(Json)
+	require.NoError(t, err)
 
 	cnt2 := 0
 	for i := range wordlist1 {

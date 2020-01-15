@@ -113,8 +113,7 @@ func (bl Bloom) Has(hash uint64) bool {
 	h := hash >> bl.shift
 	l := hash << bl.shift >> bl.shift
 	for i := uint64(0); i < bl.setLocs; i++ {
-		switch bl.IsSet((h + i*l) & bl.size) {
-		case false:
+		if !bl.IsSet((h + i*l) & bl.size) {
 			return false
 		}
 	}
@@ -176,13 +175,15 @@ func newWithBoolset(bs *[]byte, locs uint64) *Bloom {
 
 // JSONUnmarshal takes JSON-Object (type bloomJSONImExport) as []bytes
 // returns bloom32 / bloom64 object.
-func JSONUnmarshal(dbData []byte) *Bloom {
+func JSONUnmarshal(dbData []byte) (*Bloom, error) {
 	bloomImEx := bloomJSONImExport{}
-	json.Unmarshal(dbData, &bloomImEx)
+	if err := json.Unmarshal(dbData, &bloomImEx); err != nil {
+		return nil, err
+	}
 	buf := bytes.NewBuffer(bloomImEx.FilterSet)
 	bs := buf.Bytes()
 	bf := newWithBoolset(&bs, bloomImEx.SetLocs)
-	return bf
+	return bf, nil
 }
 
 // JSONMarshal returns JSON-object (type bloomJSONImExport) as []byte.

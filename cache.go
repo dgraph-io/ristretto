@@ -126,11 +126,11 @@ type item struct {
 func NewCache(config *Config) (*Cache, error) {
 	switch {
 	case config.NumCounters == 0:
-		return nil, errors.New("NumCounters can't be zero.")
+		return nil, errors.New("NumCounters can't be zero")
 	case config.MaxCost == 0:
-		return nil, errors.New("MaxCost can't be zero.")
+		return nil, errors.New("MaxCost can't be zero")
 	case config.BufferItems == 0:
-		return nil, errors.New("BufferItems can't be zero.")
+		return nil, errors.New("BufferItems can't be zero")
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
