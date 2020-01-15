@@ -37,6 +37,8 @@ type storeItem struct {
 type store interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (interface{}, bool)
+	// Expiration returns the expiration time for this key.
+	Expiration(uint64) time.Time
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
 	// item object.
@@ -73,6 +75,10 @@ func newShardedMap() *shardedMap {
 
 func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
 	return sm.shards[key%numShards].Get(key, conflict)
+}
+
+func (sm *shardedMap) Expiration(key uint64) time.Time {
+	return sm.shards[key%numShards].Expiration(key)
 }
 
 func (sm *shardedMap) Set(i *item) {
@@ -127,6 +133,12 @@ func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
 		}
 	}
 	return item.value, true
+}
+
+func (m *lockedMap) Expiration(key uint64) time.Time {
+	m.RLock()
+	defer m.RUnlock()
+	return m.data[key].expiration
 }
 
 func (m *lockedMap) Set(i *item) {

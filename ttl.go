@@ -23,23 +23,24 @@ import (
 
 const (
 	// TODO: find the optimal value or make it configurable.
-	bucketSize = 5
+	bucketSizeSecs = 5
 )
 
 func timeToBucket(t time.Time) int {
-	return t.Second() / bucketSize
+	return t.Second() / bucketSizeSecs
 }
 
-type bucketMap map[uint64]uint64
+// Map of key to conflict.
+type bucket map[uint64]uint64
 
 type expirationMap struct {
 	sync.RWMutex
-	m map[int]bucketMap
+	buckets map[int]bucket
 }
 
 func newExpirationMap() *expirationMap {
 	return &expirationMap{
-		m: make(map[int]bucketMap),
+		buckets: make(map[int]bucket),
 	}
 }
 
@@ -48,26 +49,40 @@ func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
 		return
 	}
 
+	bucketNum := timeToBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
-
-	bucketNum := timeToBucket(expiration)
-	_, ok := m.m[bucketNum]
+	_, ok := m.buckets[bucketNum]
 	if !ok {
-		m.m[bucketNum] = make(bucketMap)
+		m.buckets[bucketNum] = make(bucket)
 	}
-	m.m[bucketNum][key] = conflict
+	m.buckets[bucketNum][key] = conflict
 }
 
-func (m *expirationMap) Remove(key uint64, expiration time.Time) {
+func (m *expirationMap) Delete(key uint64, expiration time.Time) {
+	bucketNum := timeToBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
-
-	bucketNum := timeToBucket(expiration)
-	_, ok := m.m[bucketNum]
+	_, ok := m.buckets[bucketNum]
 	if !ok {
 		return
 	}
+	delete(m.buckets[bucketNum], key)
+}
 
-	delete(m.m[bucketNum], key)
+func (m *expirationMap) CleanUp(store store, policy policy, onEvict onEvictFunc) {
+	bucketNum := timeToBucket(time.Now())
+
+	m.Lock()
+	keys := m.buckets[bucketNum]
+	delete(m.buckets, bucketNum)
+	m.Unlock()
+
+	for _, key := range keys {
+		conflict, value := store.Del(key, 0)
+		cost := policy.Cost(key)
+		if onEvict != nil {
+			onEvict(key, conflict, value, cost)
+		}
+	}
 }

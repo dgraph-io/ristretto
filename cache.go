@@ -34,6 +34,8 @@ const (
 	setBufSize = 32 * 1024
 )
 
+type onEvictFunc func(uint64, uint64, interface{}, int64)
+
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
@@ -49,7 +51,7 @@ type Cache struct {
 	// contention
 	setBuf chan *item
 	// onEvict is called for item evictions
-	onEvict func(uint64, uint64, interface{}, int64)
+	onEvict onEvictFunc
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -58,6 +60,11 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value
 	cost func(value interface{}) int64
+	// ttlMap is used to store information about which entries to delete once their
+	// expiration time has passed.
+	ttlMap *expirationMap
+	// cleanupTicker is used to periodically check for entries whose TTL has passed.
+	cleanupTicker *time.Ticker
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items
 	Metrics *Metrics
@@ -136,14 +143,16 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:     newStore(),
-		policy:    policy,
-		getBuf:    newRingBuffer(policy, config.BufferItems),
-		setBuf:    make(chan *item, setBufSize),
-		onEvict:   config.OnEvict,
-		keyToHash: config.KeyToHash,
-		stop:      make(chan struct{}),
-		cost:      config.Cost,
+		store:         newStore(),
+		policy:        policy,
+		getBuf:        newRingBuffer(policy, config.BufferItems),
+		setBuf:        make(chan *item, setBufSize),
+		onEvict:       config.OnEvict,
+		keyToHash:     config.KeyToHash,
+		stop:          make(chan struct{}),
+		cost:          config.Cost,
+		ttlMap:        newExpirationMap(),
+		cleanupTicker: time.NewTicker(bucketSizeSecs * time.Second),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -282,7 +291,13 @@ func (c *Cache) processItems() {
 			case itemNew:
 				victims, added := c.policy.Add(i.key, i.cost)
 				if added {
+					currentExpiration := c.store.Expiration(i.key)
+					if !currentExpiration.IsZero() {
+						c.ttlMap.Delete(i.key, currentExpiration)
+					}
+
 					c.store.Set(i)
+					c.ttlMap.Add(i.key, i.conflict, i.expiration)
 					c.Metrics.add(keyAdd, i.key, 1)
 				}
 				for _, victim := range victims {
@@ -299,6 +314,8 @@ func (c *Cache) processItems() {
 				c.policy.Del(i.key) // Deals with metrics updates.
 				c.store.Del(i.key, i.conflict)
 			}
+		case <-c.cleanupTicker.C:
+			c.ttlMap.CleanUp(c.store, c.policy, c.onEvict)
 		case <-c.stop:
 			return
 		}
