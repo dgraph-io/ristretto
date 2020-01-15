@@ -142,7 +142,6 @@ func TestCacheProcessItems(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
 	var key uint64
 	var conflict uint64
 
@@ -169,6 +168,20 @@ func TestCacheProcessItems(t *testing.T) {
 	time.Sleep(wait)
 	if c.policy.Cost(1) != 2 {
 		t.Fatal("cache processItems didn't update item cost")
+	}
+	key, conflict = z.KeyToHash(1)
+	c.setBuf <- &item{
+		flag:     itemDelete,
+		key:      key,
+		conflict: conflict,
+	}
+	time.Sleep(wait)
+	key, conflict = z.KeyToHash(1)
+	if val, ok := c.store.Get(key, conflict); val != nil || ok {
+		t.Fatal("cache processItems didn't delete item")
+	}
+	if c.policy.Has(1) {
+		t.Fatal("cache processItems didn't delete item")
 	}
 	key, conflict = z.KeyToHash(2)
 	c.setBuf <- &item{
