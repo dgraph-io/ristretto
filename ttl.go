@@ -58,3 +58,16 @@ func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
 	}
 	m.m[bucketNum][key] = conflict
 }
+
+func (m *expirationMap) Remove(key uint64, expiration time.Time) {
+	m.Lock()
+	defer m.Unlock()
+
+	bucketNum := timeToBucket(expiration)
+	_, ok := m.m[bucketNum]
+	if !ok {
+		return
+	}
+
+	delete(m.m[bucketNum], key)
+}

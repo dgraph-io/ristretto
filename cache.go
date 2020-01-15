@@ -155,7 +155,6 @@ func NewCache(config *Config) (*Cache, error) {
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
 	go cache.processItems()
-	go cache.cleanupItems()
 	return cache, nil
 }
 
@@ -304,10 +303,6 @@ func (c *Cache) processItems() {
 			return
 		}
 	}
-}
-
-func (c *Cache) cleanupItems() {
-
 }
 
 // collectMetrics just creates a new *Metrics instance and adds the pointers
