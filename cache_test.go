@@ -173,7 +173,6 @@ func TestCacheProcessItems(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
 	var key uint64
 	var conflict uint64
 
@@ -352,7 +351,6 @@ func TestCacheDel(t *testing.T) {
 	}
 	c.Set(1, 1, 1)
 	c.Del(1)
-	time.Sleep(wait)
 	if val, ok := c.Get(1); val != nil || ok {
 		t.Fatal("del didn't delete")
 	}
