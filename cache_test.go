@@ -123,6 +123,37 @@ func TestCache(t *testing.T) {
 	}
 }
 
+func TestNilCache(t *testing.T) {
+	var c *Cache
+	if val, ok := c.Get(1); !(val == nil && !ok) {
+		t.Fatal("should return nil, false")
+	}
+	if set := c.Set(1, 1, 1); set {
+		t.Fatal("should return false")
+	}
+	c.Del(1)
+	c.Clear()
+	c.Close()
+}
+
+func TestMultipleClose(t *testing.T) {
+	var c *Cache
+	c.Close()
+
+	var err error
+	c, err = NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		t.Fatalf("should not error: %s", err)
+	}
+	c.Close()
+	c.Close()
+}
+
 func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
@@ -142,7 +173,6 @@ func TestCacheProcessItems(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
 	var key uint64
 	var conflict uint64
 
@@ -321,7 +351,6 @@ func TestCacheDel(t *testing.T) {
 	}
 	c.Set(1, 1, 1)
 	c.Del(1)
-	time.Sleep(wait)
 	if val, ok := c.Get(1); val != nil || ok {
 		t.Fatal("del didn't delete")
 	}
@@ -384,6 +413,25 @@ func TestCacheMetrics(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	newMetrics()
+}
+
+func TestNilMetrics(t *testing.T) {
+	var m *Metrics
+	for _, f := range []func() uint64{
+		m.Hits,
+		m.Misses,
+		m.KeysAdded,
+		m.KeysEvicted,
+		m.CostEvicted,
+		m.SetsDropped,
+		m.SetsRejected,
+		m.GetsDropped,
+		m.GetsKept,
+	} {
+		if f() != 0 {
+			t.Fatal("should be zero")
+		}
+	}
 }
 
 func TestMetricsAddGet(t *testing.T) {

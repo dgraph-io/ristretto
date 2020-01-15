@@ -216,6 +216,11 @@ func (c *Cache) Del(key interface{}) {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
+	// Delete immediately.
+	c.store.Del(keyHash, conflictHash)
+	// If we've set an item, it would be applied slightly later.
+	// So we must push the same item to `setBuf` with the deletion flag.
+	// This ensures that if a set is followed by a delete, it will be applied in the correct order.
 	c.setBuf <- &item{
 		flag:     itemDelete,
 		key:      keyHash,
@@ -225,9 +230,13 @@ func (c *Cache) Del(key interface{}) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
+	if c == nil || c.stop == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	close(c.stop)
+	c.stop = nil
 	close(c.setBuf)
 	c.policy.Close()
 }
@@ -236,6 +245,9 @@ func (c *Cache) Close() {
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
+	if c == nil {
+		return
+	}
 	// block until processItems goroutine is returned
 	c.stop <- struct{}{}
 	// swap out the setBuf channel
