@@ -9,16 +9,27 @@ import (
 func TestStoreSetGet(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	s.Set(key, conflict, 2)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 2,
+	}
+	s.Set(&i)
 	if val, ok := s.Get(key, conflict); (val == nil || !ok) || val.(int) != 2 {
 		t.Fatal("set/get error")
 	}
-	s.Set(key, conflict, 3)
+	i.value = 3
+	s.Set(&i)
 	if val, ok := s.Get(key, conflict); (val == nil || !ok) || val.(int) != 3 {
 		t.Fatal("set/get overwrite error")
 	}
 	key, conflict = z.KeyToHash(2)
-	s.Set(key, conflict, 2)
+	i = item{
+		key: key,
+		conflict: conflict,
+		value: 2,
+	}
+	s.Set(&i)
 	if val, ok := s.Get(key, conflict); !ok || val.(int) != 2 {
 		t.Fatal("set/get nil key error")
 	}
@@ -27,7 +38,12 @@ func TestStoreSetGet(t *testing.T) {
 func TestStoreDel(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	s.Set(key, conflict, 1)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 1,
+	}
+	s.Set(&i)
 	s.Del(key, conflict)
 	if val, ok := s.Get(key, conflict); val != nil || ok {
 		t.Fatal("del error")
@@ -39,7 +55,12 @@ func TestStoreClear(t *testing.T) {
 	s := newStore()
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
-		s.Set(key, conflict, i)
+		it := item{
+			key: key,
+			conflict: conflict,
+			value: i,
+		}
+		s.Set(&it)
 	}
 	s.Clear()
 	for i := uint64(0); i < 1000; i++ {
@@ -53,7 +74,12 @@ func TestStoreClear(t *testing.T) {
 func TestStoreUpdate(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	s.Set(key, conflict, 1)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 1,
+	}
+	s.Set(&i)
 	if updated := s.Update(key, conflict, 2); !updated {
 		t.Fatal("value should have been updated")
 	}
@@ -90,7 +116,12 @@ func TestStoreCollision(t *testing.T) {
 	if val, ok := s.Get(1, 1); val != nil || ok {
 		t.Fatal("collision should return nil")
 	}
-	s.Set(1, 1, 2)
+	i := item{
+		key: 1,
+		conflict: 1,
+		value: 2,
+	}
+	s.Set(&i)
 	if val, ok := s.Get(1, 0); !ok || val == nil || val.(int) == 2 {
 		t.Fatal("collision should prevent Set update")
 	}
@@ -109,7 +140,12 @@ func TestStoreCollision(t *testing.T) {
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	s.Set(key, conflict, 1)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 1,
+	}
+	s.Set(&i)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -124,7 +160,12 @@ func BenchmarkStoreSet(b *testing.B) {
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			s.Set(key, conflict, 1)
+			i := item{
+				key: key,
+				conflict: conflict,
+				value: 1,
+			}
+			s.Set(&i)
 		}
 	})
 }
@@ -132,7 +173,12 @@ func BenchmarkStoreSet(b *testing.B) {
 func BenchmarkStoreUpdate(b *testing.B) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	s.Set(key, conflict, 1)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 1,
+	}
+	s.Set(&i)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {

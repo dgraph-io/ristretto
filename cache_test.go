@@ -243,7 +243,12 @@ func TestCacheGet(t *testing.T) {
 		panic(err)
 	}
 	key, conflict := z.KeyToHash(1)
-	c.store.Set(key, conflict, 1)
+	i := item{
+		key: key,
+		conflict: conflict,
+		value: 1,
+	}
+	c.store.Set(&i)
 	if val, ok := c.Get(1); val == nil || !ok {
 		t.Fatal("get should be successful")
 	}
