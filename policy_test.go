@@ -70,7 +70,7 @@ func TestPolicyAdd(t *testing.T) {
 	p.admit.Increment(2)
 	p.admit.Increment(3)
 	p.Unlock()
-	if victims, added := p.Add(1, 1); victims != nil || !added {
+	if victims, added := p.Add(1, 1); victims != nil || added {
 		t.Fatal("item should already exist")
 	}
 	if victims, added := p.Add(2, 20); victims != nil || !added {
