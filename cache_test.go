@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/stretchr/testify/require"
 )
 
 var wait time.Duration = time.Millisecond * 10
@@ -296,6 +297,56 @@ func TestCacheGet(t *testing.T) {
 }
 
 func TestCacheSet(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	if c.Set(1, 1, 1) {
+		time.Sleep(wait)
+		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
+			t.Fatal("set/get returned wrong value")
+		}
+	} else {
+		if val, ok := c.Get(1); val != nil || ok {
+			t.Fatal("set was dropped but value still added")
+		}
+	}
+	c.Set(1, 2, 2)
+	val, ok := c.store.Get(z.KeyToHash(1))
+	if val == nil || val.(int) != 2 || !ok {
+		t.Fatal("set/update was unsuccessful")
+	}
+	c.stop <- struct{}{}
+	for i := 0; i < setBufSize; i++ {
+		key, conflict := z.KeyToHash(1)
+		c.setBuf <- &item{
+			flag:     itemUpdate,
+			key:      key,
+			conflict: conflict,
+			value:    1,
+			cost:     1,
+		}
+	}
+	if c.Set(2, 2, 1) {
+		t.Fatal("set should be dropped with full setBuf")
+	}
+	if c.Metrics.SetsDropped() != 1 {
+		t.Fatal("set should track dropSets")
+	}
+	close(c.setBuf)
+	close(c.stop)
+	c = nil
+	if c.Set(1, 1, 1) {
+		t.Fatal("set shouldn't be successful with nil cache")
+	}
+}
+
+func TestCacheSetWithTTL(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
