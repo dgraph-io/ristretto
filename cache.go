@@ -222,9 +222,9 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		cost:       cost,
 		expiration: expiration,
 	}
-	// attempt to immediately update hashmap value and set flag to update so the
-	// cost is eventually updated
-	if c.store.Update(keyHash, conflictHash, i.value) {
+	// Attempt to immediately update hashmap value and set flag to update so the
+	// cost is eventually updated. The expiration must also be immediately updated
+	if c.store.Update(i, c.ttlMap) {
 		i.flag = itemUpdate
 	}
 	// attempt to send item to policy
@@ -313,6 +313,9 @@ func (c *Cache) processItems() {
 					c.Metrics.add(keyAdd, i.key, 1)
 				}
 				for _, victim := range victims {
+					if victimExp := c.store.Expiration(victim.key); !victimExp.IsZero() {
+						c.ttlMap.Delete(victim.key, victimExp)
+					}
 					victim.conflict, victim.value = c.store.Del(victim.key, 0)
 					if c.onEvict != nil {
 						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)

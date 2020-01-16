@@ -275,9 +275,9 @@ func TestCacheGet(t *testing.T) {
 	}
 	key, conflict := z.KeyToHash(1)
 	i := item{
-		key: key,
+		key:      key,
 		conflict: conflict,
-		value: 1,
+		value:    1,
 	}
 	c.store.Set(&i)
 	if val, ok := c.Get(1); val == nil || !ok {
@@ -347,53 +347,62 @@ func TestCacheSet(t *testing.T) {
 }
 
 func TestCacheSetWithTTL(t *testing.T) {
+	m := &sync.Mutex{}
+	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
+		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+			m.Lock()
+			defer m.Unlock()
+			evicted[key] = struct{}{}
+		},
 	})
-	if err != nil {
-		panic(err)
-	}
-	if c.Set(1, 1, 1) {
-		time.Sleep(wait)
-		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
-			t.Fatal("set/get returned wrong value")
-		}
-	} else {
-		if val, ok := c.Get(1); val != nil || ok {
-			t.Fatal("set was dropped but value still added")
-		}
-	}
-	c.Set(1, 2, 2)
-	val, ok := c.store.Get(z.KeyToHash(1))
-	if val == nil || val.(int) != 2 || !ok {
-		t.Fatal("set/update was unsuccessful")
-	}
-	c.stop <- struct{}{}
-	for i := 0; i < setBufSize; i++ {
-		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &item{
-			flag:     itemUpdate,
-			key:      key,
-			conflict: conflict,
-			value:    1,
-			cost:     1,
+	require.NoError(t, err)
+
+	// retrySet calls SetWithTTL until the item is accepted by the cache.
+	retrySet := func(key, value int, cost int64, ttl time.Duration) {
+		for {
+			if set := c.SetWithTTL(key, value, cost, ttl); !set {
+				time.Sleep(wait)
+				continue
+			}
+
+			time.Sleep(wait)
+			val, ok := c.Get(key)
+			require.True(t, ok)
+			require.NotNil(t, val)
+			require.Equal(t, value, val.(int))
+			return
 		}
 	}
-	if c.Set(2, 2, 1) {
-		t.Fatal("set should be dropped with full setBuf")
-	}
-	if c.Metrics.SetsDropped() != 1 {
-		t.Fatal("set should track dropSets")
-	}
-	close(c.setBuf)
-	close(c.stop)
-	c = nil
-	if c.Set(1, 1, 1) {
-		t.Fatal("set shouldn't be successful with nil cache")
-	}
+
+	retrySet(1, 1, 1, 3*time.Second)
+
+	// Sleep to make sure the item has expired after execution resumes.
+	time.Sleep(5 * time.Second)
+	val, ok := c.Get(1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// Sleep to ensure that the bucket where the item was stored has been cleared
+	// from the expiraton map.
+	time.Sleep(5 * time.Second)
+	m.Lock()
+	require.Equal(t, 1, len(evicted))
+	_, ok = evicted[1]
+	require.True(t, ok)
+	m.Unlock()
+
+	// Verify that expiration times are overwritten.
+	retrySet(2, 1, 1, time.Second)
+	retrySet(2, 1, 1, 100*time.Second)
+	time.Sleep(5 * time.Second)
+	val, ok = c.Get(2)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
 }
 
 func TestCacheDel(t *testing.T) {

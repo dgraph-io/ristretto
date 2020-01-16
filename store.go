@@ -47,7 +47,7 @@ type store interface {
 	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(uint64, uint64, interface{}) bool
+	Update(*item, *expirationMap) bool
 	// Clear clears all contents of the store.
 	Clear()
 }
@@ -94,8 +94,8 @@ func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(key, conflict uint64, value interface{}) bool {
-	return sm.shards[key%numShards].Update(key, conflict, value)
+func (sm *shardedMap) Update(i *item, m *expirationMap) bool {
+	return sm.shards[i.key%numShards].Update(i, m)
 }
 
 func (sm *shardedMap) Clear() {
@@ -128,7 +128,7 @@ func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
 
 	// Handle expired items.
 	if !item.expiration.IsZero() {
-		if item.expiration.After(time.Now()) {
+		if time.Now().After(item.expiration) {
 			return nil, false
 		}
 	}
@@ -188,22 +188,35 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap) Update(key, conflict uint64, value interface{}) bool {
+func (m *lockedMap) Update(newItem *item, eMap *expirationMap) bool {
 	m.Lock()
-	item, ok := m.data[key]
+	item, ok := m.data[newItem.key]
 	if !ok {
 		m.Unlock()
 		return false
 	}
-	if conflict != 0 && (conflict != item.conflict) {
+	if newItem.conflict != 0 && (newItem.conflict != item.conflict) {
 		m.Unlock()
 		return false
 	}
-	m.data[key] = storeItem{
-		key:      key,
-		conflict: conflict,
-		value:    value,
+
+	// Delete existing item from the expirationMap.
+	if !item.expiration.IsZero() && eMap != nil {
+		eMap.Delete(item.key, item.expiration)
 	}
+
+	m.data[newItem.key] = storeItem{
+		key:        newItem.key,
+		conflict:   newItem.conflict,
+		value:      newItem.value,
+		expiration: newItem.expiration,
+	}
+
+	// Add new expiration to the expiration time.
+	if !newItem.expiration.IsZero() && eMap != nil {
+		eMap.Add(newItem.key, newItem.conflict, newItem.expiration)
+	}
+
 	m.Unlock()
 	return true
 }

@@ -71,15 +71,18 @@ func (m *expirationMap) Delete(key uint64, expiration time.Time) {
 }
 
 func (m *expirationMap) CleanUp(store store, policy policy, onEvict onEvictFunc) {
-	bucketNum := timeToBucket(time.Now())
+	// Get the bucket number for the current time and substract one. There might be
+	// items in the current bucket that have not expired yet but all the items in
+	// the previous bucket should have expired.
+	bucketNum := timeToBucket(time.Now()) - 1
 
 	m.Lock()
 	keys := m.buckets[bucketNum]
 	delete(m.buckets, bucketNum)
 	m.Unlock()
 
-	for _, key := range keys {
-		conflict, value := store.Del(key, 0)
+	for key, conflict := range keys {
+		_, value := store.Del(key, 0)
 		cost := policy.Cost(key)
 		if onEvict != nil {
 			onEvict(key, conflict, value, cost)
