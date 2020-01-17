@@ -224,6 +224,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	}
 	// Attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated. The expiration must also be immediately updated
+	// to prevent items from being prematurely removed from the map.
 	if c.store.Update(i, c.ttlMap) {
 		i.flag = itemUpdate
 	}

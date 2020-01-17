@@ -26,13 +26,16 @@ const (
 	bucketSizeSecs = 5
 )
 
+// timeToBucket converts a time into a bucket number that will be used
+// to store items in the expiration map.
 func timeToBucket(t time.Time) int {
 	return t.Second() / bucketSizeSecs
 }
 
-// Map of key to conflict.
+// bucket type is a map of key to conflict.
 type bucket map[uint64]uint64
 
+// expirationMap is a map of bucket number to the corresponding bucket.
 type expirationMap struct {
 	sync.RWMutex
 	buckets map[int]bucket
@@ -44,7 +47,9 @@ func newExpirationMap() *expirationMap {
 	}
 }
 
+// Add adds a key-conflict pair to the bucket for this expiration time.
 func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
+	// Items that don't expire don't need to be in the expiration map.
 	if expiration.IsZero() {
 		return
 	}
@@ -52,6 +57,7 @@ func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
 	bucketNum := timeToBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
+
 	_, ok := m.buckets[bucketNum]
 	if !ok {
 		m.buckets[bucketNum] = make(bucket)
@@ -59,6 +65,8 @@ func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
 	m.buckets[bucketNum][key] = conflict
 }
 
+// Delete removes the key-conflict pair from the expiration map. The expiration time
+// is needed to be able to find the bucket storing this pair in constant time.
 func (m *expirationMap) Delete(key uint64, expiration time.Time) {
 	bucketNum := timeToBucket(expiration)
 	m.Lock()
@@ -70,6 +78,9 @@ func (m *expirationMap) Delete(key uint64, expiration time.Time) {
 	delete(m.buckets[bucketNum], key)
 }
 
+// CleanUp removes all the items in the bucket that was just completed. It deletes
+// those items from the store, and calls the onEvict function on those items.
+// This function is meant to be called periodically.
 func (m *expirationMap) CleanUp(store store, policy policy, onEvict onEvictFunc) {
 	// Get the bucket number for the current time and substract one. There might be
 	// items in the current bucket that have not expired yet but all the items in
