@@ -45,9 +45,9 @@ func newRingStripe(cons ringConsumer, capa int64) *ringStripe {
 // sends to Consumer) if full.
 func (s *ringStripe) Push(item uint64) {
 	s.data = append(s.data, item)
-	// if we should drain
+	// Decide if the ring buffer should be drained.
 	if len(s.data) >= s.capa {
-		// Send elements to consumer. Create a new one.
+		// Send elements to consumer and create a new ring stripe.
 		if s.cons.Push(s.data) {
 			s.data = make([]uint64, 0, s.capa)
 		} else {
@@ -84,7 +84,7 @@ func newRingBuffer(cons ringConsumer, capa int64) *ringBuffer {
 // Push adds an element to one of the internal stripes and possibly drains if
 // the stripe becomes full.
 func (b *ringBuffer) Push(item uint64) {
-	// reuse or create a new stripe
+	// Reuse or create a new stripe.
 	stripe := b.pool.Get().(*ringStripe)
 	stripe.Push(item)
 	b.pool.Put(stripe)
