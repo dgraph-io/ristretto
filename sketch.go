@@ -41,7 +41,7 @@ type cmSketch struct {
 }
 
 const (
-	// cmDepth is the number of counter copies to store (think of it as rows)
+	// cmDepth is the number of counter copies to store (think of it as rows).
 	cmDepth = 4
 )
 
@@ -49,10 +49,10 @@ func newCmSketch(numCounters int64) *cmSketch {
 	if numCounters == 0 {
 		panic("cmSketch: bad numCounters")
 	}
-	// get the next power of 2 for better cache performance
+	// Get the next power of 2 for better cache performance.
 	numCounters = next2Power(numCounters)
 	sketch := &cmSketch{mask: uint64(numCounters - 1)}
-	// initialize rows of counters and seeds
+	// Initialize rows of counters and seeds.
 	source := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < cmDepth; i++ {
 		sketch.seed[i] = source.Uint64()
@@ -94,7 +94,7 @@ func (s *cmSketch) Clear() {
 	}
 }
 
-// cmRow is a row of bytes, with each byte holding two counters
+// cmRow is a row of bytes, with each byte holding two counters.
 type cmRow []byte
 
 func newCmRow(numCounters int64) cmRow {
@@ -106,27 +106,27 @@ func (r cmRow) get(n uint64) byte {
 }
 
 func (r cmRow) increment(n uint64) {
-	// index of the counter
+	// Index of the counter.
 	i := n / 2
-	// shift distance (even 0, odd 4)
+	// Shift distance (even 0, odd 4).
 	s := (n & 1) * 4
-	// counter value
+	// Counter value.
 	v := (r[i] >> s) & 0x0f
-	// only increment if not max value (overflow wrap is bad for LFU)
+	// Only increment if not max value (overflow wrap is bad for LFU).
 	if v < 15 {
 		r[i] += 1 << s
 	}
 }
 
 func (r cmRow) reset() {
-	// halve each counter
+	// Halve each counter.
 	for i := range r {
 		r[i] = (r[i] >> 1) & 0x77
 	}
 }
 
 func (r cmRow) clear() {
-	// zero each counter
+	// Zero each counter.
 	for i := range r {
 		r[i] = 0
 	}
