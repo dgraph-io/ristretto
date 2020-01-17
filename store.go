@@ -94,8 +94,8 @@ func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(i *item, m *expirationMap) bool {
-	return sm.shards[i.key%numShards].Update(i, m)
+func (sm *shardedMap) Update(newItem *item, eMap *expirationMap) bool {
+	return sm.shards[newItem.key%numShards].Update(newItem, eMap)
 }
 
 func (sm *shardedMap) Clear() {
