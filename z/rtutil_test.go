@@ -53,7 +53,6 @@ func SipHash(p []byte) (l, h uint64) {
 
 	// Compression.
 	for len(p) >= 8 {
-
 		m := uint64(p[0]) | uint64(p[1])<<8 | uint64(p[2])<<16 | uint64(p[3])<<24 |
 			uint64(p[4])<<32 | uint64(p[5])<<40 | uint64(p[6])<<48 | uint64(p[7])<<56
 
@@ -252,8 +251,8 @@ func SipHash(p []byte) (l, h uint64) {
 	h = hash >> 1
 	l = hash << 1 >> 1
 	return l, h
-
 }
+
 func BenchmarkNanoTime(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		NanoTime()
