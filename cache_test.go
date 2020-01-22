@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var wait time.Duration = time.Millisecond * 10
+var wait = time.Millisecond * 10
 
 func TestCacheKeyToHash(t *testing.T) {
 	keyToHashCount := 0
@@ -311,10 +311,8 @@ func TestCacheSet(t *testing.T) {
 		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
 			t.Fatal("set/get returned wrong value")
 		}
-	} else {
-		if val, ok := c.Get(1); val != nil || ok {
-			t.Fatal("set was dropped but value still added")
-		}
+	} else if val, ok := c.Get(1); val != nil || ok {
+		t.Fatal("set was dropped but value still added")
 	}
 	c.Set(1, 2, 2)
 	val, ok := c.store.Get(z.KeyToHash(1))

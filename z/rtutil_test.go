@@ -1,9 +1,11 @@
 package z
 
 import (
-	"crypto/rand"
 	"hash/fnv"
+	"math/rand"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dgryski/go-farm"
 )
@@ -53,7 +55,6 @@ func SipHash(p []byte) (l, h uint64) {
 
 	// Compression.
 	for len(p) >= 8 {
-
 		m := uint64(p[0]) | uint64(p[1])<<8 | uint64(p[2])<<16 | uint64(p[3])<<24 |
 			uint64(p[4])<<32 | uint64(p[5])<<40 | uint64(p[6])<<48 | uint64(p[7])<<56
 
@@ -252,8 +253,8 @@ func SipHash(p []byte) (l, h uint64) {
 	h = hash >> 1
 	l = hash << 1 >> 1
 	return l, h
-
 }
+
 func BenchmarkNanoTime(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		NanoTime()
@@ -266,8 +267,46 @@ func BenchmarkCPUTicks(b *testing.B) {
 	}
 }
 
+// goos: linux
+// goarch: amd64
+// pkg: github.com/dgraph-io/ristretto/z
+// BenchmarkFastRand-16      	1000000000	         0.292 ns/op
+// BenchmarkRandSource-16    	1000000000	         0.747 ns/op
+// BenchmarkRandGlobal-16    	 6822332	       176 ns/op
+// BenchmarkRandAtomic-16    	77950322	        15.4 ns/op
+// PASS
+// ok  	github.com/dgraph-io/ristretto/z	4.808s
+func benchmarkRand(b *testing.B, fab func() func() uint32) {
+	b.RunParallel(func(pb *testing.PB) {
+		gen := fab()
+		for pb.Next() {
+			gen()
+		}
+	})
+}
+
 func BenchmarkFastRand(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		FastRand()
-	}
+	benchmarkRand(b, func() func() uint32 {
+		return FastRand
+	})
+}
+
+func BenchmarkRandSource(b *testing.B) {
+	benchmarkRand(b, func() func() uint32 {
+		s := rand.New(rand.NewSource(time.Now().Unix()))
+		return func() uint32 { return s.Uint32() }
+	})
+}
+
+func BenchmarkRandGlobal(b *testing.B) {
+	benchmarkRand(b, func() func() uint32 {
+		return func() uint32 { return rand.Uint32() }
+	})
+}
+
+func BenchmarkRandAtomic(b *testing.B) {
+	var x uint32
+	benchmarkRand(b, func() func() uint32 {
+		return func() uint32 { return uint32(atomic.AddUint32(&x, 1)) }
+	})
 }
