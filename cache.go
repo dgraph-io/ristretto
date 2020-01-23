@@ -60,9 +60,6 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
-	// ttlMap is used to store information about which entries to delete once their
-	// expiration time has passed.
-	ttlMap *expirationMap
 	// cleanupTicker is used to periodically check for entries whose TTL has passed.
 	cleanupTicker *time.Ticker
 	// Metrics contains a running log of important statistics like hits, misses,
@@ -143,7 +140,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:         newStore(),
+		store:         newStore(newExpirationMap()),
 		policy:        policy,
 		getBuf:        newRingBuffer(policy, config.BufferItems),
 		setBuf:        make(chan *item, setBufSize),
@@ -151,8 +148,7 @@ func NewCache(config *Config) (*Cache, error) {
 		keyToHash:     config.KeyToHash,
 		stop:          make(chan struct{}),
 		cost:          config.Cost,
-		ttlMap:        newExpirationMap(),
-		cleanupTicker: time.NewTicker(bucketSizeSecs * time.Second),
+		cleanupTicker: time.NewTicker(bucketSize),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -199,18 +195,24 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 }
 
 // SetWithTTL works like Set but adds a key-value pair to the cache that will expire
-// after the specified TTL (time to live) has passed. A zero or negative value will
-// cause the value to  never expire, which is identical to calling Set.
+// after the specified TTL (time to live) has passed. A zero value means the value never
+// exexpire, which is identical to calling Set. A negative value is a no-op and the value
+// is discarded.
 func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || key == nil {
 		return false
 	}
 
-	now := time.Now()
-	expiration := now.Add(ttl)
-	if !expiration.After(now) {
-		// The TTL is either zero or negative. Treat this item as one without a TTL.
-		expiration = time.Time{}
+	var expiration time.Time
+	switch {
+	case ttl == 0:
+		// No expiration.
+		break
+	case ttl < 0:
+		// Treat this a a no-op.
+		return false
+	default:
+		expiration = time.Now().Add(ttl)
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
@@ -222,10 +224,9 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		cost:       cost,
 		expiration: expiration,
 	}
-	// Attempt to immediately update hashmap value and set flag to update so the
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
-	if c.store.Update(i, c.ttlMap) {
+	if c.store.Update(i) {
 		i.flag = itemUpdate
 	}
 	// Attempt to send item to policy.
@@ -305,19 +306,10 @@ func (c *Cache) processItems() {
 			case itemNew:
 				victims, added := c.policy.Add(i.key, i.cost)
 				if added {
-					currentExpiration := c.store.Expiration(i.key)
-					if !currentExpiration.IsZero() {
-						c.ttlMap.Delete(i.key, currentExpiration)
-					}
-
 					c.store.Set(i)
-					c.ttlMap.Add(i.key, i.conflict, i.expiration)
 					c.Metrics.add(keyAdd, i.key, 1)
 				}
 				for _, victim := range victims {
-					if victimExp := c.store.Expiration(victim.key); !victimExp.IsZero() {
-						c.ttlMap.Delete(victim.key, victimExp)
-					}
 					victim.conflict, victim.value = c.store.Del(victim.key, 0)
 					if c.onEvict != nil {
 						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
@@ -332,7 +324,7 @@ func (c *Cache) processItems() {
 				c.store.Del(i.key, i.conflict)
 			}
 		case <-c.cleanupTicker.C:
-			c.ttlMap.CleanUp(c.store, c.policy, c.onEvict)
+			c.store.Cleanup(c.policy, c.onEvict)
 		case <-c.stop:
 			return
 		}

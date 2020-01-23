@@ -17,19 +17,26 @@
 package ristretto
 
 import (
+	"math"
 	"sync"
 	"time"
 )
 
-const (
+var (
 	// TODO: find the optimal value or make it configurable.
-	bucketSizeSecs = 5
+	bucketSize = 5 * time.Second
 )
 
-// timeToBucket converts a time into a bucket number that will be used
-// to store items in the expiration map.
-func timeToBucket(t time.Time) int {
-	return t.Second() / bucketSizeSecs
+func storageBucket(t time.Time) int64 {
+	bucket := int64(math.Ceil(float64(t.Unix()) / bucketSize.Seconds()))
+	return bucket
+}
+
+func cleanupBucket(t time.Time) int64 {
+	// The bucket to cleanup is always behind the storage bucket by one so that
+	// no elements in that bucket (which might not have expired yet) are deleted.
+	bucket := storageBucket(t) - 1
+	return bucket
 }
 
 // bucket type is a map of key to conflict.
@@ -38,37 +45,71 @@ type bucket map[uint64]uint64
 // expirationMap is a map of bucket number to the corresponding bucket.
 type expirationMap struct {
 	sync.RWMutex
-	buckets map[int]bucket
+	buckets map[int64]bucket
 }
 
 func newExpirationMap() *expirationMap {
 	return &expirationMap{
-		buckets: make(map[int]bucket),
+		buckets: make(map[int64]bucket),
 	}
 }
 
-// Add adds a key-conflict pair to the bucket for this expiration time.
-func (m *expirationMap) Add(key, conflict uint64, expiration time.Time) {
+func (m *expirationMap) add(key, conflict uint64, expiration time.Time) {
+	if m == nil {
+		return
+	}
+
 	// Items that don't expire don't need to be in the expiration map.
 	if expiration.IsZero() {
 		return
 	}
 
-	bucketNum := timeToBucket(expiration)
+	bucketNum := storageBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
 
-	_, ok := m.buckets[bucketNum]
+	b, ok := m.buckets[bucketNum]
 	if !ok {
-		m.buckets[bucketNum] = make(bucket)
+		b = make(bucket)
+		m.buckets[bucketNum] = b
 	}
-	m.buckets[bucketNum][key] = conflict
+	b[key] = conflict
 }
 
-// Delete removes the key-conflict pair from the expiration map. The expiration time
-// is needed to be able to find the bucket storing this pair in constant time.
-func (m *expirationMap) Delete(key uint64, expiration time.Time) {
-	bucketNum := timeToBucket(expiration)
+func (m *expirationMap) update(key, conflict uint64, oldExpiration, newExpiration time.Time) {
+	if m == nil {
+		return
+	}
+
+	if oldExpiration.IsZero() {
+		// Nothing to update.
+		return
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	oldBucketNum := storageBucket(oldExpiration)
+	oldBucket, ok := m.buckets[oldBucketNum]
+	if ok {
+		delete(oldBucket, key)
+	}
+
+	newBucketNum := storageBucket(newExpiration)
+	newBucket, ok := m.buckets[newBucketNum]
+	if !ok {
+		newBucket = make(bucket)
+		m.buckets[newBucketNum] = newBucket
+	}
+	newBucket[key] = conflict
+}
+
+func (m *expirationMap) del(key uint64, expiration time.Time) {
+	if m == nil {
+		return
+	}
+
+	bucketNum := storageBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
 	_, ok := m.buckets[bucketNum]
@@ -78,22 +119,28 @@ func (m *expirationMap) Delete(key uint64, expiration time.Time) {
 	delete(m.buckets[bucketNum], key)
 }
 
-// CleanUp removes all the items in the bucket that was just completed. It deletes
+// cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
-func (m *expirationMap) CleanUp(store store, policy policy, onEvict onEvictFunc) {
-	// Get the bucket number for the current time and substract one. There might be
-	// items in the current bucket that have not expired yet but all the items in
-	// the previous bucket should have expired.
-	bucketNum := timeToBucket(time.Now()) - 1
+func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc) {
+	if m == nil {
+		return
+	}
 
+	now := time.Now()
+	bucketNum := cleanupBucket(now)
 	m.Lock()
 	keys := m.buckets[bucketNum]
 	delete(m.buckets, bucketNum)
 	m.Unlock()
 
 	for key, conflict := range keys {
-		_, value := store.Del(key, 0)
+		// Sanity check. Verify that the store agrees that this key is expired.
+		if store.Expiration(key).After(now) {
+			continue
+		}
+
+		_, value := store.Del(key, conflict)
 		cost := policy.Cost(key)
 		if onEvict != nil {
 			onEvict(key, conflict, value, cost)

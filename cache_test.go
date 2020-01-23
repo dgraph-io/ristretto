@@ -377,10 +377,10 @@ func TestCacheSetWithTTL(t *testing.T) {
 		}
 	}
 
-	retrySet(1, 1, 1, 3*time.Second)
+	retrySet(1, 1, 1, time.Second)
 
 	// Sleep to make sure the item has expired after execution resumes.
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 	val, ok := c.Get(1)
 	require.False(t, ok)
 	require.Nil(t, val)
@@ -395,12 +395,12 @@ func TestCacheSetWithTTL(t *testing.T) {
 	m.Unlock()
 
 	// Verify that expiration times are overwritten.
-	retrySet(2, 1, 1, time.Second)
-	retrySet(2, 1, 1, 100*time.Second)
-	time.Sleep(5 * time.Second)
+	retrySet(2, 1, 1, 100*time.Millisecond)
+	retrySet(2, 2, 1, 100*time.Second)
+	time.Sleep(3 * time.Second)
 	val, ok = c.Get(2)
 	require.True(t, ok)
-	require.Equal(t, 1, val.(int))
+	require.Equal(t, 2, val.(int))
 }
 
 func TestCacheDel(t *testing.T) {
@@ -588,4 +588,10 @@ func TestCacheMetricsClear(t *testing.T) {
 	stop <- struct{}{}
 	c.Metrics = nil
 	c.Metrics.Clear()
+}
+
+func TestMain(m *testing.M) {
+	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
+	bucketSize = time.Second
+	m.Run()
 }
