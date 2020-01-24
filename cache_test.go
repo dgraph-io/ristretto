@@ -2,6 +2,7 @@ package ristretto
 
 import (
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -594,4 +595,5 @@ func TestMain(m *testing.M) {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
 	bucketSize = time.Second
 	m.Run()
+	os.Exit(0)
 }
