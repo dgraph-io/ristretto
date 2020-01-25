@@ -17,26 +17,23 @@
 package ristretto
 
 import (
-	"math"
 	"sync"
 	"time"
 )
 
 var (
 	// TODO: find the optimal value or make it configurable.
-	bucketSize = 5 * time.Second
+	bucketDurationSecs = int64(5)
 )
 
 func storageBucket(t time.Time) int64 {
-	bucket := int64(math.Ceil(float64(t.Unix()) / bucketSize.Seconds()))
-	return bucket
+	return (t.Unix() / bucketDurationSecs) + 1
 }
 
 func cleanupBucket(t time.Time) int64 {
 	// The bucket to cleanup is always behind the storage bucket by one so that
 	// no elements in that bucket (which might not have expired yet) are deleted.
-	bucket := storageBucket(t) - 1
-	return bucket
+	return storageBucket(t) - 1
 }
 
 // bucket type is a map of key to conflict.
@@ -76,26 +73,21 @@ func (m *expirationMap) add(key, conflict uint64, expiration time.Time) {
 	b[key] = conflict
 }
 
-func (m *expirationMap) update(key, conflict uint64, oldExpiration, newExpiration time.Time) {
+func (m *expirationMap) update(key, conflict uint64, oldExpTime, newExpTime time.Time) {
 	if m == nil {
-		return
-	}
-
-	if oldExpiration.IsZero() {
-		// Nothing to update.
 		return
 	}
 
 	m.Lock()
 	defer m.Unlock()
 
-	oldBucketNum := storageBucket(oldExpiration)
+	oldBucketNum := storageBucket(oldExpTime)
 	oldBucket, ok := m.buckets[oldBucketNum]
 	if ok {
 		delete(oldBucket, key)
 	}
 
-	newBucketNum := storageBucket(newExpiration)
+	newBucketNum := storageBucket(newExpTime)
 	newBucket, ok := m.buckets[newBucketNum]
 	if !ok {
 		newBucket = make(bucket)
@@ -127,9 +119,9 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc)
 		return
 	}
 
+	m.Lock()
 	now := time.Now()
 	bucketNum := cleanupBucket(now)
-	m.Lock()
 	keys := m.buckets[bucketNum]
 	delete(m.buckets, bucketNum)
 	m.Unlock()

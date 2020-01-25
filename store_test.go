@@ -7,7 +7,7 @@ import (
 )
 
 func TestStoreSetGet(t *testing.T) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,
@@ -36,7 +36,7 @@ func TestStoreSetGet(t *testing.T) {
 }
 
 func TestStoreDel(t *testing.T) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,
@@ -52,7 +52,7 @@ func TestStoreDel(t *testing.T) {
 }
 
 func TestStoreClear(t *testing.T) {
-	s := newStore(nil)
+	s := newStore()
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
 		it := item{
@@ -72,7 +72,7 @@ func TestStoreClear(t *testing.T) {
 }
 
 func TestStoreUpdate(t *testing.T) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,
@@ -112,7 +112,7 @@ func TestStoreUpdate(t *testing.T) {
 }
 
 func TestStoreCollision(t *testing.T) {
-	s := newShardedMap(nil)
+	s := newShardedMap()
 	s.shards[1].Lock()
 	s.shards[1].data[1] = storeItem{
 		key:      1,
@@ -145,7 +145,7 @@ func TestStoreCollision(t *testing.T) {
 }
 
 func BenchmarkStoreGet(b *testing.B) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,
@@ -162,7 +162,7 @@ func BenchmarkStoreGet(b *testing.B) {
 }
 
 func BenchmarkStoreSet(b *testing.B) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
@@ -178,7 +178,7 @@ func BenchmarkStoreSet(b *testing.B) {
 }
 
 func BenchmarkStoreUpdate(b *testing.B) {
-	s := newStore(nil)
+	s := newStore()
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,

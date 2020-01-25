@@ -593,7 +593,7 @@ func TestCacheMetricsClear(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
-	bucketSize = time.Second
+	bucketDurationSecs = 1
 	m.Run()
 	os.Exit(0)
 }

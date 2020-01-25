@@ -140,7 +140,7 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:         newStore(newExpirationMap()),
+		store:         newStore(),
 		policy:        policy,
 		getBuf:        newRingBuffer(policy, config.BufferItems),
 		setBuf:        make(chan *item, setBufSize),
@@ -148,7 +148,7 @@ func NewCache(config *Config) (*Cache, error) {
 		keyToHash:     config.KeyToHash,
 		stop:          make(chan struct{}),
 		cost:          config.Cost,
-		cleanupTicker: time.NewTicker(bucketSize),
+		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash

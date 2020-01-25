@@ -55,24 +55,24 @@ type store interface {
 }
 
 // newStore returns the default store implementation.
-func newStore(m *expirationMap) store {
-	return newShardedMap(m)
+func newStore() store {
+	return newShardedMap()
 }
 
 const numShards uint64 = 256
 
 type shardedMap struct {
-	shards []*lockedMap
-	em     *expirationMap
+	shards    []*lockedMap
+	expiryMap *expirationMap
 }
 
-func newShardedMap(em *expirationMap) *shardedMap {
+func newShardedMap() *shardedMap {
 	sm := &shardedMap{
-		shards: make([]*lockedMap, int(numShards)),
-		em:     em,
+		shards:    make([]*lockedMap, int(numShards)),
+		expiryMap: newExpirationMap(),
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap(em)
+		sm.shards[i] = newLockedMap(sm.expiryMap)
 	}
 	return sm
 }
@@ -103,7 +103,7 @@ func (sm *shardedMap) Update(newItem *item) bool {
 }
 
 func (sm *shardedMap) Cleanup(policy policy, onEvict onEvictFunc) {
-	sm.em.cleanup(sm, policy, onEvict)
+	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
 func (sm *shardedMap) Clear() {
@@ -137,10 +137,8 @@ func (m *lockedMap) get(key, conflict uint64) (interface{}, bool) {
 	}
 
 	// Handle expired items.
-	if !item.expiration.IsZero() {
-		if time.Now().After(item.expiration) {
-			return nil, false
-		}
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+		return nil, false
 	}
 	return item.value, true
 }
