@@ -2,7 +2,6 @@ package ristretto
 
 import (
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -345,6 +344,23 @@ func TestCacheSet(t *testing.T) {
 	}
 }
 
+// retrySet calls SetWithTTL until the item is accepted by the cache.
+func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Duration) {
+	for {
+		if set := c.SetWithTTL(key, value, cost, ttl); !set {
+			time.Sleep(wait)
+			continue
+		}
+
+		time.Sleep(wait)
+		val, ok := c.Get(key)
+		require.True(t, ok)
+		require.NotNil(t, val)
+		require.Equal(t, value, val.(int))
+		return
+	}
+}
+
 func TestCacheSetWithTTL(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
@@ -361,24 +377,7 @@ func TestCacheSetWithTTL(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// retrySet calls SetWithTTL until the item is accepted by the cache.
-	retrySet := func(key, value int, cost int64, ttl time.Duration) {
-		for {
-			if set := c.SetWithTTL(key, value, cost, ttl); !set {
-				time.Sleep(wait)
-				continue
-			}
-
-			time.Sleep(wait)
-			val, ok := c.Get(key)
-			require.True(t, ok)
-			require.NotNil(t, val)
-			require.Equal(t, value, val.(int))
-			return
-		}
-	}
-
-	retrySet(1, 1, 1, time.Second)
+	retrySet(t, c, 1, 1, 1, time.Second)
 
 	// Sleep to make sure the item has expired after execution resumes.
 	time.Sleep(2 * time.Second)
@@ -396,12 +395,20 @@ func TestCacheSetWithTTL(t *testing.T) {
 	m.Unlock()
 
 	// Verify that expiration times are overwritten.
-	retrySet(2, 1, 1, 100*time.Millisecond)
-	retrySet(2, 2, 1, 100*time.Second)
+	retrySet(t, c, 2, 1, 1, time.Second)
+	retrySet(t, c, 2, 2, 1, 100*time.Second)
 	time.Sleep(3 * time.Second)
 	val, ok = c.Get(2)
 	require.True(t, ok)
 	require.Equal(t, 2, val.(int))
+
+	// Verify that entries with no expiration are overwritten.
+	retrySet(t, c, 3, 1, 1, 0)
+	retrySet(t, c, 3, 2, 1, time.Second)
+	time.Sleep(3 * time.Second)
+	val, ok = c.Get(3)
+	require.False(t, ok)
+	require.Nil(t, val)
 }
 
 func TestCacheDel(t *testing.T) {
@@ -425,6 +432,23 @@ func TestCacheDel(t *testing.T) {
 		}
 	}()
 	c.Del(1)
+}
+
+func TestCacheDelWithTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	retrySet(t, c, 3, 1, 1, 10*time.Second)
+	time.Sleep(1 * time.Second)
+	// Delete the item
+	c.Del(3)
+	// Ensure the key is deleted.
+	val, ok := c.Get(3)
+	require.False(t, ok)
+	require.Nil(t, val)
 }
 
 func TestCacheClear(t *testing.T) {
@@ -591,9 +615,7 @@ func TestCacheMetricsClear(t *testing.T) {
 	c.Metrics.Clear()
 }
 
-func TestMain(m *testing.M) {
+func init() {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
 	bucketDurationSecs = 1
-	m.Run()
-	os.Exit(0)
 }

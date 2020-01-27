@@ -196,7 +196,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 
 // SetWithTTL works like Set but adds a key-value pair to the cache that will expire
 // after the specified TTL (time to live) has passed. A zero value means the value never
-// exexpire, which is identical to calling Set. A negative value is a no-op and the value
+// expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || key == nil {
