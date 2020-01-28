@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -32,6 +33,8 @@ const (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
 )
+
+type onEvictFunc func(uint64, uint64, interface{}, int64)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -48,7 +51,7 @@ type Cache struct {
 	// contention.
 	setBuf chan *item
 	// onEvict is called for item evictions.
-	onEvict func(uint64, uint64, interface{}, int64)
+	onEvict onEvictFunc
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -57,6 +60,8 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
+	// cleanupTicker is used to periodically check for entries whose TTL has passed.
+	cleanupTicker *time.Ticker
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items.
 	Metrics *Metrics
@@ -115,11 +120,12 @@ const (
 
 // item is passed to setBuf so items can eventually be added to the cache.
 type item struct {
-	flag     itemFlag
-	key      uint64
-	conflict uint64
-	value    interface{}
-	cost     int64
+	flag       itemFlag
+	key        uint64
+	conflict   uint64
+	value      interface{}
+	cost       int64
+	expiration time.Time
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -134,14 +140,15 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:     newStore(),
-		policy:    policy,
-		getBuf:    newRingBuffer(policy, config.BufferItems),
-		setBuf:    make(chan *item, setBufSize),
-		onEvict:   config.OnEvict,
-		keyToHash: config.KeyToHash,
-		stop:      make(chan struct{}),
-		cost:      config.Cost,
+		store:         newStore(),
+		policy:        policy,
+		getBuf:        newRingBuffer(policy, config.BufferItems),
+		setBuf:        make(chan *item, setBufSize),
+		onEvict:       config.OnEvict,
+		keyToHash:     config.KeyToHash,
+		stop:          make(chan struct{}),
+		cost:          config.Cost,
+		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -184,20 +191,42 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
 func (c *Cache) Set(key, value interface{}, cost int64) bool {
+	return c.SetWithTTL(key, value, cost, 0*time.Second)
+}
+
+// SetWithTTL works like Set but adds a key-value pair to the cache that will expire
+// after the specified TTL (time to live) has passed. A zero value means the value never
+// expires, which is identical to calling Set. A negative value is a no-op and the value
+// is discarded.
+func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || key == nil {
 		return false
 	}
+
+	var expiration time.Time
+	switch {
+	case ttl == 0:
+		// No expiration.
+		break
+	case ttl < 0:
+		// Treat this a a no-op.
+		return false
+	default:
+		expiration = time.Now().Add(ttl)
+	}
+
 	keyHash, conflictHash := c.keyToHash(key)
 	i := &item{
-		flag:     itemNew,
-		key:      keyHash,
-		conflict: conflictHash,
-		value:    value,
-		cost:     cost,
+		flag:       itemNew,
+		key:        keyHash,
+		conflict:   conflictHash,
+		value:      value,
+		cost:       cost,
+		expiration: expiration,
 	}
-	// Attempt to immediately update hashmap value and set flag to update so the
-	// cost is eventually updated.
-	if c.store.Update(keyHash, conflictHash, i.value) {
+	// cost is eventually updated. The expiration must also be immediately updated
+	// to prevent items from being prematurely removed from the map.
+	if c.store.Update(i) {
 		i.flag = itemUpdate
 	}
 	// Attempt to send item to policy.
@@ -277,7 +306,7 @@ func (c *Cache) processItems() {
 			case itemNew:
 				victims, added := c.policy.Add(i.key, i.cost)
 				if added {
-					c.store.Set(i.key, i.conflict, i.value)
+					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.key, 1)
 				}
 				for _, victim := range victims {
@@ -294,6 +323,8 @@ func (c *Cache) processItems() {
 				c.policy.Del(i.key) // Deals with metrics updates.
 				c.store.Del(i.key, i.conflict)
 			}
+		case <-c.cleanupTicker.C:
+			c.store.Cleanup(c.policy, c.onEvict)
 		case <-c.stop:
 			return
 		}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/stretchr/testify/require"
 )
 
 var wait = time.Millisecond * 10
@@ -273,7 +274,12 @@ func TestCacheGet(t *testing.T) {
 		panic(err)
 	}
 	key, conflict := z.KeyToHash(1)
-	c.store.Set(key, conflict, 1)
+	i := item{
+		key:      key,
+		conflict: conflict,
+		value:    1,
+	}
+	c.store.Set(&i)
 	if val, ok := c.Get(1); val == nil || !ok {
 		t.Fatal("get should be successful")
 	}
@@ -338,6 +344,73 @@ func TestCacheSet(t *testing.T) {
 	}
 }
 
+// retrySet calls SetWithTTL until the item is accepted by the cache.
+func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Duration) {
+	for {
+		if set := c.SetWithTTL(key, value, cost, ttl); !set {
+			time.Sleep(wait)
+			continue
+		}
+
+		time.Sleep(wait)
+		val, ok := c.Get(key)
+		require.True(t, ok)
+		require.NotNil(t, val)
+		require.Equal(t, value, val.(int))
+		return
+	}
+}
+
+func TestCacheSetWithTTL(t *testing.T) {
+	m := &sync.Mutex{}
+	evicted := make(map[uint64]struct{})
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+			m.Lock()
+			defer m.Unlock()
+			evicted[key] = struct{}{}
+		},
+	})
+	require.NoError(t, err)
+
+	retrySet(t, c, 1, 1, 1, time.Second)
+
+	// Sleep to make sure the item has expired after execution resumes.
+	time.Sleep(2 * time.Second)
+	val, ok := c.Get(1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// Sleep to ensure that the bucket where the item was stored has been cleared
+	// from the expiraton map.
+	time.Sleep(5 * time.Second)
+	m.Lock()
+	require.Equal(t, 1, len(evicted))
+	_, ok = evicted[1]
+	require.True(t, ok)
+	m.Unlock()
+
+	// Verify that expiration times are overwritten.
+	retrySet(t, c, 2, 1, 1, time.Second)
+	retrySet(t, c, 2, 2, 1, 100*time.Second)
+	time.Sleep(3 * time.Second)
+	val, ok = c.Get(2)
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
+
+	// Verify that entries with no expiration are overwritten.
+	retrySet(t, c, 3, 1, 1, 0)
+	retrySet(t, c, 3, 2, 1, time.Second)
+	time.Sleep(3 * time.Second)
+	val, ok = c.Get(3)
+	require.False(t, ok)
+	require.Nil(t, val)
+}
+
 func TestCacheDel(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
@@ -359,6 +432,23 @@ func TestCacheDel(t *testing.T) {
 		}
 	}()
 	c.Del(1)
+}
+
+func TestCacheDelWithTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	retrySet(t, c, 3, 1, 1, 10*time.Second)
+	time.Sleep(1 * time.Second)
+	// Delete the item
+	c.Del(3)
+	// Ensure the key is deleted.
+	val, ok := c.Get(3)
+	require.False(t, ok)
+	require.Nil(t, val)
 }
 
 func TestCacheClear(t *testing.T) {
@@ -523,4 +613,9 @@ func TestCacheMetricsClear(t *testing.T) {
 	stop <- struct{}{}
 	c.Metrics = nil
 	c.Metrics.Clear()
+}
+
+func init() {
+	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
+	bucketDurationSecs = 1
 }

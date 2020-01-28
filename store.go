@@ -18,12 +18,14 @@ package ristretto
 
 import (
 	"sync"
+	"time"
 )
 
 type storeItem struct {
-	key      uint64
-	conflict uint64
-	value    interface{}
+	key        uint64
+	conflict   uint64
+	value      interface{}
+	expiration time.Time
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -35,14 +37,19 @@ type storeItem struct {
 type store interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (interface{}, bool)
+	// Expiration returns the expiration time for this key.
+	Expiration(uint64) time.Time
 	// Set adds the key-value pair to the Map or updates the value if it's
-	// already present.
-	Set(uint64, uint64, interface{})
+	// already present. The key-value pair is passed as a pointer to an
+	// item object.
+	Set(*item)
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(uint64, uint64, interface{}) bool
+	Update(*item) bool
+	// Cleanup removes items that have an expired TTL.
+	Cleanup(policy policy, onEvict onEvictFunc)
 	// Clear clears all contents of the store.
 	Clear()
 }
@@ -55,33 +62,48 @@ func newStore() store {
 const numShards uint64 = 256
 
 type shardedMap struct {
-	shards []*lockedMap
+	shards    []*lockedMap
+	expiryMap *expirationMap
 }
 
 func newShardedMap() *shardedMap {
 	sm := &shardedMap{
-		shards: make([]*lockedMap, int(numShards)),
+		shards:    make([]*lockedMap, int(numShards)),
+		expiryMap: newExpirationMap(),
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap()
+		sm.shards[i] = newLockedMap(sm.expiryMap)
 	}
 	return sm
 }
 
 func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
-	return sm.shards[key%numShards].Get(key, conflict)
+	return sm.shards[key%numShards].get(key, conflict)
 }
 
-func (sm *shardedMap) Set(key, conflict uint64, value interface{}) {
-	sm.shards[key%numShards].Set(key, conflict, value)
+func (sm *shardedMap) Expiration(key uint64) time.Time {
+	return sm.shards[key%numShards].Expiration(key)
+}
+
+func (sm *shardedMap) Set(i *item) {
+	if i == nil {
+		// If item is nil make this Set a no-op.
+		return
+	}
+
+	sm.shards[i.key%numShards].Set(i)
 }
 
 func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(key, conflict uint64, value interface{}) bool {
-	return sm.shards[key%numShards].Update(key, conflict, value)
+func (sm *shardedMap) Update(newItem *item) bool {
+	return sm.shards[newItem.key%numShards].Update(newItem)
+}
+
+func (sm *shardedMap) Cleanup(policy policy, onEvict onEvictFunc) {
+	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
 func (sm *shardedMap) Clear() {
@@ -93,15 +115,17 @@ func (sm *shardedMap) Clear() {
 type lockedMap struct {
 	sync.RWMutex
 	data map[uint64]storeItem
+	em   *expirationMap
 }
 
-func newLockedMap() *lockedMap {
+func newLockedMap(em *expirationMap) *lockedMap {
 	return &lockedMap{
 		data: make(map[uint64]storeItem),
+		em:   em,
 	}
 }
 
-func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
+func (m *lockedMap) get(key, conflict uint64) (interface{}, bool) {
 	m.RLock()
 	item, ok := m.data[key]
 	m.RUnlock()
@@ -111,29 +135,51 @@ func (m *lockedMap) Get(key, conflict uint64) (interface{}, bool) {
 	if conflict != 0 && (conflict != item.conflict) {
 		return nil, false
 	}
+
+	// Handle expired items.
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+		return nil, false
+	}
 	return item.value, true
 }
 
-func (m *lockedMap) Set(key, conflict uint64, value interface{}) {
+func (m *lockedMap) Expiration(key uint64) time.Time {
+	m.RLock()
+	defer m.RUnlock()
+	return m.data[key].expiration
+}
+
+func (m *lockedMap) Set(i *item) {
+	if i == nil {
+		// If the item is nil make this Set a no-op.
+		return
+	}
+
 	m.Lock()
-	item, ok := m.data[key]
-	if !ok {
-		m.data[key] = storeItem{
-			key:      key,
-			conflict: conflict,
-			value:    value,
+	item, ok := m.data[i.key]
+
+	if ok {
+		m.em.update(i.key, i.conflict, item.expiration, i.expiration)
+	} else {
+		m.em.add(i.key, i.conflict, i.expiration)
+		m.data[i.key] = storeItem{
+			key:        i.key,
+			conflict:   i.conflict,
+			value:      i.value,
+			expiration: i.expiration,
 		}
 		m.Unlock()
 		return
 	}
-	if conflict != 0 && (conflict != item.conflict) {
+	if i.conflict != 0 && (i.conflict != item.conflict) {
 		m.Unlock()
 		return
 	}
-	m.data[key] = storeItem{
-		key:      key,
-		conflict: conflict,
-		value:    value,
+	m.data[i.key] = storeItem{
+		key:        i.key,
+		conflict:   i.conflict,
+		value:      i.value,
+		expiration: i.expiration,
 	}
 	m.Unlock()
 }
@@ -149,27 +195,36 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 		m.Unlock()
 		return 0, nil
 	}
+
+	if !item.expiration.IsZero() {
+		m.em.del(key, item.expiration)
+	}
+
 	delete(m.data, key)
 	m.Unlock()
 	return item.conflict, item.value
 }
 
-func (m *lockedMap) Update(key, conflict uint64, value interface{}) bool {
+func (m *lockedMap) Update(newItem *item) bool {
 	m.Lock()
-	item, ok := m.data[key]
+	item, ok := m.data[newItem.key]
 	if !ok {
 		m.Unlock()
 		return false
 	}
-	if conflict != 0 && (conflict != item.conflict) {
+	if newItem.conflict != 0 && (newItem.conflict != item.conflict) {
 		m.Unlock()
 		return false
 	}
-	m.data[key] = storeItem{
-		key:      key,
-		conflict: conflict,
-		value:    value,
+
+	m.em.update(newItem.key, newItem.conflict, item.expiration, newItem.expiration)
+	m.data[newItem.key] = storeItem{
+		key:        newItem.key,
+		conflict:   newItem.conflict,
+		value:      newItem.value,
+		expiration: newItem.expiration,
 	}
+
 	m.Unlock()
 	return true
 }
