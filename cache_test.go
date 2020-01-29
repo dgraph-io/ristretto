@@ -24,20 +24,15 @@ func TestCacheKeyToHash(t *testing.T) {
 			return z.KeyToHash(key)
 		},
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	if c.Set(1, 1, 1) {
 		time.Sleep(wait)
-		if val, ok := c.Get(1); val == nil || !ok {
-			t.Fatal("get should be successful")
-		} else {
-			c.Del(1)
-		}
+		val, ok := c.Get(1)
+		require.True(t, ok)
+		require.NotNil(t, val)
+		c.Del(1)
 	}
-	if keyToHashCount != 3 {
-		t.Fatal("custom KeyToHash function should be called three times")
-	}
+	require.Equal(t, 3, keyToHashCount)
 }
 
 func TestCacheMaxCost(t *testing.T) {
@@ -55,9 +50,7 @@ func TestCacheMaxCost(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	stop := make(chan struct{}, 8)
 	for i := 0; i < 8; i++ {
 		go func() {
@@ -86,52 +79,49 @@ func TestCacheMaxCost(t *testing.T) {
 		time.Sleep(time.Second)
 		cacheCost := c.Metrics.CostAdded() - c.Metrics.CostEvicted()
 		t.Logf("total cache cost: %d\n", cacheCost)
-		if float64(cacheCost) > float64(1e6*1.05) {
-			t.Fatal("cache cost exceeding MaxCost")
-		}
+		require.True(t, float64(cacheCost) <= float64(1e6*1.05))
 	}
 	for i := 0; i < 8; i++ {
 		stop <- struct{}{}
 	}
 }
 
-func TestCache(t *testing.T) {
-	if _, err := NewCache(&Config{
+func TestNewCache(t *testing.T) {
+	_, err := NewCache(&Config{
 		NumCounters: 0,
-	}); err == nil {
-		t.Fatal("numCounters can't be 0")
-	}
-	if _, err := NewCache(&Config{
+	})
+	require.Error(t, err)
+
+	_, err = NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     0,
-	}); err == nil {
-		t.Fatal("maxCost can't be 0")
-	}
-	if _, err := NewCache(&Config{
+	})
+	require.Error(t, err)
+
+	_, err = NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 0,
-	}); err == nil {
-		t.Fatal("bufferItems can't be 0")
-	}
-	if c, err := NewCache(&Config{
+	})
+	require.Error(t, err)
+
+	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
-	}); c == nil || err != nil {
-		t.Fatal("config should be good")
-	}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, c)
 }
 
 func TestNilCache(t *testing.T) {
 	var c *Cache
-	if val, ok := c.Get(1); !(val == nil && !ok) {
-		t.Fatal("should return nil, false")
-	}
-	if set := c.Set(1, 1, 1); set {
-		t.Fatal("should return false")
-	}
+	val, ok := c.Get(1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	require.False(t, c.Set(1, 1, 1))
 	c.Del(1)
 	c.Clear()
 	c.Close()
@@ -148,9 +138,7 @@ func TestMultipleClose(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		t.Fatalf("should not error: %s", err)
-	}
+	require.NoError(t, err)
 	c.Close()
 	c.Close()
 }
@@ -171,9 +159,8 @@ func TestCacheProcessItems(t *testing.T) {
 			evicted[key] = struct{}{}
 		},
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	var key uint64
 	var conflict uint64
 
@@ -186,9 +173,9 @@ func TestCacheProcessItems(t *testing.T) {
 		cost:     0,
 	}
 	time.Sleep(wait)
-	if !c.policy.Has(1) || c.policy.Cost(1) != 1 {
-		t.Fatal("cache processItems didn't add new item")
-	}
+	require.True(t, c.policy.Has(1))
+	require.Equal(t, int64(1), c.policy.Cost(1))
+
 	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &item{
 		flag:     itemUpdate,
@@ -198,9 +185,8 @@ func TestCacheProcessItems(t *testing.T) {
 		cost:     0,
 	}
 	time.Sleep(wait)
-	if c.policy.Cost(1) != 2 {
-		t.Fatal("cache processItems didn't update item cost")
-	}
+	require.Equal(t, int64(2), c.policy.Cost(1))
+
 	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &item{
 		flag:     itemDelete,
@@ -209,12 +195,11 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	time.Sleep(wait)
 	key, conflict = z.KeyToHash(1)
-	if val, ok := c.store.Get(key, conflict); val != nil || ok {
-		t.Fatal("cache processItems didn't delete item")
-	}
-	if c.policy.Has(1) {
-		t.Fatal("cache processItems didn't delete item")
-	}
+	val, ok := c.store.Get(key, conflict)
+	require.False(t, ok)
+	require.Nil(t, val)
+	require.False(t, c.policy.Has(1))
+
 	key, conflict = z.KeyToHash(2)
 	c.setBuf <- &item{
 		flag:     itemNew,
@@ -249,15 +234,11 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	time.Sleep(wait)
 	m.Lock()
-	if len(evicted) == 0 {
-		m.Unlock()
-		t.Fatal("cache processItems not evicting or calling OnEvict")
-	}
+	require.NotEqual(t, 0, len(evicted))
 	m.Unlock()
+
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("cache processItems didn't stop")
-		}
+		require.NotNil(t, recover())
 	}()
 	c.Close()
 	c.setBuf <- &item{flag: itemNew}
@@ -270,9 +251,8 @@ func TestCacheGet(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	key, conflict := z.KeyToHash(1)
 	i := item{
 		key:      key,
@@ -280,68 +260,21 @@ func TestCacheGet(t *testing.T) {
 		value:    1,
 	}
 	c.store.Set(&i)
-	if val, ok := c.Get(1); val == nil || !ok {
-		t.Fatal("get should be successful")
-	}
-	if val, ok := c.Get(2); val != nil || ok {
-		t.Fatal("get should not be successful")
-	}
-	// 0.5 and not 1.0 because we tried Getting each item twice
-	if c.Metrics.Ratio() != 0.5 {
-		t.Fatal("get should record metrics")
-	}
-	c = nil
-	if val, ok := c.Get(0); val != nil || ok {
-		t.Fatal("get should not be successful with nil cache")
-	}
-}
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.NotNil(t, val)
 
-func TestCacheSet(t *testing.T) {
-	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
-	})
-	if err != nil {
-		panic(err)
-	}
-	if c.Set(1, 1, 1) {
-		time.Sleep(wait)
-		if val, ok := c.Get(1); val == nil || val.(int) != 1 || !ok {
-			t.Fatal("set/get returned wrong value")
-		}
-	} else if val, ok := c.Get(1); val != nil || ok {
-		t.Fatal("set was dropped but value still added")
-	}
-	c.Set(1, 2, 2)
-	val, ok := c.store.Get(z.KeyToHash(1))
-	if val == nil || val.(int) != 2 || !ok {
-		t.Fatal("set/update was unsuccessful")
-	}
-	c.stop <- struct{}{}
-	for i := 0; i < setBufSize; i++ {
-		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &item{
-			flag:     itemUpdate,
-			key:      key,
-			conflict: conflict,
-			value:    1,
-			cost:     1,
-		}
-	}
-	if c.Set(2, 2, 1) {
-		t.Fatal("set should be dropped with full setBuf")
-	}
-	if c.Metrics.SetsDropped() != 1 {
-		t.Fatal("set should track dropSets")
-	}
-	close(c.setBuf)
-	close(c.stop)
+	val, ok = c.Get(2)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// 0.5 and not 1.0 because we tried Getting each item twice
+	require.Equal(t, 0.5, c.Metrics.Ratio())
+
 	c = nil
-	if c.Set(1, 1, 1) {
-		t.Fatal("set shouldn't be successful with nil cache")
-	}
+	val, ok = c.Get(0)
+	require.False(t, ok)
+	require.Nil(t, val)
 }
 
 // retrySet calls SetWithTTL until the item is accepted by the cache.
@@ -359,6 +292,42 @@ func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Durat
 		require.Equal(t, value, val.(int))
 		return
 	}
+}
+
+func TestCacheSet(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	retrySet(t, c, 1, 1, 1, 0)
+
+	c.Set(1, 2, 2)
+	val, ok := c.store.Get(z.KeyToHash(1))
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
+
+	c.stop <- struct{}{}
+	for i := 0; i < setBufSize; i++ {
+		key, conflict := z.KeyToHash(1)
+		c.setBuf <- &item{
+			flag:     itemUpdate,
+			key:      key,
+			conflict: conflict,
+			value:    1,
+			cost:     1,
+		}
+	}
+	require.False(t, c.Set(2, 2, 1))
+	require.Equal(t, uint64(1), c.Metrics.SetsDropped())
+	close(c.setBuf)
+	close(c.stop)
+
+	c = nil
+	require.False(t, c.Set(1, 1, 1))
 }
 
 func TestCacheSetWithTTL(t *testing.T) {
@@ -417,19 +386,17 @@ func TestCacheDel(t *testing.T) {
 		MaxCost:     10,
 		BufferItems: 64,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	c.Set(1, 1, 1)
 	c.Del(1)
-	if val, ok := c.Get(1); val != nil || ok {
-		t.Fatal("del didn't delete")
-	}
+	val, ok := c.Get(1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
 	c = nil
 	defer func() {
-		if r := recover(); r != nil {
-			t.Fatal("del panic with nil cache")
-		}
+		require.Nil(t, recover())
 	}()
 	c.Del(1)
 }
@@ -458,24 +425,21 @@ func TestCacheClear(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
-	if c.Metrics.KeysAdded() != 10 {
-		t.Fatal("range of sets not being processed")
-	}
+	require.Equal(t, uint64(10), c.Metrics.KeysAdded())
+
 	c.Clear()
-	if c.Metrics.KeysAdded() != 0 {
-		t.Fatal("clear didn't reset metrics")
-	}
+	require.Equal(t, uint64(0), c.Metrics.KeysAdded())
+
 	for i := 0; i < 10; i++ {
-		if val, ok := c.Get(i); val != nil || ok {
-			t.Fatal("clear didn't delete values")
-		}
+		val, ok := c.Get(i)
+		require.False(t, ok)
+		require.Nil(t, val)
 	}
 }
 
@@ -486,17 +450,14 @@ func TestCacheMetrics(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	for i := 0; i < 10; i++ {
 		c.Set(i, i, 1)
 	}
 	time.Sleep(wait)
 	m := c.Metrics
-	if m.KeysAdded() != 10 {
-		t.Fatal("metrics exporting incorrect fields")
-	}
+	require.Equal(t, uint64(10), m.KeysAdded())
 }
 
 func TestMetrics(t *testing.T) {
@@ -516,9 +477,7 @@ func TestNilMetrics(t *testing.T) {
 		m.GetsDropped,
 		m.GetsKept,
 	} {
-		if f() != 0 {
-			t.Fatal("should be zero")
-		}
+		require.Equal(t, uint64(0), f())
 	}
 }
 
@@ -527,32 +486,25 @@ func TestMetricsAddGet(t *testing.T) {
 	m.add(hit, 1, 1)
 	m.add(hit, 2, 2)
 	m.add(hit, 3, 3)
-	if m.Hits() != 6 {
-		t.Fatal("add/get error")
-	}
+	require.Equal(t, uint64(6), m.Hits())
+
 	m = nil
 	m.add(hit, 1, 1)
-	if m.Hits() != 0 {
-		t.Fatal("get with nil struct should return 0")
-	}
+	require.Equal(t, uint64(0), m.Hits())
 }
 
 func TestMetricsRatio(t *testing.T) {
 	m := newMetrics()
-	if m.Ratio() != 0 {
-		t.Fatal("ratio with no hits or misses should be 0")
-	}
+	require.Equal(t, float64(0), m.Ratio())
+
 	m.add(hit, 1, 1)
 	m.add(hit, 2, 2)
 	m.add(miss, 1, 1)
 	m.add(miss, 2, 2)
-	if m.Ratio() != 0.5 {
-		t.Fatal("ratio incorrect")
-	}
+	require.Equal(t, 0.5, m.Ratio())
+
 	m = nil
-	if m.Ratio() != 0.0 {
-		t.Fatal("ratio with a nil struct should return 0")
-	}
+	require.Equal(t, float64(0), m.Ratio())
 }
 
 func TestMetricsString(t *testing.T) {
@@ -568,22 +520,25 @@ func TestMetricsString(t *testing.T) {
 	m.add(rejectSets, 1, 1)
 	m.add(dropGets, 1, 1)
 	m.add(keepGets, 1, 1)
-	if m.Hits() != 1 || m.Misses() != 1 || m.Ratio() != 0.5 || m.KeysAdded() != 1 ||
-		m.KeysUpdated() != 1 || m.KeysEvicted() != 1 || m.CostAdded() != 1 ||
-		m.CostEvicted() != 1 || m.SetsDropped() != 1 || m.SetsRejected() != 1 ||
-		m.GetsDropped() != 1 || m.GetsKept() != 1 {
-		t.Fatal("Metrics wrong value(s)")
-	}
-	if len(m.String()) == 0 {
-		t.Fatal("Metrics.String() empty")
-	}
+	require.Equal(t, uint64(1), m.Hits())
+	require.Equal(t, uint64(1), m.Misses())
+	require.Equal(t, 0.5, m.Ratio())
+	require.Equal(t, uint64(1), m.KeysAdded())
+	require.Equal(t, uint64(1), m.KeysUpdated())
+	require.Equal(t, uint64(1), m.KeysEvicted())
+	require.Equal(t, uint64(1), m.CostAdded())
+	require.Equal(t, uint64(1), m.CostEvicted())
+	require.Equal(t, uint64(1), m.SetsDropped())
+	require.Equal(t, uint64(1), m.SetsRejected())
+	require.Equal(t, uint64(1), m.GetsDropped())
+	require.Equal(t, uint64(1), m.GetsKept())
+
+	require.NotEqual(t, 0, len(m.String()))
+
 	m = nil
-	if len(m.String()) != 0 {
-		t.Fatal("Metrics.String() should be empty with nil struct")
-	}
-	if stringFor(doNotUse) != "unidentified" {
-		t.Fatal("stringFor() not handling doNotUse type")
-	}
+	require.Equal(t, 0, len(m.String()))
+
+	require.Equal(t, "unidentified", stringFor(doNotUse))
 }
 
 func TestCacheMetricsClear(t *testing.T) {
@@ -593,9 +548,8 @@ func TestCacheMetricsClear(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	c.Set(1, 1, 1)
 	stop := make(chan struct{})
 	go func() {
