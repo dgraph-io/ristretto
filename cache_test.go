@@ -330,6 +330,47 @@ func TestCacheSet(t *testing.T) {
 	require.False(t, c.Set(1, 1, 1))
 }
 
+func TestRecacheWithTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+
+	require.NoError(t, err)
+
+	// Set initial value for key = 1
+	insert := c.SetWithTTL(1, 1, 1, 5*time.Second)
+	require.True(t, insert)
+	time.Sleep(2 * time.Second)
+
+	// Get value from cache for key = 1
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.NotNil(t, val)
+	require.Equal(t, 1, val)
+
+	// Wait for expiration
+	time.Sleep(5 * time.Second)
+
+	// The cached value for key = 1 should be gone
+	val, ok = c.Get(1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// Set new value for key = 1
+	insert = c.SetWithTTL(1, 2, 1, 5*time.Second)
+	require.True(t, insert)
+	time.Sleep(2 * time.Second)
+
+	// Get value from cache for key = 1
+	val, ok = c.Get(1)
+	require.True(t, ok)
+	require.NotNil(t, val)
+	require.Equal(t, 2, val)
+}
+
 func TestCacheSetWithTTL(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})

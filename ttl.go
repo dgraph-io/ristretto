@@ -132,8 +132,10 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict onEvictFunc)
 			continue
 		}
 
-		_, value := store.Del(key, conflict)
 		cost := policy.Cost(key)
+		policy.Del(key)
+		_, value := store.Del(key, conflict)
+
 		if onEvict != nil {
 			onEvict(key, conflict, value, cost)
 		}
