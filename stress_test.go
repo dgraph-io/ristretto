@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/ristretto/sim"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStressSetGet(t *testing.T) {
@@ -19,9 +20,8 @@ func TestStressSetGet(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	for i := 0; i < 100; i++ {
 		c.Set(i, i, 1)
 	}
@@ -45,12 +45,8 @@ func TestStressSetGet(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := c.Metrics.Ratio(); r != 1.0 {
-		t.Fatalf("hit ratio should be 1.0 but got %.2f\n", r)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 1.0, c.Metrics.Ratio())
 }
 
 func TestStressHitRatio(t *testing.T) {
@@ -61,15 +57,13 @@ func TestStressHitRatio(t *testing.T) {
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	o := NewClairvoyant(100)
 	for i := 0; i < 10000; i++ {
 		k, err := key()
-		if err != nil {
-			panic(err)
-		}
+		require.NoError(t, err)
+
 		if _, ok := o.Get(k); !ok {
 			o.Set(k, k, 1)
 		}

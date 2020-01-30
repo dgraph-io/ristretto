@@ -68,11 +68,7 @@ func TestM_JSON(t *testing.T) {
 			cnt2++
 		}
 	}
-
-	if cnt2 != shallBe {
-		t.Errorf("FAILED !AddIfNotHasBytes = %v; want %v", cnt2, shallBe)
-	}
-
+	require.Equal(t, shallBe, cnt2)
 }
 
 func BenchmarkM_New(b *testing.B) {

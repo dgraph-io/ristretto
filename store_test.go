@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStoreSetGet(t *testing.T) {
@@ -15,14 +16,16 @@ func TestStoreSetGet(t *testing.T) {
 		value:    2,
 	}
 	s.Set(&i)
-	if val, ok := s.Get(key, conflict); (val == nil || !ok) || val.(int) != 2 {
-		t.Fatal("set/get error")
-	}
+	val, ok := s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
+
 	i.value = 3
 	s.Set(&i)
-	if val, ok := s.Get(key, conflict); (val == nil || !ok) || val.(int) != 3 {
-		t.Fatal("set/get overwrite error")
-	}
+	val, ok = s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 3, val.(int))
+
 	key, conflict = z.KeyToHash(2)
 	i = item{
 		key:      key,
@@ -30,9 +33,9 @@ func TestStoreSetGet(t *testing.T) {
 		value:    2,
 	}
 	s.Set(&i)
-	if val, ok := s.Get(key, conflict); !ok || val.(int) != 2 {
-		t.Fatal("set/get nil key error")
-	}
+	val, ok = s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
 }
 
 func TestStoreDel(t *testing.T) {
@@ -45,9 +48,10 @@ func TestStoreDel(t *testing.T) {
 	}
 	s.Set(&i)
 	s.Del(key, conflict)
-	if val, ok := s.Get(key, conflict); val != nil || ok {
-		t.Fatal("del error")
-	}
+	val, ok := s.Get(key, conflict)
+	require.False(t, ok)
+	require.Nil(t, val)
+
 	s.Del(2, 0)
 }
 
@@ -65,9 +69,9 @@ func TestStoreClear(t *testing.T) {
 	s.Clear()
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
-		if val, ok := s.Get(key, conflict); val != nil || ok {
-			t.Fatal("clear operation failed")
-		}
+		val, ok := s.Get(key, conflict)
+		require.False(t, ok)
+		require.Nil(t, val)
 	}
 }
 
@@ -81,34 +85,33 @@ func TestStoreUpdate(t *testing.T) {
 	}
 	s.Set(&i)
 	i.value = 2
-	if updated := s.Update(&i); !updated {
-		t.Fatal("value should have been updated")
-	}
-	if val, ok := s.Get(key, conflict); val == nil || !ok {
-		t.Fatal("value was deleted")
-	}
-	if val, ok := s.Get(key, conflict); val.(int) != 2 || !ok {
-		t.Fatal("value wasn't updated")
-	}
+	require.True(t, s.Update(&i))
+
+	val, ok := s.Get(key, conflict)
+	require.True(t, ok)
+	require.NotNil(t, val)
+
+	val, ok = s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
+
 	i.value = 3
-	if !s.Update(&i) {
-		t.Fatal("value should have been updated")
-	}
-	if val, ok := s.Get(key, conflict); val.(int) != 3 || !ok {
-		t.Fatal("value wasn't updated")
-	}
+	require.True(t, s.Update(&i))
+
+	val, ok = s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 3, val.(int))
+
 	key, conflict = z.KeyToHash(2)
 	i = item{
 		key:      key,
 		conflict: conflict,
 		value:    2,
 	}
-	if updated := s.Update(&i); updated {
-		t.Fatal("value should not have been updated")
-	}
-	if val, ok := s.Get(key, conflict); val != nil || ok {
-		t.Fatal("value should not have been updated")
-	}
+	require.False(t, s.Update(&i))
+	val, ok = s.Get(key, conflict)
+	require.False(t, ok)
+	require.Nil(t, val)
 }
 
 func TestStoreCollision(t *testing.T) {
@@ -120,28 +123,29 @@ func TestStoreCollision(t *testing.T) {
 		value:    1,
 	}
 	s.shards[1].Unlock()
-	if val, ok := s.Get(1, 1); val != nil || ok {
-		t.Fatal("collision should return nil")
-	}
+	val, ok := s.Get(1, 1)
+	require.False(t, ok)
+	require.Nil(t, val)
+
 	i := item{
 		key:      1,
 		conflict: 1,
 		value:    2,
 	}
 	s.Set(&i)
-	if val, ok := s.Get(1, 0); !ok || val == nil || val.(int) == 2 {
-		t.Fatal("collision should prevent Set update")
-	}
-	if s.Update(&i) {
-		t.Fatal("collision should prevent Update")
-	}
-	if val, ok := s.Get(1, 0); !ok || val == nil || val.(int) == 2 {
-		t.Fatal("collision should prevent Update")
-	}
+	val, ok = s.Get(1, 0)
+	require.True(t, ok)
+	require.NotEqual(t, 2, val.(int))
+
+	require.False(t, s.Update(&i))
+	val, ok = s.Get(1, 0)
+	require.True(t, ok)
+	require.NotEqual(t, 2, val.(int))
+
 	s.Del(1, 1)
-	if val, ok := s.Get(1, 0); !ok || val == nil {
-		t.Fatal("collision should prevent Del")
-	}
+	val, ok = s.Get(1, 0)
+	require.True(t, ok)
+	require.NotNil(t, val)
 }
 
 func BenchmarkStoreGet(b *testing.B) {

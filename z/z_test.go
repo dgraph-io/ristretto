@@ -19,13 +19,13 @@ package z
 import (
 	"math"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func verifyHashProduct(t *testing.T, wantKey, wantConflict, key, conflict uint64) {
-	if wantKey != key || wantConflict != conflict {
-		t.Errorf("expected (%d, %d) but got (%d, %d)\n",
-			wantKey, wantConflict, key, conflict)
-	}
+	require.Equal(t, wantKey, key)
+	require.Equal(t, wantConflict, conflict)
 }
 
 func TestKeyToHash(t *testing.T) {

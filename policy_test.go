@@ -3,13 +3,13 @@ package ristretto
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPolicy(t *testing.T) {
 	defer func() {
-		if r := recover(); r != nil {
-			t.Fatal("newPolicy failed")
-		}
+		require.Nil(t, recover())
 	}()
 	newPolicy(100, 10)
 }
@@ -17,9 +17,8 @@ func TestPolicy(t *testing.T) {
 func TestPolicyMetrics(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.CollectMetrics(newMetrics())
-	if p.metrics == nil || p.evict.metrics == nil {
-		t.Fatal("policy metrics initialization error")
-	}
+	require.NotNil(t, p.metrics)
+	require.NotNil(t, p.evict.metrics)
 }
 
 func TestPolicyProcessItems(t *testing.T) {
@@ -27,36 +26,29 @@ func TestPolicyProcessItems(t *testing.T) {
 	p.itemsCh <- []uint64{1, 2, 2}
 	time.Sleep(wait)
 	p.Lock()
-	if p.admit.Estimate(2) != 2 || p.admit.Estimate(1) != 1 {
-		p.Unlock()
-		t.Fatal("policy processItems not pushing to tinylfu counters")
-	}
+	require.Equal(t, int64(2), p.admit.Estimate(2))
+	require.Equal(t, int64(1), p.admit.Estimate(1))
 	p.Unlock()
+
 	p.stop <- struct{}{}
 	p.itemsCh <- []uint64{3, 3, 3}
 	time.Sleep(wait)
 	p.Lock()
-	if p.admit.Estimate(3) != 0 {
-		p.Unlock()
-		t.Fatal("policy processItems not stopping")
-	}
+	require.Equal(t, int64(0), p.admit.Estimate(3))
 	p.Unlock()
 }
 
 func TestPolicyPush(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
-	if !p.Push([]uint64{}) {
-		t.Fatal("push empty slice should be good")
-	}
+	require.True(t, p.Push([]uint64{}))
+
 	keepCount := 0
 	for i := 0; i < 10; i++ {
 		if p.Push([]uint64{1, 2, 3, 4, 5}) {
 			keepCount++
 		}
 	}
-	if keepCount == 0 {
-		t.Fatal("push dropped everything")
-	}
+	require.NotEqual(t, 0, keepCount)
 }
 
 func TestPolicyAdd(t *testing.T) {
@@ -70,29 +62,29 @@ func TestPolicyAdd(t *testing.T) {
 	p.admit.Increment(2)
 	p.admit.Increment(3)
 	p.Unlock()
-	if victims, added := p.Add(1, 1); victims != nil || added {
-		t.Fatal("item should already exist")
-	}
-	if victims, added := p.Add(2, 20); victims != nil || !added {
-		t.Fatal("item should be added with no eviction")
-	}
-	if victims, added := p.Add(3, 90); victims == nil || !added {
-		t.Fatal("item should be added with eviction")
-	}
-	if victims, added := p.Add(4, 20); victims == nil || added {
-		t.Fatal("item should not be added")
-	}
+
+	victims, added := p.Add(1, 1)
+	require.Nil(t, victims)
+	require.False(t, added)
+
+	victims, added = p.Add(2, 20)
+	require.Nil(t, victims)
+	require.True(t, added)
+
+	victims, added = p.Add(3, 90)
+	require.NotNil(t, victims)
+	require.True(t, added)
+
+	victims, added = p.Add(4, 20)
+	require.NotNil(t, victims)
+	require.False(t, added)
 }
 
 func TestPolicyHas(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.Add(1, 1)
-	if !p.Has(1) {
-		t.Fatal("policy should have key")
-	}
-	if p.Has(2) {
-		t.Fatal("policy shouldn't have key")
-	}
+	require.True(t, p.Has(1))
+	require.False(t, p.Has(2))
 }
 
 func TestPolicyDel(t *testing.T) {
@@ -100,20 +92,14 @@ func TestPolicyDel(t *testing.T) {
 	p.Add(1, 1)
 	p.Del(1)
 	p.Del(2)
-	if p.Has(1) {
-		t.Fatal("del didn't delete")
-	}
-	if p.Has(2) {
-		t.Fatal("policy shouldn't have key")
-	}
+	require.False(t, p.Has(1))
+	require.False(t, p.Has(2))
 }
 
 func TestPolicyCap(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.Add(1, 1)
-	if p.Cap() != 9 {
-		t.Fatal("cap returned wrong value")
-	}
+	require.Equal(t, int64(9), p.Cap())
 }
 
 func TestPolicyUpdate(t *testing.T) {
@@ -121,22 +107,15 @@ func TestPolicyUpdate(t *testing.T) {
 	p.Add(1, 1)
 	p.Update(1, 2)
 	p.Lock()
-	if p.evict.keyCosts[1] != 2 {
-		p.Unlock()
-		t.Fatal("update failed")
-	}
+	require.Equal(t, int64(2), p.evict.keyCosts[1])
 	p.Unlock()
 }
 
 func TestPolicyCost(t *testing.T) {
 	p := newDefaultPolicy(100, 10)
 	p.Add(1, 2)
-	if p.Cost(1) != 2 {
-		t.Fatal("cost for existing key returned wrong value")
-	}
-	if p.Cost(2) != -1 {
-		t.Fatal("cost for missing key returned wrong value")
-	}
+	require.Equal(t, int64(2), p.Cost(1))
+	require.Equal(t, int64(-1), p.Cost(2))
 }
 
 func TestPolicyClear(t *testing.T) {
@@ -145,17 +124,17 @@ func TestPolicyClear(t *testing.T) {
 	p.Add(2, 2)
 	p.Add(3, 3)
 	p.Clear()
-	if p.Cap() != 10 || p.Has(1) || p.Has(2) || p.Has(3) {
-		t.Fatal("clear didn't clear properly")
-	}
+	require.Equal(t, int64(10), p.Cap())
+	require.False(t, p.Has(1))
+	require.False(t, p.Has(2))
+	require.False(t, p.Has(3))
 }
 
 func TestPolicyClose(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("close didn't close channels")
-		}
+		require.NotNil(t, recover())
 	}()
+
 	p := newDefaultPolicy(100, 10)
 	p.Add(1, 1)
 	p.Close()
@@ -167,12 +146,8 @@ func TestSampledLFUAdd(t *testing.T) {
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 1)
-	if e.used != 4 {
-		t.Fatal("used not being incremented")
-	}
-	if e.keyCosts[2] != 2 {
-		t.Fatal("keyCosts not being updated")
-	}
+	require.Equal(t, int64(4), e.used)
+	require.Equal(t, int64(2), e.keyCosts[2])
 }
 
 func TestSampledLFUDel(t *testing.T) {
@@ -180,27 +155,18 @@ func TestSampledLFUDel(t *testing.T) {
 	e.add(1, 1)
 	e.add(2, 2)
 	e.del(2)
-	if e.used != 1 {
-		t.Fatal("del not updating used field")
-	}
-	if _, ok := e.keyCosts[2]; ok {
-		t.Fatal("del not deleting value from keyCosts")
-	}
+	require.Equal(t, int64(1), e.used)
+	_, ok := e.keyCosts[2]
+	require.False(t, ok)
 	e.del(4)
 }
 
 func TestSampledLFUUpdate(t *testing.T) {
 	e := newSampledLFU(4)
 	e.add(1, 1)
-	if !e.updateIfHas(1, 2) {
-		t.Fatal("update should be possible")
-	}
-	if e.used != 2 {
-		t.Fatal("update not changing used field")
-	}
-	if e.updateIfHas(2, 2) {
-		t.Fatal("update shouldn't be possible")
-	}
+	require.True(t, e.updateIfHas(1, 2))
+	require.Equal(t, int64(2), e.used)
+	require.False(t, e.updateIfHas(2, 2))
 }
 
 func TestSampledLFUClear(t *testing.T) {
@@ -209,9 +175,8 @@ func TestSampledLFUClear(t *testing.T) {
 	e.add(2, 2)
 	e.add(3, 1)
 	e.clear()
-	if len(e.keyCosts) != 0 || e.used != 0 {
-		t.Fatal("clear not deleting keyCosts or zeroing used field")
-	}
+	require.Equal(t, 0, len(e.keyCosts))
+	require.Equal(t, int64(0), e.used)
 }
 
 func TestSampledLFURoom(t *testing.T) {
@@ -219,9 +184,7 @@ func TestSampledLFURoom(t *testing.T) {
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 3)
-	if e.roomLeft(4) != 6 {
-		t.Fatal("roomLeft returning wrong value")
-	}
+	require.Equal(t, int64(6), e.roomLeft(4))
 }
 
 func TestSampledLFUSample(t *testing.T) {
@@ -234,16 +197,14 @@ func TestSampledLFUSample(t *testing.T) {
 		{3, 3},
 	})
 	k := sample[len(sample)-1].key
-	if len(sample) != 5 || k == 1 || k == 2 || k == 3 {
-		t.Fatal("fillSample not filling properly")
-	}
-	if len(sample) != len(e.fillSample(sample)) {
-		t.Fatal("fillSample mutating full sample")
-	}
+	require.Equal(t, 5, len(sample))
+	require.NotEqual(t, 1, k)
+	require.NotEqual(t, 2, k)
+	require.NotEqual(t, 3, k)
+	require.Equal(t, len(sample), len(e.fillSample(sample)))
 	e.del(5)
-	if sample = e.fillSample(sample[:len(sample)-2]); len(sample) != 4 {
-		t.Fatal("fillSample not returning sample properly")
-	}
+	sample = e.fillSample(sample[:len(sample)-2])
+	require.Equal(t, 4, len(sample))
 }
 
 func TestTinyLFUIncrement(t *testing.T) {
@@ -251,19 +212,12 @@ func TestTinyLFUIncrement(t *testing.T) {
 	a.Increment(1)
 	a.Increment(1)
 	a.Increment(1)
-	if !a.door.Has(1) {
-		t.Fatal("doorkeeper bit not set")
-	}
-	if a.freq.Estimate(1) != 2 {
-		t.Fatal("incorrect counter value")
-	}
+	require.True(t, a.door.Has(1))
+	require.Equal(t, int64(2), a.freq.Estimate(1))
+
 	a.Increment(1)
-	if a.door.Has(1) {
-		t.Fatal("doorkeeper bit set after reset")
-	}
-	if a.freq.Estimate(1) != 1 {
-		t.Fatal("counter value not halved after reset")
-	}
+	require.False(t, a.door.Has(1))
+	require.Equal(t, int64(1), a.freq.Estimate(1))
 }
 
 func TestTinyLFUEstimate(t *testing.T) {
@@ -271,30 +225,23 @@ func TestTinyLFUEstimate(t *testing.T) {
 	a.Increment(1)
 	a.Increment(1)
 	a.Increment(1)
-	if a.Estimate(1) != 3 {
-		t.Fatal("estimate value incorrect")
-	}
-	if a.Estimate(2) != 0 {
-		t.Fatal("estimate value should be 0")
-	}
+	require.Equal(t, int64(3), a.Estimate(1))
+	require.Equal(t, int64(0), a.Estimate(2))
 }
 
 func TestTinyLFUPush(t *testing.T) {
 	a := newTinyLFU(16)
 	a.Push([]uint64{1, 2, 2, 3, 3, 3})
-	if a.Estimate(1) != 1 || a.Estimate(2) != 2 || a.Estimate(3) != 3 {
-		t.Fatal("push didn't increment counters properly")
-	}
-	if a.incrs != 6 {
-		t.Fatal("incrs not being incremented")
-	}
+	require.Equal(t, int64(1), a.Estimate(1))
+	require.Equal(t, int64(2), a.Estimate(2))
+	require.Equal(t, int64(3), a.Estimate(3))
+	require.Equal(t, int64(6), a.incrs)
 }
 
 func TestTinyLFUClear(t *testing.T) {
 	a := newTinyLFU(16)
 	a.Push([]uint64{1, 3, 3, 3})
 	a.clear()
-	if a.incrs != 0 || a.Estimate(3) != 0 {
-		t.Fatal("clear not clearing")
-	}
+	require.Equal(t, int64(0), a.incrs)
+	require.Equal(t, int64(0), a.Estimate(3))
 }
