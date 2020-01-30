@@ -341,7 +341,8 @@ func TestRecacheWithTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set initial value for key = 1
-	c.SetWithTTL(1, 1, 1, 5*time.Second)
+	insert := c.SetWithTTL(1, 1, 1, 5*time.Second)
+	require.True(t, insert)
 	time.Sleep(2 * time.Second)
 
 	// Get value from cache for key = 1
@@ -359,7 +360,8 @@ func TestRecacheWithTTL(t *testing.T) {
 	require.Nil(t, val)
 
 	// Set new value for key = 1
-	c.SetWithTTL(1, 2, 1, 5*time.Second)
+	insert = c.SetWithTTL(1, 2, 1, 5*time.Second)
+	require.True(t, insert)
 	time.Sleep(2 * time.Second)
 
 	// Get value from cache for key = 1
