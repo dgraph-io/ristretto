@@ -3,6 +3,8 @@ package ristretto
 import (
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type testConsumer struct {
@@ -29,9 +31,7 @@ func TestRingDrain(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		r.Push(uint64(i))
 	}
-	if drains != 100 {
-		t.Fatal("buffers shouldn't be dropped with BufferItems == 1")
-	}
+	require.Equal(t, 100, drains, "buffers shouldn't be dropped with BufferItems == 1")
 }
 
 func TestRingReset(t *testing.T) {
@@ -45,9 +45,7 @@ func TestRingReset(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		r.Push(uint64(i))
 	}
-	if drains != 0 {
-		t.Fatal("testConsumer shouldn't be draining")
-	}
+	require.Equal(t, 0, drains, "testConsumer shouldn't be draining")
 }
 
 func TestRingConsumer(t *testing.T) {
@@ -67,7 +65,6 @@ func TestRingConsumer(t *testing.T) {
 		r.Push(uint64(i))
 	}
 	l := len(drainItems)
-	if l == 0 || l > 100 {
-		t.Fatal("drains not being processed correctly")
-	}
+	require.NotEqual(t, 0, l)
+	require.True(t, l <= 100)
 }
