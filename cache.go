@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,6 +51,9 @@ type Cache struct {
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention.
 	setBuf chan *item
+	// setBufLock is a reader-writer lock to ensure there are no race conditions
+	// when calling one of Set/Del and one of Clear/Close simultaneously.
+	setBufLock sync.RWMutex
 	// onEvict is called for item evictions.
 	onEvict onEvictFunc
 	// KeyToHash function is used to customize the key hashing algorithm.
@@ -230,6 +234,8 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		i.flag = itemUpdate
 	}
 	// Attempt to send item to policy.
+	c.setBufLock.RLock()
+	defer c.setBufLock.RUnlock()
 	select {
 	case c.setBuf <- i:
 		return true
@@ -251,11 +257,13 @@ func (c *Cache) Del(key interface{}) {
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
+	c.setBufLock.RLock()
 	c.setBuf <- &item{
 		flag:     itemDelete,
 		key:      keyHash,
 		conflict: conflictHash,
 	}
+	c.setBufLock.RUnlock()
 }
 
 // Close stops all goroutines and closes all channels.
@@ -267,7 +275,12 @@ func (c *Cache) Close() {
 	c.stop <- struct{}{}
 	close(c.stop)
 	c.stop = nil
+
+	// Close setBuf channel.
+	c.setBufLock.Lock()
 	close(c.setBuf)
+	c.setBufLock.Unlock()
+
 	c.policy.Close()
 }
 
@@ -280,8 +293,12 @@ func (c *Cache) Clear() {
 	}
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
+
 	// Swap out the setBuf channel.
+	c.setBufLock.Lock()
 	c.setBuf = make(chan *item, setBufSize)
+	c.setBufLock.Unlock()
+
 	// Clear value hashmap and policy data.
 	c.policy.Clear()
 	c.store.Clear()
@@ -298,6 +315,10 @@ func (c *Cache) processItems() {
 	for {
 		select {
 		case i := <-c.setBuf:
+			// There is no need to protect setBuf with the RWMutex here because both Close
+			// and Clear make sure processItems is not running before writing or closing
+			// the channel.
+
 			// Calculate item cost value if new or update.
 			if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
 				i.cost = c.cost(i.value)
