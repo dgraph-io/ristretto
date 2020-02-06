@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +36,12 @@ const (
 )
 
 type onEvictFunc func(uint64, uint64, interface{}, int64)
+
+var itemPool = &sync.Pool{
+	New: func() interface{} {
+		return &item{}
+	},
+}
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -128,6 +135,10 @@ type item struct {
 	expiration time.Time
 }
 
+func (i *item) reset() {
+	i.flag, i.key, i.conflict, i.value, i.cost, i.expiration = 0, 0, 0, nil, 0, time.Time{}
+}
+
 // NewCache returns a new Cache instance and any configuration errors, if any.
 func NewCache(config *Config) (*Cache, error) {
 	switch {
@@ -216,14 +227,13 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
-	i := &item{
-		flag:       itemNew,
-		key:        keyHash,
-		conflict:   conflictHash,
-		value:      value,
-		cost:       cost,
-		expiration: expiration,
-	}
+	i := itemPool.Get().(*item)
+	i.flag = itemNew
+	i.key = keyHash
+	i.conflict = conflictHash
+	i.value = value
+	i.cost = cost
+	i.expiration = expiration
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
 	if c.store.Update(i) {
@@ -251,11 +261,11 @@ func (c *Cache) Del(key interface{}) {
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
-	c.setBuf <- &item{
-		flag:     itemDelete,
-		key:      keyHash,
-		conflict: conflictHash,
-	}
+	i := itemPool.Get().(*item)
+	i.flag = itemDelete
+	i.key = keyHash
+	i.conflict = conflictHash
+	c.setBuf <- i
 }
 
 // Close stops all goroutines and closes all channels.
@@ -314,6 +324,8 @@ func (c *Cache) processItems() {
 					if c.onEvict != nil {
 						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
 					}
+					victim.reset()
+					itemPool.Put(victim)
 				}
 
 			case itemUpdate:
@@ -323,6 +335,8 @@ func (c *Cache) processItems() {
 				c.policy.Del(i.key) // Deals with metrics updates.
 				c.store.Del(i.key, i.conflict)
 			}
+			i.reset()
+			itemPool.Put(i)
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, c.onEvict)
 		case <-c.stop:

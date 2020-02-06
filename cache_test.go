@@ -610,6 +610,22 @@ func TestCacheMetricsClear(t *testing.T) {
 	c.Metrics.Clear()
 }
 
+func BenchmarkConcurrentCacheSetNeverEvict(b *testing.B) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	require.NoError(b, err)
+	b.RunParallel(func(pb *testing.PB) {
+		cnt := rand.Int()
+		for pb.Next() {
+			cnt++
+			c.Set(cnt, cnt, 0)
+		}
+	})
+}
+
 func init() {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
 	bucketDurationSecs = 1

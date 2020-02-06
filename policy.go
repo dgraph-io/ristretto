@@ -175,11 +175,9 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// Store victim in evicted victims slice.
-		victims = append(victims, &item{
-			key:      minKey,
-			conflict: 0,
-			cost:     minCost,
-		})
+		i := itemPool.Get().(*item)
+		i.key, i.conflict, i.cost = minKey, 0, minCost
+		victims = append(victims, i)
 	}
 	p.evict.add(key, cost)
 	p.metrics.add(costAdd, key, uint64(cost))
