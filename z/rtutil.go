@@ -62,3 +62,8 @@ func MemHashString(str string) uint64 {
 // FastRand is a fast thread local random function.
 //go:linkname FastRand runtime.fastrand
 func FastRand() uint32
+
+// FastRandom is fast random number generator function
+func FastRandom(maxNo uint32) uint32 {
+	return FastRand() % maxNo
+}
