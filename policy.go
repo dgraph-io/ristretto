@@ -18,6 +18,7 @@ package ristretto
 
 import (
 	"math"
+	"math/rand"
 	"sync"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -173,7 +174,11 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		}
 
 		// If the incoming item isn't worth keeping in the policy, reject.
-		if incHits < minHits {
+		// However, a little bit of randomness is introduced to prevent against
+		// hash collision attacks, in which the score of the victims is artificially
+		// raised so that no new items are admitted into the cache.
+		// This strategy is implemented by Caffeine.
+		if incHits < minHits && !(rand.Int() % 127 == 0) {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
