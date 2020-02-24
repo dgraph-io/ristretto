@@ -12,11 +12,9 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 
 ### Fixed
 
-## 0.0.2 - 02-24-2020
+## [0.0.2] - 2020-02-24
 
 [0.0.2]: https://github.com/dgraph-io/ristretto/compare/v0.0.1..v0.0.2
-
-### Changed
 
 ### Added
 
