@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Dgraph Labs, Inc. and Contributors
+ * Copyright 2020 Dgraph Labs, Inc. and Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,18 +118,24 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 	}
 }
 
+// Add decides whether the item with the given key and cost should be accepted by
+// the policy. It returns the list of victims that have been evicted and a boolean
+// indicating whether the incoming item should be accepted.
 func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	p.Lock()
 	defer p.Unlock()
+
 	// Cannot add an item bigger than entire cache.
 	if cost > p.evict.maxCost {
 		return nil, false
 	}
+
 	// No need to go any further if the item is already in the cache.
 	if has := p.evict.updateIfHas(key, cost); has {
 		// An update does not count as an addition, so return false.
 		return nil, false
 	}
+
 	// If the execution reaches this point, the key doesn't exist in the cache.
 	// Calculate the remaining room in the cache (usually bytes).
 	room := p.evict.roomLeft(cost)
@@ -140,21 +146,23 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		p.metrics.add(costAdd, key, uint64(cost))
 		return nil, true
 	}
+
 	// incHits is the hit count for the incoming item.
 	incHits := p.admit.Estimate(key)
 	// sample is the eviction candidate pool to be filled via random sampling.
-	//
 	// TODO: perhaps we should use a min heap here. Right now our time
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
 	// As items are evicted they will be appended to victims.
 	victims := make([]*item, 0)
+
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
 		// Fill up empty slots in sample.
 		sample = p.evict.fillSample(sample)
+
 		// Find minimally used item in sample.
 		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
 		for i, pair := range sample {
@@ -163,11 +171,13 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
 			}
 		}
+
 		// If the incoming item isn't worth keeping in the policy, reject.
 		if incHits < minHits {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
+
 		// Delete the victim from metadata.
 		p.evict.del(minKey)
 
@@ -181,6 +191,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 			cost:     minCost,
 		})
 	}
+
 	p.evict.add(key, cost)
 	p.metrics.add(costAdd, key, uint64(cost))
 	return victims, true
