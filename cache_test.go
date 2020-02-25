@@ -31,7 +31,7 @@ func TestCacheKeyToHash(t *testing.T) {
 		val, ok := c.Get([]byte{1})
 		require.True(t, ok)
 		require.NotNil(t, val)
-		c.Del([]byte{})
+		c.Del([]byte{1})
 	}
 	require.Equal(t, 3, keyToHashCount)
 }
@@ -174,8 +174,8 @@ func TestCacheProcessItems(t *testing.T) {
 		cost:     0,
 	}
 	time.Sleep(wait)
-	require.True(t, c.policy.Has(1))
-	require.Equal(t, int64(1), c.policy.Cost(1))
+	require.True(t, c.policy.Has(key))
+	require.Equal(t, int64(1), c.policy.Cost(key))
 
 	key, conflict = z.KeyToHash([]byte{1})
 	c.setBuf <- &item{
@@ -186,7 +186,7 @@ func TestCacheProcessItems(t *testing.T) {
 		cost:     0,
 	}
 	time.Sleep(wait)
-	require.Equal(t, int64(2), c.policy.Cost(1))
+	require.Equal(t, int64(2), c.policy.Cost(key))
 
 	key, conflict = z.KeyToHash([]byte{1})
 	c.setBuf <- &item{
@@ -401,7 +401,8 @@ func TestCacheSetWithTTL(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	m.Lock()
 	require.Equal(t, 1, len(evicted))
-	_, ok = evicted[1]
+	key, _ := z.KeyToHash([]byte{1})
+	_, ok = evicted[key]
 	require.True(t, ok)
 	m.Unlock()
 
