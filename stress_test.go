@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestStressSetGet(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 100; i++ {
-		c.Set(i, i, 1)
+		c.Set([]byte(strconv.Itoa(i)), i, 1)
 	}
 	time.Sleep(wait)
 	wg := &sync.WaitGroup{}
@@ -33,7 +34,7 @@ func TestStressSetGet(t *testing.T) {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for a := 0; a < 1000; a++ {
 				k := r.Int() % 10
-				if val, ok := c.Get(k); val == nil || !ok {
+				if val, ok := c.Get([]byte(strconv.Itoa(k))); val == nil || !ok {
 					err = fmt.Errorf("expected %d but got nil", k)
 					break
 				} else if val != nil && val.(int) != k {
@@ -64,11 +65,12 @@ func TestStressHitRatio(t *testing.T) {
 		k, err := key()
 		require.NoError(t, err)
 
+		byteKey := []byte(strconv.Itoa(int(k)))
 		if _, ok := o.Get(k); !ok {
 			o.Set(k, k, 1)
 		}
-		if _, ok := c.Get(k); !ok {
-			c.Set(k, k, 1)
+		if _, ok := c.Get(byteKey); !ok {
+			c.Set(byteKey, k, 1)
 		}
 	}
 	t.Logf("actual: %.2f, optimal: %.2f", c.Metrics.Ratio(), o.Metrics().Ratio())

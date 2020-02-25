@@ -1,6 +1,7 @@
 package ristretto
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -9,7 +10,7 @@ import (
 
 func TestStoreSetGet(t *testing.T) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	i := item{
 		key:      key,
 		conflict: conflict,
@@ -26,7 +27,7 @@ func TestStoreSetGet(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 3, val.(int))
 
-	key, conflict = z.KeyToHash(2)
+	key, conflict = z.KeyToHash([]byte{2})
 	i = item{
 		key:      key,
 		conflict: conflict,
@@ -40,7 +41,7 @@ func TestStoreSetGet(t *testing.T) {
 
 func TestStoreDel(t *testing.T) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	i := item{
 		key:      key,
 		conflict: conflict,
@@ -57,8 +58,8 @@ func TestStoreDel(t *testing.T) {
 
 func TestStoreClear(t *testing.T) {
 	s := newStore()
-	for i := uint64(0); i < 1000; i++ {
-		key, conflict := z.KeyToHash(i)
+	for i := 0; i < 1000; i++ {
+		key, conflict := z.KeyToHash([]byte(strconv.Itoa(i)))
 		it := item{
 			key:      key,
 			conflict: conflict,
@@ -67,8 +68,8 @@ func TestStoreClear(t *testing.T) {
 		s.Set(&it)
 	}
 	s.Clear()
-	for i := uint64(0); i < 1000; i++ {
-		key, conflict := z.KeyToHash(i)
+	for i := 0; i < 1000; i++ {
+		key, conflict := z.KeyToHash([]byte(strconv.Itoa(i)))
 		val, ok := s.Get(key, conflict)
 		require.False(t, ok)
 		require.Nil(t, val)
@@ -77,7 +78,7 @@ func TestStoreClear(t *testing.T) {
 
 func TestStoreUpdate(t *testing.T) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	i := item{
 		key:      key,
 		conflict: conflict,
@@ -102,7 +103,7 @@ func TestStoreUpdate(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 3, val.(int))
 
-	key, conflict = z.KeyToHash(2)
+	key, conflict = z.KeyToHash([]byte{2})
 	i = item{
 		key:      key,
 		conflict: conflict,
@@ -150,7 +151,7 @@ func TestStoreCollision(t *testing.T) {
 
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	i := item{
 		key:      key,
 		conflict: conflict,
@@ -167,7 +168,7 @@ func BenchmarkStoreGet(b *testing.B) {
 
 func BenchmarkStoreSet(b *testing.B) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -183,7 +184,7 @@ func BenchmarkStoreSet(b *testing.B) {
 
 func BenchmarkStoreUpdate(b *testing.B) {
 	s := newStore()
-	key, conflict := z.KeyToHash(1)
+	key, conflict := z.KeyToHash([]byte{1})
 	i := item{
 		key:      key,
 		conflict: conflict,

@@ -55,7 +55,7 @@ type Cache struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}) (uint64, uint64)
+	keyToHash func([]byte) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// cost calculates cost from a value.
@@ -103,7 +103,7 @@ type Config struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}) (uint64, uint64)
+	KeyToHash func(key []byte) (uint64, uint64)
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
@@ -166,7 +166,7 @@ func NewCache(config *Config) (*Cache, error) {
 // Get returns the value (if any) and a boolean representing whether the
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
-func (c *Cache) Get(key interface{}) (interface{}, bool) {
+func (c *Cache) Get(key []byte) (interface{}, bool) {
 	if c == nil || key == nil {
 		return nil, false
 	}
@@ -190,7 +190,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 // To dynamically evaluate the items cost using the Config.Coster function, set
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
-func (c *Cache) Set(key, value interface{}, cost int64) bool {
+func (c *Cache) Set(key []byte, value interface{}, cost int64) bool {
 	return c.SetWithTTL(key, value, cost, 0*time.Second)
 }
 
@@ -198,7 +198,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 // after the specified TTL (time to live) has passed. A zero value means the value never
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
-func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
+func (c *Cache) SetWithTTL(key []byte, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || key == nil {
 		return false
 	}
@@ -240,7 +240,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 }
 
 // Del deletes the key-value item from the cache if it exists.
-func (c *Cache) Del(key interface{}) {
+func (c *Cache) Del(key []byte) {
 	if c == nil || key == nil {
 		return
 	}
