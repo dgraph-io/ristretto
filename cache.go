@@ -280,8 +280,17 @@ func (c *Cache) Clear() {
 	}
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
-	// Swap out the setBuf channel.
-	c.setBuf = make(chan *item, setBufSize)
+
+	// Clear out the setBuf channel.
+loop:
+	for {
+		select {
+		case <-c.setBuf:
+		default:
+			break loop
+		}
+	}
+
 	// Clear value hashmap and policy data.
 	c.policy.Clear()
 	c.store.Clear()
