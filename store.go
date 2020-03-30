@@ -156,32 +156,28 @@ func (m *lockedMap) Set(i *item) {
 	}
 
 	m.Lock()
+	defer m.Unlock()
 	item, ok := m.data[i.key]
 
 	if ok {
+		// The item existed already. We need to check the conflict key and reject the
+		// update if they do not match. The nwe update the expiration map.
+		if i.conflict != 0 && (i.conflict != item.conflict) {
+			return
+		}
 		m.em.update(i.key, i.conflict, item.expiration, i.expiration)
 	} else {
+		// The value is not in the map already. There's no need to return anything.
+		// Simply add the expiration map.
 		m.em.add(i.key, i.conflict, i.expiration)
-		m.data[i.key] = storeItem{
-			key:        i.key,
-			conflict:   i.conflict,
-			value:      i.value,
-			expiration: i.expiration,
-		}
-		m.Unlock()
-		return
 	}
-	if i.conflict != 0 && (i.conflict != item.conflict) {
-		m.Unlock()
-		return
-	}
+
 	m.data[i.key] = storeItem{
 		key:        i.key,
 		conflict:   i.conflict,
 		value:      i.value,
 		expiration: i.expiration,
 	}
-	m.Unlock()
 }
 
 func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
