@@ -161,7 +161,7 @@ func (m *lockedMap) Set(i *item) {
 
 	if ok {
 		// The item existed already. We need to check the conflict key and reject the
-		// update if they do not match. The nwe update the expiration map.
+		// update if they do not match. Only after that the expiration map is updated.
 		if i.conflict != 0 && (i.conflict != item.conflict) {
 			return
 		}
