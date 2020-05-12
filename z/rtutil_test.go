@@ -13,9 +13,24 @@ import (
 func BenchmarkMemHash(b *testing.B) {
 	buf := make([]byte, 64)
 	rand.Read(buf)
+
+	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		MemHash(buf)
+		_ = MemHash(buf)
 	}
+	b.SetBytes(int64(len(buf)))
+}
+
+func BenchmarkMemHashString(b *testing.B) {
+	s := "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = MemHashString(s)
+	}
+	b.SetBytes(int64(len(s)))
 }
 
 func BenchmarkSip(b *testing.B) {
