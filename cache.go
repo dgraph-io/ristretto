@@ -29,7 +29,7 @@ import (
 	"github.com/dgraph-io/ristretto/z"
 )
 
-const (
+var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
 )
@@ -227,7 +227,8 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
 	if c.store.Update(i) {
-		i.flag = itemUpdate
+		c.policy.Update(i.key, i.cost)
+		return true
 	}
 	// Attempt to send item to policy.
 	select {
@@ -324,9 +325,6 @@ func (c *Cache) processItems() {
 						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
 					}
 				}
-
-			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
 
 			case itemDelete:
 				c.policy.Del(i.key) // Deals with metrics updates.
