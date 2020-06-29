@@ -634,7 +634,8 @@ func TestUpdateBug(t *testing.T) {
 
 			_, ok := droppedMap[int(lastEvictedSet)]
 			if ok {
-				panic(fmt.Sprintf("val = %+v was dropped but got evicted. Dropped items: %+v\n", lastEvictedSet, droppedMap))
+				panic(fmt.Sprintf("val = %+v was dropped but it got evicted. Dropped items: %+v\n",
+					lastEvictedSet, droppedMap))
 			}
 		}
 
