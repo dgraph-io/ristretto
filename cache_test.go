@@ -431,6 +431,10 @@ func TestCacheDel(t *testing.T) {
 
 	c.Set(1, 1, 1)
 	c.Del(1)
+	// The deletes and sets are pushed through the setbuf. It might be possible
+	// that the delete is not processed before the following get is called. So
+	// wait for a millisecond for things to be processed.
+	time.Sleep(time.Millisecond)
 	val, ok := c.Get(1)
 	require.False(t, ok)
 	require.Nil(t, val)
