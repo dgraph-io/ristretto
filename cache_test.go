@@ -1,7 +1,9 @@
 package ristretto
 
 import (
+	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -617,4 +619,66 @@ func TestCacheMetricsClear(t *testing.T) {
 func init() {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
 	bucketDurationSecs = 1
+}
+
+// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+func TestDropUpdates(t *testing.T) {
+	originalSetBugSize := setBufSize
+	defer func() { setBufSize = originalSetBugSize }()
+
+	test := func() {
+		// dropppedMap stores the items dropped from the cache.
+		droppedMap := make(map[int]struct{})
+		lastEvictedSet := int64(-1)
+
+		var err error
+		handler := func(_ interface{}, value interface{}) {
+			v := value.(string)
+			lastEvictedSet, err = strconv.ParseInt(string(v), 10, 32)
+			require.NoError(t, err)
+
+			_, ok := droppedMap[int(lastEvictedSet)]
+			if ok {
+				panic(fmt.Sprintf("val = %+v was dropped but it got evicted. Dropped items: %+v\n",
+					lastEvictedSet, droppedMap))
+			}
+		}
+
+		// This is important. The race condition shows up only when the setBuf
+		// is full and that's why we reduce the buf size here. The test will
+		// try to fill up the setbuf to it's capacity and then perform an
+		// update on a key.
+		setBufSize = 10
+
+		c, err := NewCache(&Config{
+			NumCounters: 100,
+			MaxCost:     10,
+			BufferItems: 64,
+			Metrics:     true,
+			OnEvict: func(_, _ uint64, value interface{}, _ int64) {
+				handler(nil, value)
+			},
+		})
+		require.NoError(t, err)
+
+		for i := 0; i < 5*setBufSize; i++ {
+			v := fmt.Sprintf("%0100d", i)
+			// We're updating the same key.
+			if !c.Set(0, v, 1) {
+				// The race condition doesn't show up without this sleep.
+				time.Sleep(time.Microsecond)
+				droppedMap[i] = struct{}{}
+			}
+		}
+		// Wait for all the items to be processed.
+		time.Sleep(time.Millisecond)
+		// This will cause eviction from the cache.
+		require.True(t, c.Set(1, nil, 10))
+		c.Close()
+	}
+
+	// Run the test 100 times since it's not reliable.
+	for i := 0; i < 100; i++ {
+		test()
+	}
 }

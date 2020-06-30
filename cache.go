@@ -29,7 +29,7 @@ import (
 	"github.com/dgraph-io/ristretto/z"
 )
 
-const (
+var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
 )
@@ -235,7 +235,10 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		return true
 	default:
 		c.Metrics.add(dropSets, keyHash, 1)
-		return false
+		// Return true if this was an update operation since we've already
+		// updated the store. For all the other operations (set/delete), we
+		// return false which means the item was not inserted.
+		return i.flag == itemUpdate
 	}
 }
 
