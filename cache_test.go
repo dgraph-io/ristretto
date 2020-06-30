@@ -617,7 +617,8 @@ func init() {
 	bucketDurationSecs = 1
 }
 
-func TestUpdateBug(t *testing.T) {
+// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
 	defer func() { setBufSize = originalSetBugSize }()
 
@@ -639,7 +640,10 @@ func TestUpdateBug(t *testing.T) {
 			}
 		}
 
-		// This is important.
+		// This is important. The race condition shows up only when the setBuf
+		// is full and that's why we reduce the buf size here. The test will
+		// try to fill up the setbuf to it's capacity and then perform an
+		// update on a key.
 		setBufSize = 10
 
 		c, err := NewCache(&Config{
@@ -657,15 +661,19 @@ func TestUpdateBug(t *testing.T) {
 			v := fmt.Sprintf("%0100d", i)
 			// We're updating the same key.
 			if !c.Set(0, v, 1) {
+				// The race condition doesn't show up without this sleep.
 				time.Sleep(time.Microsecond)
 				droppedMap[i] = struct{}{}
 			}
 		}
+		// Wait for all the items to be processed.
 		time.Sleep(time.Millisecond)
+		// This will cause eviction from the cache.
 		require.True(t, c.Set(1, nil, 10))
 		c.Close()
 	}
-	// Run the test 100 times.
+
+	// Run the test 100 times since it's not reliable.
 	for i := 0; i < 100; i++ {
 		test()
 	}
