@@ -234,11 +234,14 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	case c.setBuf <- i:
 		return true
 	default:
+		if i.flag == itemUpdate {
+			// Return true if this was an update operation since we've already
+			// updated the store. For all the other operations (set/delete), we
+			// return false which means the item was not inserted.
+			return true
+		}
 		c.Metrics.add(dropSets, keyHash, 1)
-		// Return true if this was an update operation since we've already
-		// updated the store. For all the other operations (set/delete), we
-		// return false which means the item was not inserted.
-		return i.flag == itemUpdate
+		return false
 	}
 }
 
