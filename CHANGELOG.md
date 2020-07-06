@@ -12,6 +12,22 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 
 ### Fixed
 
+## [0.0.3] - 2020-07-06
+
+[0.0.3]: https://github.com/dgraph-io/ristretto/compare/v0.0.2..v0.0.3
+
+### Changed
+
+### Added
+
+### Fixed
+
+- z: use MemHashString and xxhash.Sum64String ([#153][])
+- Check conflict key before updating expiration map. ([#154][])
+- Fix race condition in Cache.Clear ([#133][])
+- Improve handling of updated items ([#168][])
+- Fix droppedSets count while updating the item ([#171][])
+
 ## [0.0.2] - 2020-02-24
 
 [0.0.2]: https://github.com/dgraph-io/ristretto/compare/v0.0.1..v0.0.2
