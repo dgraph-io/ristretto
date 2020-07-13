@@ -21,4 +21,4 @@ jobs:
         uses: peter-evans/close-issue@v1.0.1
         with:
           comment: |
-           **Use [Discuss Issues](https://discuss.dgraph.io/c/issues/ristretto) for reporting issues about this repository.**
+           **Use [Discuss Issues](https://discuss.dgraph.io/c/issues/35/ristretto/40) for reporting issues about this repository.**
