@@ -64,6 +64,7 @@ const numShards uint64 = 256
 type shardedMap struct {
 	shards    []*lockedMap
 	expiryMap *expirationMap
+	mask      uint64
 }
 
 func newShardedMap() *shardedMap {
@@ -74,15 +75,16 @@ func newShardedMap() *shardedMap {
 	for i := range sm.shards {
 		sm.shards[i] = newLockedMap(sm.expiryMap)
 	}
+	sm.mask = numShards - 1
 	return sm
 }
 
 func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
-	return sm.shards[key%numShards].get(key, conflict)
+	return sm.shards[key&sm.mask].get(key, conflict)
 }
 
 func (sm *shardedMap) Expiration(key uint64) time.Time {
-	return sm.shards[key%numShards].Expiration(key)
+	return sm.shards[key&sm.mask].Expiration(key)
 }
 
 func (sm *shardedMap) Set(i *item) {
@@ -91,15 +93,15 @@ func (sm *shardedMap) Set(i *item) {
 		return
 	}
 
-	sm.shards[i.key%numShards].Set(i)
+	sm.shards[i.key&sm.mask].Set(i)
 }
 
 func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
-	return sm.shards[key%numShards].Del(key, conflict)
+	return sm.shards[key&sm.mask].Del(key, conflict)
 }
 
 func (sm *shardedMap) Update(newItem *item) bool {
-	return sm.shards[newItem.key%numShards].Update(newItem)
+	return sm.shards[newItem.key&sm.mask].Update(newItem)
 }
 
 func (sm *shardedMap) Cleanup(policy policy, onEvict onEvictFunc) {
