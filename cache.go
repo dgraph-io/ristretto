@@ -32,6 +32,9 @@ import (
 var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
+
+	defaultBufferItems     int64 = 64
+	defaultNumCountersMult int64 = 10
 )
 
 type onEvictFunc func(uint64, uint64, interface{}, int64)
@@ -137,11 +140,11 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 
 	if config.NumCounters == 0 {
-		config.NumCounters = config.MaxCost * 10 // sensible default
+		config.NumCounters = config.MaxCost * defaultNumCountersMult // sensible default
 	}
 
 	if config.BufferItems == 0 {
-		config.BufferItems = 64 // sensible default
+		config.BufferItems = defaultBufferItems
 	}
 
 	policy := newPolicy(config.NumCounters, config.MaxCost)

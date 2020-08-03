@@ -105,7 +105,7 @@ func TestNewCache(t *testing.T) {
 		MaxCost:     10,
 		BufferItems: 0,
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	c, err := NewCache(&Config{
 		NumCounters: 100,
