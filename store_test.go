@@ -59,7 +59,7 @@ func TestStoreExpiration(t *testing.T) {
 	require.Equal(t, expiration, ttl)
 
 	s.Del(key, conflict)
-	val, ok = s.Get(key, conflict)
+	_, ok = s.Get(key, conflict)
 	require.False(t, ok)
 
 	ttl = s.Expiration(key)
