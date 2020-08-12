@@ -181,6 +181,35 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return value, ok
 }
 
+// Expiration returns the duration and a boolean representing whether
+// an item with the given key was found and is not expired.
+func (c *Cache) Expiration(key interface{}) (time.Duration, bool) {
+	if c == nil || key == nil {
+		return 0, false
+	}
+
+	_, ok := c.Get(key)
+	if !ok {
+		return 0, false
+	}
+
+	keyHash, _ := c.keyToHash(key)
+	expiration := c.store.Expiration(keyHash)
+
+	// Item has no expiration
+	if expiration.IsZero() {
+		return 0, true
+	}
+
+	// Item is expired
+	if time.Now().After(expiration) {
+		return 0, false
+	}
+
+	ttl := time.Until(expiration)
+	return ttl, true
+}
+
 // Set attempts to add the key-value item to the cache. If it returns false,
 // then the Set was dropped and the key-value item isn't added to the cache. If
 // it returns true, there's still a chance it could be dropped by the policy if
