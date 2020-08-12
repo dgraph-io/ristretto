@@ -279,6 +279,91 @@ func TestCacheGet(t *testing.T) {
 	require.Nil(t, val)
 }
 
+func TestCacheExpiration(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	expiration := 5 * time.Second
+	retrySet(t, c, 1, 1, 1, expiration)
+
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
+
+	var ttl time.Duration
+	ttl, ok = c.Expiration(1)
+	require.True(t, ok)
+	require.WithinDuration(t, time.Now().Add(expiration), time.Now().Add(ttl), 1*time.Second)
+
+	c.Del(1)
+	ttl, ok = c.Expiration(1)
+	require.False(t, ok)
+	require.Equal(t, ttl, 0*time.Second)
+}
+
+func TestCacheExpirationForItemWithNoExpiration(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	expiration := 0 * time.Second
+	retrySet(t, c, 1, 1, 1, expiration)
+
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
+
+	ttl, ok := c.Expiration(1)
+	require.True(t, ok)
+	require.Equal(t, ttl, 0*time.Second)
+}
+
+func TestCacheExpirationForMissingItem(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	ttl, ok := c.Expiration(1)
+	require.False(t, ok)
+	require.Equal(t, ttl, 0*time.Second)
+}
+
+func TestCacheExpirationWithExpiredItem(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	expiration := 1 * time.Second
+	retrySet(t, c, 1, 1, 1, expiration)
+
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
+
+	time.Sleep(1 * time.Second)
+
+	ttl, ok := c.Expiration(1)
+	require.False(t, ok)
+	require.Equal(t, ttl, 0*time.Second)
+}
+
 // retrySet calls SetWithTTL until the item is accepted by the cache.
 func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Duration) {
 	for {

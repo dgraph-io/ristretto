@@ -1,10 +1,10 @@
 package ristretto
 
 import (
-	"testing"
-
 	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
 )
 
 func TestStoreSetGet(t *testing.T) {
@@ -36,6 +36,42 @@ func TestStoreSetGet(t *testing.T) {
 	val, ok = s.Get(key, conflict)
 	require.True(t, ok)
 	require.Equal(t, 2, val.(int))
+}
+
+func TestStoreExpiration(t *testing.T) {
+	s := newStore()
+	key, conflict := z.KeyToHash(1)
+
+	expiration := time.Now().Add(1 * time.Second)
+	i := item{
+		key:        key,
+		conflict:   conflict,
+		value:      1,
+		expiration: expiration,
+	}
+
+	s.Set(&i)
+	val, ok := s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
+
+	ttl := s.Expiration(key)
+	require.Equal(t, expiration, ttl)
+
+	s.Del(key, conflict)
+	val, ok = s.Get(key, conflict)
+	require.False(t, ok)
+
+	ttl = s.Expiration(key)
+	require.True(t, ttl.IsZero())
+}
+
+func TestStoreExpirationForMissingItem(t *testing.T) {
+	s := newStore()
+	key, _ := z.KeyToHash(1)
+
+	ttl := s.Expiration(key)
+	require.True(t, ttl.IsZero())
 }
 
 func TestStoreDel(t *testing.T) {
