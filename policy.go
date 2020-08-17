@@ -38,7 +38,7 @@ type policy interface {
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
 	// of evicted keys and a bool denoting whether or not the key-cost pair
 	// was added. If it returns true, the key should be stored in cache.
-	Add(uint64, int64) ([]*item, bool)
+	Add(uint64, int64) ([]*Item, bool)
 	// Has returns true if the key exists in the Policy.
 	Has(uint64) bool
 	// Del deletes the key from the Policy.
@@ -121,7 +121,7 @@ func (p *defaultPolicy) Push(keys []uint64) bool {
 // Add decides whether the item with the given key and cost should be accepted by
 // the policy. It returns the list of victims that have been evicted and a boolean
 // indicating whether the incoming item should be accepted.
-func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
+func (p *defaultPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	p.Lock()
 	defer p.Unlock()
 
@@ -155,7 +155,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 	// O(lg N).
 	sample := make([]*policyPair, 0, lfuSample)
 	// As items are evicted they will be appended to victims.
-	victims := make([]*item, 0)
+	victims := make([]*Item, 0)
 
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
@@ -185,10 +185,10 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*item, bool) {
 		sample[minId] = sample[len(sample)-1]
 		sample = sample[:len(sample)-1]
 		// Store victim in evicted victims slice.
-		victims = append(victims, &item{
-			key:      minKey,
-			conflict: 0,
-			cost:     minCost,
+		victims = append(victims, &Item{
+			Key:      minKey,
+			Conflict: 0,
+			Cost:     minCost,
 		})
 	}
 

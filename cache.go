@@ -34,7 +34,7 @@ var (
 	setBufSize = 32 * 1024
 )
 
-type onEvictFunc func(uint64, uint64, interface{}, int64)
+type itemCallback func(*Item)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -49,9 +49,11 @@ type Cache struct {
 	getBuf *ringBuffer
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention.
-	setBuf chan *item
+	setBuf chan *Item
 	// onEvict is called for item evictions.
-	onEvict onEvictFunc
+	onEvict itemCallback
+	// onReject is called when an item is rejected via admission policy.
+	onReject itemCallback
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -99,7 +101,9 @@ type Config struct {
 	Metrics bool
 	// OnEvict is called for every eviction and passes the hashed key, value,
 	// and cost to the function.
-	OnEvict func(key, conflict uint64, value interface{}, cost int64)
+	OnEvict func(item *Item)
+	// OnReject is called for every rejection done via the policy.
+	OnReject func(item *Item)
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -118,14 +122,14 @@ const (
 	itemUpdate
 )
 
-// item is passed to setBuf so items can eventually be added to the cache.
-type item struct {
+// Item is passed to setBuf so items can eventually be added to the cache.
+type Item struct {
 	flag       itemFlag
-	key        uint64
-	conflict   uint64
-	value      interface{}
-	cost       int64
-	expiration time.Time
+	Key        uint64
+	Conflict   uint64
+	Value      interface{}
+	Cost       int64
+	Expiration time.Time
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -143,8 +147,9 @@ func NewCache(config *Config) (*Cache, error) {
 		store:         newStore(),
 		policy:        policy,
 		getBuf:        newRingBuffer(policy, config.BufferItems),
-		setBuf:        make(chan *item, setBufSize),
+		setBuf:        make(chan *Item, setBufSize),
 		onEvict:       config.OnEvict,
+		onReject:      config.OnReject,
 		keyToHash:     config.KeyToHash,
 		stop:          make(chan struct{}),
 		cost:          config.Cost,
@@ -216,13 +221,13 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
-	i := &item{
+	i := &Item{
 		flag:       itemNew,
-		key:        keyHash,
-		conflict:   conflictHash,
-		value:      value,
-		cost:       cost,
-		expiration: expiration,
+		Key:        keyHash,
+		Conflict:   conflictHash,
+		Value:      value,
+		Cost:       cost,
+		Expiration: expiration,
 	}
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
@@ -257,10 +262,10 @@ func (c *Cache) Del(key interface{}) {
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemDelete,
-		key:      keyHash,
-		conflict: conflictHash,
+		Key:      keyHash,
+		Conflict: conflictHash,
 	}
 }
 
@@ -314,29 +319,31 @@ func (c *Cache) processItems() {
 		select {
 		case i := <-c.setBuf:
 			// Calculate item cost value if new or update.
-			if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
-				i.cost = c.cost(i.value)
+			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
+				i.Cost = c.cost(i.Value)
 			}
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.key, i.cost)
+				victims, added := c.policy.Add(i.Key, i.Cost)
 				if added {
 					c.store.Set(i)
-					c.Metrics.add(keyAdd, i.key, 1)
+					c.Metrics.add(keyAdd, i.Key, 1)
+				} else if c.onReject != nil {
+					c.onReject(i)
 				}
 				for _, victim := range victims {
-					victim.conflict, victim.value = c.store.Del(victim.key, 0)
+					victim.Conflict, victim.Value = c.store.Del(victim.Key, 0)
 					if c.onEvict != nil {
-						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
+						c.onEvict(victim)
 					}
 				}
 
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
+				c.policy.Update(i.Key, i.Cost)
 
 			case itemDelete:
-				c.policy.Del(i.key) // Deals with metrics updates.
-				c.store.Del(i.key, i.conflict)
+				c.policy.Del(i.Key) // Deals with metrics updates.
+				c.store.Del(i.Key, i.Conflict)
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, c.onEvict)
