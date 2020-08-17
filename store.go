@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+// TODO: Do we need this to be a separate struct from Item?
 type storeItem struct {
 	key        uint64
 	conflict   uint64
