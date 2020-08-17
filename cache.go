@@ -317,6 +317,28 @@ loop:
 func (c *Cache) processItems() {
 	hist := z.NewHistogramData(z.HistogramBounds(1, 16))
 	startTs := make(map[uint64]time.Time)
+	numToKeep := 100000
+
+	addToHist := func(key uint64) {
+		startTs[key] = time.Now()
+		if len(startTs) > numToKeep {
+			for k := range startTs {
+				if len(startTs) <= numToKeep {
+					break
+				}
+				delete(startTs, k)
+			}
+		}
+	}
+	onEvict := func(i *Item) {
+		if ts, has := startTs[i.Key]; has {
+			hist.Update(int64(time.Since(ts) / time.Second))
+			delete(startTs, i.Key)
+		}
+		if c.onEvict != nil {
+			c.onEvict(i)
+		}
+	}
 
 	for {
 		select {
@@ -331,21 +353,13 @@ func (c *Cache) processItems() {
 				if added {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
-
-					// TODO: We want to ensure that startTs does not grow unbounded.
-					startTs[i.Key] = time.Now()
+					addToHist(i.Key)
 				} else if c.onReject != nil {
 					c.onReject(i)
 				}
 				for _, victim := range victims {
 					victim.Conflict, victim.Value = c.store.Del(victim.Key, 0)
-					if c.onEvict != nil {
-						c.onEvict(victim)
-					}
-					if ts, has := startTs[victim.Key]; has {
-						hist.Update(int64(time.Since(ts) / time.Second))
-						delete(startTs, victim.Key)
-					}
+					onEvict(victim)
 				}
 
 			case itemUpdate:
@@ -356,7 +370,12 @@ func (c *Cache) processItems() {
 				c.store.Del(i.Key, i.Conflict)
 			}
 		case <-c.cleanupTicker.C:
-			c.store.Cleanup(c.policy, c.onEvict)
+			c.store.Cleanup(c.policy, onEvict)
+
+			// TODO: Push histogram to metrics.
+			// Dirty stuff. NEEDS TO BE CLEANED UP.
+			fmt.Printf("HITS: %d. MISSES: %d. Ratio: %.2f\n",
+				c.Metrics.Hits(), c.Metrics.Misses(), c.Metrics.Ratio())
 			hist.PrintHistogram()
 		case <-c.stop:
 			return
