@@ -32,6 +32,8 @@ import (
 var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
+	// TODO: make this configurable for the histogram in the metrics
+	numToKeep = 100000
 )
 
 type itemCallback func(*Item)
@@ -315,24 +317,11 @@ loop:
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	hist := z.NewHistogramData(z.HistogramBounds(1, 16))
 	startTs := make(map[uint64]time.Time)
-	numToKeep := 100000
 
-	addToHist := func(key uint64) {
-		startTs[key] = time.Now()
-		if len(startTs) > numToKeep {
-			for k := range startTs {
-				if len(startTs) <= numToKeep {
-					break
-				}
-				delete(startTs, k)
-			}
-		}
-	}
 	onEvict := func(i *Item) {
 		if ts, has := startTs[i.Key]; has {
-			hist.Update(int64(time.Since(ts) / time.Second))
+			c.Metrics.hist.Update(int64(time.Since(ts) / time.Second))
 			delete(startTs, i.Key)
 		}
 		if c.onEvict != nil {
@@ -353,7 +342,7 @@ func (c *Cache) processItems() {
 				if added {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
-					addToHist(i.Key)
+					c.Metrics.addToHist(i.Key, numToKeep, startTs)
 				} else if c.onReject != nil {
 					c.onReject(i)
 				}
@@ -371,12 +360,6 @@ func (c *Cache) processItems() {
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, onEvict)
-
-			// TODO: Push histogram to metrics.
-			// Dirty stuff. NEEDS TO BE CLEANED UP.
-			fmt.Printf("HITS: %d. MISSES: %d. Ratio: %.2f\n",
-				c.Metrics.Hits(), c.Metrics.Misses(), c.Metrics.Ratio())
-			hist.PrintHistogram()
 		case <-c.stop:
 			return
 		}
@@ -445,7 +428,8 @@ func stringFor(t metricType) string {
 
 // Metrics is a snapshot of performance statistics for the lifetime of a cache instance.
 type Metrics struct {
-	all [doNotUse][]*uint64
+	all  [doNotUse][]*uint64
+	hist *z.HistogramData
 }
 
 func newMetrics() *Metrics {
@@ -457,6 +441,7 @@ func newMetrics() *Metrics {
 			slice[j] = new(uint64)
 		}
 	}
+	s.hist = z.NewHistogramData(z.HistogramBounds(1, 16))
 	return s
 }
 
@@ -481,6 +466,18 @@ func (p *Metrics) get(t metricType) uint64 {
 		total += atomic.LoadUint64(valp[i])
 	}
 	return total
+}
+
+func (p *Metrics) addToHist(key uint64, numToKeep int, startTs map[uint64]time.Time) {
+	startTs[key] = time.Now()
+	if len(startTs) > numToKeep {
+		for k := range startTs {
+			if len(startTs) <= numToKeep {
+				break
+			}
+			delete(startTs, k)
+		}
+	}
 }
 
 // Hits is the number of Get calls where a value was found for the corresponding key.
@@ -553,6 +550,12 @@ func (p *Metrics) Ratio() float64 {
 	return float64(hits) / float64(hits+misses)
 }
 
+// GetHist returns the fewquency plot of number of keys vs time interval
+// for which the keys live inside the cache
+func (p *Metrics) GetHist() *z.HistogramData {
+	return p.hist
+}
+
 // Clear resets all the metrics.
 func (p *Metrics) Clear() {
 	if p == nil {
@@ -563,6 +566,7 @@ func (p *Metrics) Clear() {
 			atomic.StoreUint64(p.all[i][j], 0)
 		}
 	}
+	p.hist = z.NewHistogramData(z.HistogramBounds(1, 16))
 }
 
 // String returns a string representation of the metrics.
@@ -577,5 +581,6 @@ func (p *Metrics) String() string {
 	}
 	fmt.Fprintf(&buf, "gets-total: %d ", p.get(hit)+p.get(miss))
 	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
+	fmt.Fprintf(&buf, "histogram: %v", p.hist.PrintHistogram())
 	return buf.String()
 }
