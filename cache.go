@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -315,6 +316,33 @@ loop:
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
+	startTs := make(map[uint64]time.Time)
+	numToKeep := 100000 // TODO: Make this configurable via options.
+
+	trackAdmission := func(key uint64) {
+		if c.Metrics == nil {
+			return
+		}
+		startTs[key] = time.Now()
+		if len(startTs) > numToKeep {
+			for k := range startTs {
+				if len(startTs) <= numToKeep {
+					break
+				}
+				delete(startTs, k)
+			}
+		}
+	}
+	onEvict := func(i *Item) {
+		if ts, has := startTs[i.Key]; has {
+			c.Metrics.trackEviction(int64(time.Since(ts) / time.Second))
+			delete(startTs, i.Key)
+		}
+		if c.onEvict != nil {
+			c.onEvict(i)
+		}
+	}
+
 	for {
 		select {
 		case i := <-c.setBuf:
@@ -328,14 +356,13 @@ func (c *Cache) processItems() {
 				if added {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
+					trackAdmission(i.Key)
 				} else if c.onReject != nil {
 					c.onReject(i)
 				}
 				for _, victim := range victims {
 					victim.Conflict, victim.Value = c.store.Del(victim.Key, 0)
-					if c.onEvict != nil {
-						c.onEvict(victim)
-					}
+					onEvict(victim)
 				}
 
 			case itemUpdate:
@@ -346,7 +373,7 @@ func (c *Cache) processItems() {
 				c.store.Del(i.Key, i.Conflict)
 			}
 		case <-c.cleanupTicker.C:
-			c.store.Cleanup(c.policy, c.onEvict)
+			c.store.Cleanup(c.policy, onEvict)
 		case <-c.stop:
 			return
 		}
@@ -416,10 +443,15 @@ func stringFor(t metricType) string {
 // Metrics is a snapshot of performance statistics for the lifetime of a cache instance.
 type Metrics struct {
 	all [doNotUse][]*uint64
+
+	mu   sync.RWMutex
+	life *z.HistogramData // Tracks the life expectancy of a key.
 }
 
 func newMetrics() *Metrics {
-	s := &Metrics{}
+	s := &Metrics{
+		life: z.NewHistogramData(z.HistogramBounds(1, 16)),
+	}
 	for i := 0; i < doNotUse; i++ {
 		s.all[i] = make([]*uint64, 256)
 		slice := s.all[i]
@@ -523,6 +555,24 @@ func (p *Metrics) Ratio() float64 {
 	return float64(hits) / float64(hits+misses)
 }
 
+func (p *Metrics) trackEviction(numSeconds int64) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.life.Update(numSeconds)
+}
+
+func (p *Metrics) LifeExpectancySeconds() *z.HistogramData {
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.life.Copy()
+}
+
 // Clear resets all the metrics.
 func (p *Metrics) Clear() {
 	if p == nil {
@@ -533,6 +583,9 @@ func (p *Metrics) Clear() {
 			atomic.StoreUint64(p.all[i][j], 0)
 		}
 	}
+	p.mu.Lock()
+	p.life = z.NewHistogramData(z.HistogramBounds(1, 16))
+	p.mu.Unlock()
 }
 
 // String returns a string representation of the metrics.
