@@ -80,7 +80,7 @@ func (histogram *HistogramData) Update(value int64) {
 	}
 }
 
-// PrintHistogram prints the histogram data in a human-readable format.
+// String converts the histogram data into human-readable string.
 func (histogram *HistogramData) String() string {
 	if histogram == nil {
 		return ""

@@ -320,6 +320,9 @@ func (c *Cache) processItems() {
 	numToKeep := 100000 // TODO: Make this configurable via options.
 
 	trackAdmission := func(key uint64) {
+		if c.Metrics == nil {
+			return
+		}
 		startTs[key] = time.Now()
 		if len(startTs) > numToKeep {
 			for k := range startTs {
@@ -442,7 +445,7 @@ type Metrics struct {
 	all [doNotUse][]*uint64
 
 	mu   sync.RWMutex
-	life *z.HistogramData
+	life *z.HistogramData // Tracks the life expectancy of a key.
 }
 
 func newMetrics() *Metrics {
