@@ -316,14 +316,10 @@ loop:
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
-	hist := z.NewHistogramData(z.HistogramBounds(1, 16))
 	startTs := make(map[uint64]time.Time)
 	numToKeep := 100000 // TODO: Make this configurable via options.
 
-	// Do it upfront to avoid a nil pointer issue for Metrics user.
-	c.Metrics.updateLatency(hist)
-
-	addToHist := func(key uint64) {
+	trackAdmission := func(key uint64) {
 		startTs[key] = time.Now()
 		if len(startTs) > numToKeep {
 			for k := range startTs {
@@ -336,7 +332,7 @@ func (c *Cache) processItems() {
 	}
 	onEvict := func(i *Item) {
 		if ts, has := startTs[i.Key]; has {
-			hist.Update(int64(time.Since(ts) / time.Second))
+			c.Metrics.trackEviction(int64(time.Since(ts) / time.Second))
 			delete(startTs, i.Key)
 		}
 		if c.onEvict != nil {
@@ -357,7 +353,7 @@ func (c *Cache) processItems() {
 				if added {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
-					addToHist(i.Key)
+					trackAdmission(i.Key)
 				} else if c.onReject != nil {
 					c.onReject(i)
 				}
@@ -375,7 +371,6 @@ func (c *Cache) processItems() {
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, onEvict)
-			c.Metrics.updateLatency(hist)
 		case <-c.stop:
 			return
 		}
@@ -446,12 +441,14 @@ func stringFor(t metricType) string {
 type Metrics struct {
 	all [doNotUse][]*uint64
 
-	mu              sync.RWMutex
-	evictionLatency *z.HistogramData
+	mu   sync.RWMutex
+	life *z.HistogramData
 }
 
 func newMetrics() *Metrics {
-	s := &Metrics{}
+	s := &Metrics{
+		life: z.NewHistogramData(z.HistogramBounds(1, 16)),
+	}
 	for i := 0; i < doNotUse; i++ {
 		s.all[i] = make([]*uint64, 256)
 		slice := s.all[i]
@@ -542,24 +539,6 @@ func (p *Metrics) GetsKept() uint64 {
 	return p.get(keepGets)
 }
 
-func (p *Metrics) updateLatency(h *z.HistogramData) {
-	if p == nil {
-		return
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.evictionLatency = h.Copy()
-}
-
-func (p *Metrics) EvictionLatency() *z.HistogramData {
-	if p == nil {
-		return nil
-	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.evictionLatency
-}
-
 // Ratio is the number of Hits over all accesses (Hits + Misses). This is the
 // percentage of successful Get calls.
 func (p *Metrics) Ratio() float64 {
@@ -573,6 +552,24 @@ func (p *Metrics) Ratio() float64 {
 	return float64(hits) / float64(hits+misses)
 }
 
+func (p *Metrics) trackEviction(numSeconds int64) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.life.Update(numSeconds)
+}
+
+func (p *Metrics) LifeExpectancySeconds() *z.HistogramData {
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.life.Copy()
+}
+
 // Clear resets all the metrics.
 func (p *Metrics) Clear() {
 	if p == nil {
@@ -583,6 +580,9 @@ func (p *Metrics) Clear() {
 			atomic.StoreUint64(p.all[i][j], 0)
 		}
 	}
+	p.mu.Lock()
+	p.life = z.NewHistogramData(z.HistogramBounds(1, 16))
+	p.mu.Unlock()
 }
 
 // String returns a string representation of the metrics.
