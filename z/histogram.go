@@ -3,6 +3,7 @@ package z
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // Creates bounds for an histogram. The bounds are powers of two of the form
@@ -36,8 +37,25 @@ func NewHistogramData(bounds []float64) *HistogramData {
 	}
 }
 
+func (histogram *HistogramData) Copy() *HistogramData {
+	if histogram == nil {
+		return nil
+	}
+	return &HistogramData{
+		Bounds:         append([]float64{}, histogram.Bounds...),
+		CountPerBucket: append([]int64{}, histogram.CountPerBucket...),
+		Count:          histogram.Count,
+		Min:            histogram.Min,
+		Max:            histogram.Max,
+		Sum:            histogram.Sum,
+	}
+}
+
 // Update changes the Min and Max fields if value is less than or greater than the current values.
 func (histogram *HistogramData) Update(value int64) {
+	if histogram == nil {
+		return
+	}
 	if value > histogram.Max {
 		histogram.Max = value
 	}
@@ -63,15 +81,17 @@ func (histogram *HistogramData) Update(value int64) {
 }
 
 // PrintHistogram prints the histogram data in a human-readable format.
-func (histogram *HistogramData) PrintHistogram() {
+func (histogram *HistogramData) String() string {
 	if histogram == nil {
-		return
+		return ""
 	}
+	var b strings.Builder
 
-	fmt.Printf("Min value: %d\n", histogram.Min)
-	fmt.Printf("Max value: %d\n", histogram.Max)
-	fmt.Printf("Mean: %.2f\n", float64(histogram.Sum)/float64(histogram.Count))
-	fmt.Printf("%24s %9s\n", "Range", "Count")
+	b.WriteString(" -- Histogram: ")
+	b.WriteString(fmt.Sprintf("Min value: %d ", histogram.Min))
+	b.WriteString(fmt.Sprintf("Max value: %d ", histogram.Max))
+	b.WriteString(fmt.Sprintf("Mean: %.2f ",
+		float64(histogram.Sum)/float64(histogram.Count)))
 
 	numBounds := len(histogram.Bounds)
 	for index, count := range histogram.CountPerBucket {
@@ -84,7 +104,8 @@ func (histogram *HistogramData) PrintHistogram() {
 		// other buckets.
 		if index == len(histogram.CountPerBucket)-1 {
 			lowerBound := int(histogram.Bounds[numBounds-1])
-			fmt.Printf("[%10d, %10s) %9d\n", lowerBound, "infinity", count)
+			b.WriteString(fmt.Sprintf("[%d, %s) %d %.2f%% ", lowerBound, "infinity",
+				count, float64(count*100)/float64(histogram.Count)))
 			continue
 		}
 
@@ -94,6 +115,9 @@ func (histogram *HistogramData) PrintHistogram() {
 			lowerBound = int(histogram.Bounds[index-1])
 		}
 
-		fmt.Printf("[%10d, %10d) %9d\n", lowerBound, upperBound, count)
+		b.WriteString(fmt.Sprintf("[%d, %d) %d %.2f%% ", lowerBound, upperBound,
+			count, float64(count*100)/float64(histogram.Count)))
 	}
+	b.WriteString(" --")
+	return b.String()
 }

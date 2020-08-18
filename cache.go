@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -317,7 +318,10 @@ loop:
 func (c *Cache) processItems() {
 	hist := z.NewHistogramData(z.HistogramBounds(1, 16))
 	startTs := make(map[uint64]time.Time)
-	numToKeep := 100000
+	numToKeep := 100000 // TODO: Make this configurable via options.
+
+	// Do it upfront to avoid a nil pointer issue for Metrics user.
+	c.Metrics.updateLatency(hist)
 
 	addToHist := func(key uint64) {
 		startTs[key] = time.Now()
@@ -371,12 +375,7 @@ func (c *Cache) processItems() {
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, onEvict)
-
-			// TODO: Push histogram to metrics.
-			// Dirty stuff. NEEDS TO BE CLEANED UP.
-			fmt.Printf("HITS: %d. MISSES: %d. Ratio: %.2f\n",
-				c.Metrics.Hits(), c.Metrics.Misses(), c.Metrics.Ratio())
-			hist.PrintHistogram()
+			c.Metrics.updateLatency(hist)
 		case <-c.stop:
 			return
 		}
@@ -446,6 +445,9 @@ func stringFor(t metricType) string {
 // Metrics is a snapshot of performance statistics for the lifetime of a cache instance.
 type Metrics struct {
 	all [doNotUse][]*uint64
+
+	mu              sync.RWMutex
+	evictionLatency *z.HistogramData
 }
 
 func newMetrics() *Metrics {
@@ -538,6 +540,24 @@ func (p *Metrics) GetsDropped() uint64 {
 // GetsKept is the number of Get counter increments that are kept.
 func (p *Metrics) GetsKept() uint64 {
 	return p.get(keepGets)
+}
+
+func (p *Metrics) updateLatency(h *z.HistogramData) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.evictionLatency = h.Copy()
+}
+
+func (p *Metrics) EvictionLatency() *z.HistogramData {
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.evictionLatency
 }
 
 // Ratio is the number of Hits over all accesses (Hits + Misses). This is the
