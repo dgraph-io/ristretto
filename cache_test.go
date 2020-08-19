@@ -1,7 +1,9 @@
 package ristretto
 
 import (
+	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -153,10 +155,10 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -165,33 +167,33 @@ func TestCacheProcessItems(t *testing.T) {
 	var conflict uint64
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    1,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.True(t, c.policy.Has(1))
 	require.Equal(t, int64(1), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemUpdate,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.Equal(t, int64(2), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemDelete,
-		key:      key,
-		conflict: conflict,
+		Key:      key,
+		Conflict: conflict,
 	}
 	time.Sleep(wait)
 	key, conflict = z.KeyToHash(1)
@@ -201,36 +203,36 @@ func TestCacheProcessItems(t *testing.T) {
 	require.False(t, c.policy.Has(1))
 
 	key, conflict = z.KeyToHash(2)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(3)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(4)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(5)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     5,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     5,
 	}
 	time.Sleep(wait)
 	m.Lock()
@@ -241,7 +243,7 @@ func TestCacheProcessItems(t *testing.T) {
 		require.NotNil(t, recover())
 	}()
 	c.Close()
-	c.setBuf <- &item{flag: itemNew}
+	c.setBuf <- &Item{flag: itemNew}
 }
 
 func TestCacheGet(t *testing.T) {
@@ -254,10 +256,10 @@ func TestCacheGet(t *testing.T) {
 	require.NoError(t, err)
 
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	c.store.Set(&i)
 	val, ok := c.Get(1)
@@ -313,12 +315,12 @@ func TestCacheSet(t *testing.T) {
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
 		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &item{
+		c.setBuf <- &Item{
 			flag:     itemUpdate,
-			key:      key,
-			conflict: conflict,
-			value:    1,
-			cost:     1,
+			Key:      key,
+			Conflict: conflict,
+			Value:    1,
+			Cost:     1,
 		}
 	}
 	require.False(t, c.Set(2, 2, 1))
@@ -379,10 +381,10 @@ func TestCacheSetWithTTL(t *testing.T) {
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -431,6 +433,10 @@ func TestCacheDel(t *testing.T) {
 
 	c.Set(1, 1, 1)
 	c.Del(1)
+	// The deletes and sets are pushed through the setbuf. It might be possible
+	// that the delete is not processed before the following get is called. So
+	// wait for a millisecond for things to be processed.
+	time.Sleep(time.Millisecond)
 	val, ok := c.Get(1)
 	require.False(t, ok)
 	require.Nil(t, val)
@@ -613,4 +619,66 @@ func TestCacheMetricsClear(t *testing.T) {
 func init() {
 	// Set bucketSizeSecs to 1 to avoid waiting too much during the tests.
 	bucketDurationSecs = 1
+}
+
+// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+func TestDropUpdates(t *testing.T) {
+	originalSetBugSize := setBufSize
+	defer func() { setBufSize = originalSetBugSize }()
+
+	test := func() {
+		// dropppedMap stores the items dropped from the cache.
+		droppedMap := make(map[int]struct{})
+		lastEvictedSet := int64(-1)
+
+		var err error
+		handler := func(_ interface{}, value interface{}) {
+			v := value.(string)
+			lastEvictedSet, err = strconv.ParseInt(string(v), 10, 32)
+			require.NoError(t, err)
+
+			_, ok := droppedMap[int(lastEvictedSet)]
+			if ok {
+				panic(fmt.Sprintf("val = %+v was dropped but it got evicted. Dropped items: %+v\n",
+					lastEvictedSet, droppedMap))
+			}
+		}
+
+		// This is important. The race condition shows up only when the setBuf
+		// is full and that's why we reduce the buf size here. The test will
+		// try to fill up the setbuf to it's capacity and then perform an
+		// update on a key.
+		setBufSize = 10
+
+		c, err := NewCache(&Config{
+			NumCounters: 100,
+			MaxCost:     10,
+			BufferItems: 64,
+			Metrics:     true,
+			OnEvict: func(item *Item) {
+				handler(nil, item.Value)
+			},
+		})
+		require.NoError(t, err)
+
+		for i := 0; i < 5*setBufSize; i++ {
+			v := fmt.Sprintf("%0100d", i)
+			// We're updating the same key.
+			if !c.Set(0, v, 1) {
+				// The race condition doesn't show up without this sleep.
+				time.Sleep(time.Microsecond)
+				droppedMap[i] = struct{}{}
+			}
+		}
+		// Wait for all the items to be processed.
+		time.Sleep(time.Millisecond)
+		// This will cause eviction from the cache.
+		require.True(t, c.Set(1, nil, 10))
+		c.Close()
+	}
+
+	// Run the test 100 times since it's not reliable.
+	for i := 0; i < 100; i++ {
+		test()
+	}
 }

@@ -9,6 +9,8 @@ Ristretto is a fast, concurrent cache library built with a focus on performance 
 The motivation to build Ristretto comes from the need for a contention-free
 cache in [Dgraph][].
 
+**Use [Discuss Issues](https://discuss.dgraph.io/tags/c/issues/35/ristretto/40) for reporting issues about this repository.**
+
 [Dgraph]: https://github.com/dgraph-io/dgraph
 
 ## Features
@@ -144,7 +146,7 @@ This trace is described as "disk read accesses initiated by a large commercial
 search engine in response to various web search requests."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Search%20(ARC-S3).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Search%20(ARC-S3).svg">
 </p>
 
 #### Database
@@ -153,7 +155,7 @@ This trace is described as "a database server running at a commercial site
 running an ERP application on top of a commercial database."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg">
 </p>
 
 #### Looping
@@ -161,7 +163,7 @@ running an ERP application on top of a commercial database."
 This trace demonstrates a looping access pattern.
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg">
 </p>
 
 #### CODASYL
@@ -170,7 +172,7 @@ This trace is described as "references to a CODASYL database for a one hour
 period."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg">
 </p>
 
 ### Throughput
@@ -181,19 +183,19 @@ of RAM.
 #### Mixed
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Mixed.svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Mixed.svg">
 </p>
 
 #### Read
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Read%20(Zipfian).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Read%20(Zipfian).svg">
 </p>
 
 #### Write
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/karlmcguire/karlmcguire.com/master/docs/Throughput%20-%20Write%20(Zipfian).svg?sanitize=true">
+	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Write%20(Zipfian).svg">
 </p>
 
 ## FAQ

@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+// TODO: Do we need this to be a separate struct from Item?
 type storeItem struct {
 	key        uint64
 	conflict   uint64
@@ -42,14 +43,14 @@ type store interface {
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
 	// item object.
-	Set(*item)
+	Set(*Item)
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(*item) bool
+	Update(*Item) bool
 	// Cleanup removes items that have an expired TTL.
-	Cleanup(policy policy, onEvict onEvictFunc)
+	Cleanup(policy policy, onEvict itemCallback)
 	// Clear clears all contents of the store.
 	Clear()
 }
@@ -85,24 +86,24 @@ func (sm *shardedMap) Expiration(key uint64) time.Time {
 	return sm.shards[key%numShards].Expiration(key)
 }
 
-func (sm *shardedMap) Set(i *item) {
+func (sm *shardedMap) Set(i *Item) {
 	if i == nil {
 		// If item is nil make this Set a no-op.
 		return
 	}
 
-	sm.shards[i.key%numShards].Set(i)
+	sm.shards[i.Key%numShards].Set(i)
 }
 
 func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(newItem *item) bool {
-	return sm.shards[newItem.key%numShards].Update(newItem)
+func (sm *shardedMap) Update(newItem *Item) bool {
+	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
-func (sm *shardedMap) Cleanup(policy policy, onEvict onEvictFunc) {
+func (sm *shardedMap) Cleanup(policy policy, onEvict itemCallback) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
@@ -149,39 +150,35 @@ func (m *lockedMap) Expiration(key uint64) time.Time {
 	return m.data[key].expiration
 }
 
-func (m *lockedMap) Set(i *item) {
+func (m *lockedMap) Set(i *Item) {
 	if i == nil {
 		// If the item is nil make this Set a no-op.
 		return
 	}
 
 	m.Lock()
-	item, ok := m.data[i.key]
+	defer m.Unlock()
+	item, ok := m.data[i.Key]
 
 	if ok {
-		m.em.update(i.key, i.conflict, item.expiration, i.expiration)
-	} else {
-		m.em.add(i.key, i.conflict, i.expiration)
-		m.data[i.key] = storeItem{
-			key:        i.key,
-			conflict:   i.conflict,
-			value:      i.value,
-			expiration: i.expiration,
+		// The item existed already. We need to check the conflict key and reject the
+		// update if they do not match. Only after that the expiration map is updated.
+		if i.Conflict != 0 && (i.Conflict != item.conflict) {
+			return
 		}
-		m.Unlock()
-		return
+		m.em.update(i.Key, i.Conflict, item.expiration, i.Expiration)
+	} else {
+		// The value is not in the map already. There's no need to return anything.
+		// Simply add the expiration map.
+		m.em.add(i.Key, i.Conflict, i.Expiration)
 	}
-	if i.conflict != 0 && (i.conflict != item.conflict) {
-		m.Unlock()
-		return
+
+	m.data[i.Key] = storeItem{
+		key:        i.Key,
+		conflict:   i.Conflict,
+		value:      i.Value,
+		expiration: i.Expiration,
 	}
-	m.data[i.key] = storeItem{
-		key:        i.key,
-		conflict:   i.conflict,
-		value:      i.value,
-		expiration: i.expiration,
-	}
-	m.Unlock()
 }
 
 func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
@@ -205,24 +202,24 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap) Update(newItem *item) bool {
+func (m *lockedMap) Update(newItem *Item) bool {
 	m.Lock()
-	item, ok := m.data[newItem.key]
+	item, ok := m.data[newItem.Key]
 	if !ok {
 		m.Unlock()
 		return false
 	}
-	if newItem.conflict != 0 && (newItem.conflict != item.conflict) {
+	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		m.Unlock()
 		return false
 	}
 
-	m.em.update(newItem.key, newItem.conflict, item.expiration, newItem.expiration)
-	m.data[newItem.key] = storeItem{
-		key:        newItem.key,
-		conflict:   newItem.conflict,
-		value:      newItem.value,
-		expiration: newItem.expiration,
+	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
+	m.data[newItem.Key] = storeItem{
+		key:        newItem.Key,
+		conflict:   newItem.Conflict,
+		value:      newItem.Value,
+		expiration: newItem.Expiration,
 	}
 
 	m.Unlock()
