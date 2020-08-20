@@ -55,6 +55,8 @@ type Cache struct {
 	onEvict itemCallback
 	// onReject is called when an item is rejected via admission policy.
 	onReject itemCallback
+	// onExit is called whenever a value goes out of scope from the cache.
+	onExit (func(interface{}))
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -105,6 +107,10 @@ type Config struct {
 	OnEvict func(item *Item)
 	// OnReject is called for every rejection done via the policy.
 	OnReject func(item *Item)
+	// OnExit is called whenever a value is removed from cache. This can be
+	// used to do manual memory deallocation. Would also be called on eviction
+	// and rejection of the value.
+	OnExit func(val interface{})
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -149,12 +155,27 @@ func NewCache(config *Config) (*Cache, error) {
 		policy:        policy,
 		getBuf:        newRingBuffer(policy, config.BufferItems),
 		setBuf:        make(chan *Item, setBufSize),
-		onEvict:       config.OnEvict,
-		onReject:      config.OnReject,
 		keyToHash:     config.KeyToHash,
 		stop:          make(chan struct{}),
 		cost:          config.Cost,
 		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+	}
+	cache.onExit = func(val interface{}) {
+		if config.OnExit != nil && val != nil {
+			config.OnExit(val)
+		}
+	}
+	cache.onEvict = func(item *Item) {
+		if config.OnEvict != nil {
+			config.OnEvict(item)
+		}
+		cache.onExit(item.Value)
+	}
+	cache.onReject = func(item *Item) {
+		if config.OnReject != nil {
+			config.OnReject(item)
+		}
+		cache.onExit(item.Value)
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -232,7 +253,8 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	}
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
-	if c.store.Update(i) {
+	if prev, ok := c.store.Update(i); ok {
+		c.onExit(prev)
 		i.flag = itemUpdate
 	}
 	// Attempt to send item to policy.
@@ -258,7 +280,8 @@ func (c *Cache) Del(key interface{}) {
 	}
 	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
-	c.store.Del(keyHash, conflictHash)
+	_, prev := c.store.Del(keyHash, conflictHash)
+	c.onExit(prev)
 	// If we've set an item, it would be applied slightly later.
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
@@ -297,7 +320,12 @@ func (c *Cache) Clear() {
 loop:
 	for {
 		select {
-		case <-c.setBuf:
+		case i := <-c.setBuf:
+			if i.flag != itemUpdate {
+				// In itemUpdate, the value is already set in the store.  So, no need to call
+				// onEvict here.
+				c.onEvict(i)
+			}
 		default:
 			break loop
 		}
@@ -305,7 +333,7 @@ loop:
 
 	// Clear value hashmap and policy data.
 	c.policy.Clear()
-	c.store.Clear()
+	c.store.Clear(c.onEvict)
 	// Only reset metrics if they're enabled.
 	if c.Metrics != nil {
 		c.Metrics.Clear()
@@ -357,7 +385,7 @@ func (c *Cache) processItems() {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
 					trackAdmission(i.Key)
-				} else if c.onReject != nil {
+				} else {
 					c.onReject(i)
 				}
 				for _, victim := range victims {
@@ -370,7 +398,8 @@ func (c *Cache) processItems() {
 
 			case itemDelete:
 				c.policy.Del(i.Key) // Deals with metrics updates.
-				c.store.Del(i.Key, i.Conflict)
+				_, val := c.store.Del(i.Key, i.Conflict)
+				c.onExit(val)
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, onEvict)
