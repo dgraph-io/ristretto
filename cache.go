@@ -320,7 +320,12 @@ func (c *Cache) Clear() {
 loop:
 	for {
 		select {
-		case <-c.setBuf:
+		case i := <-c.setBuf:
+			if i.flag != itemUpdate {
+				// In itemUpdate, the value is already set in the store.  So, no need to call
+				// onEvict here.
+				c.onEvict(i)
+			}
 		default:
 			break loop
 		}
@@ -393,7 +398,8 @@ func (c *Cache) processItems() {
 
 			case itemDelete:
 				c.policy.Del(i.Key) // Deals with metrics updates.
-				c.store.Del(i.Key, i.Conflict)
+				_, val := c.store.Del(i.Key, i.Conflict)
+				c.onExit(val)
 			}
 		case <-c.cleanupTicker.C:
 			c.store.Cleanup(c.policy, onEvict)

@@ -3,9 +3,11 @@ package ristretto
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -681,4 +683,84 @@ func TestDropUpdates(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		test()
 	}
+}
+
+func TestRistrettoCalloc(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256)
+				rd.Read(v)
+				if !r.Set(k, v, 256) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	r.Clear()
+	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
+}
+
+func TestRistrettoCallocTTL(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256)
+				rd.Read(v)
+				if !r.SetWithTTL(k, v, 256, time.Second) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	time.Sleep(5 * time.Second)
+	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
 }
