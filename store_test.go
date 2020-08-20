@@ -66,7 +66,7 @@ func TestStoreClear(t *testing.T) {
 		}
 		s.Set(&it)
 	}
-	s.Clear()
+	s.Clear(nil)
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
 		val, ok := s.Get(key, conflict)
@@ -85,7 +85,8 @@ func TestStoreUpdate(t *testing.T) {
 	}
 	s.Set(&i)
 	i.Value = 2
-	require.True(t, s.Update(&i))
+	_, ok := s.Update(&i)
+	require.True(t, ok)
 
 	val, ok := s.Get(key, conflict)
 	require.True(t, ok)
@@ -96,7 +97,8 @@ func TestStoreUpdate(t *testing.T) {
 	require.Equal(t, 2, val.(int))
 
 	i.Value = 3
-	require.True(t, s.Update(&i))
+	_, ok = s.Update(&i)
+	require.True(t, ok)
 
 	val, ok = s.Get(key, conflict)
 	require.True(t, ok)
@@ -108,7 +110,8 @@ func TestStoreUpdate(t *testing.T) {
 		Conflict: conflict,
 		Value:    2,
 	}
-	require.False(t, s.Update(&i))
+	_, ok = s.Update(&i)
+	require.False(t, ok)
 	val, ok = s.Get(key, conflict)
 	require.False(t, ok)
 	require.Nil(t, val)
@@ -137,7 +140,8 @@ func TestStoreCollision(t *testing.T) {
 	require.True(t, ok)
 	require.NotEqual(t, 2, val.(int))
 
-	require.False(t, s.Update(&i))
+	_, ok = s.Update(&i)
+	require.False(t, ok)
 	val, ok = s.Get(1, 0)
 	require.True(t, ok)
 	require.NotEqual(t, 2, val.(int))

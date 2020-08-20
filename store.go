@@ -48,11 +48,11 @@ type store interface {
 	Del(uint64, uint64) (uint64, interface{})
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(*Item) bool
+	Update(*Item) (interface{}, bool)
 	// Cleanup removes items that have an expired TTL.
 	Cleanup(policy policy, onEvict itemCallback)
 	// Clear clears all contents of the store.
-	Clear()
+	Clear(onEvict itemCallback)
 }
 
 // newStore returns the default store implementation.
@@ -99,7 +99,7 @@ func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap) Update(newItem *Item) bool {
+func (sm *shardedMap) Update(newItem *Item) (interface{}, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
@@ -107,9 +107,9 @@ func (sm *shardedMap) Cleanup(policy policy, onEvict itemCallback) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
-func (sm *shardedMap) Clear() {
+func (sm *shardedMap) Clear(onEvict itemCallback) {
 	for i := uint64(0); i < numShards; i++ {
-		sm.shards[i].Clear()
+		sm.shards[i].Clear(onEvict)
 	}
 }
 
@@ -202,16 +202,16 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap) Update(newItem *Item) bool {
+func (m *lockedMap) Update(newItem *Item) (interface{}, bool) {
 	m.Lock()
 	item, ok := m.data[newItem.Key]
 	if !ok {
 		m.Unlock()
-		return false
+		return nil, false
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		m.Unlock()
-		return false
+		return nil, false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
@@ -223,11 +223,20 @@ func (m *lockedMap) Update(newItem *Item) bool {
 	}
 
 	m.Unlock()
-	return true
+	return item.value, true
 }
 
-func (m *lockedMap) Clear() {
+func (m *lockedMap) Clear(onEvict itemCallback) {
 	m.Lock()
+	i := &Item{}
+	if onEvict != nil {
+		for _, si := range m.data {
+			i.Key = si.key
+			i.Conflict = si.conflict
+			i.Value = si.value
+			onEvict(i)
+		}
+	}
 	m.data = make(map[uint64]storeItem)
 	m.Unlock()
 }
