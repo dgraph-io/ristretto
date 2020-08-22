@@ -60,7 +60,6 @@ func Calloc(n int) []byte {
 
 // Free frees the specified slice.
 func Free(b []byte) {
-	return // HACK
 	if sz := cap(b); sz != 0 {
 		if len(b) == 0 {
 			b = b[:cap(b)]
