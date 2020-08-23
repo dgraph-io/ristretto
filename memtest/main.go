@@ -185,7 +185,7 @@ func main() {
 		atomic.StoreInt32(&stop, 1)
 	}()
 	go func() {
-		if err := http.ListenAndServe("localhost:8080", nil); err != nil {
+		if err := http.ListenAndServe("0.0.0.0:8080", nil); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 	}()
