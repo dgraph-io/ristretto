@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"runtime"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -19,15 +25,21 @@ type S struct {
 
 var (
 	ssz      = int(unsafe.Sizeof(S{}))
-	lo, hi   = int64(16 << 30), int64(24 << 30)
+	lo, hi   = int64(1 << 30), int64(16 << 30)
 	increase = true
+	stop     int32
+	fill     []byte
+	maxMB    = 32
 )
 
 func newS(sz int) *S {
 	b := z.Calloc(ssz)
 	s := (*S)(unsafe.Pointer(&b[0]))
 	s.val = z.Calloc(sz)
-	rand.Read(s.val)
+	copy(s.val, fill)
+	if s.next != nil {
+		log.Fatalf("news.next must be nil: %p", s.next)
+	}
 	return s
 }
 
@@ -60,44 +72,54 @@ func memory() {
 	} else {
 		if curMem < lo {
 			increase = true
+			runtime.GC()
+			time.Sleep(3 * time.Second)
 		}
 	}
-	fmt.Printf("Current Memory: %.2f G. Increase? %v\n", float64(curMem)/float64(1<<30), increase)
+	fmt.Printf("Current Memory: %05.2f G. Increase? %v\n", float64(curMem)/float64(1<<30), increase)
 }
 
 func viaLL() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
 	root := newS(1)
-
-	increase := true
 	for range ticker.C {
+		if atomic.LoadInt32(&stop) == 1 {
+			break
+		}
 		if increase {
-			root.allocateNext(rand.Intn(1024) << 20)
+			root.allocateNext(rand.Intn(maxMB) << 20)
 		} else {
 			root.deallocNext()
 		}
 		memory()
 	}
+	for root.next != nil {
+		root.deallocNext()
+		memory()
+	}
+	freeS(root)
 }
 
 func viaMap() {
 	m := make(map[uint64][]byte)
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 
-	increase := true
 	for range ticker.C {
+		if atomic.LoadInt32(&stop) == 1 {
+			break
+		}
 		if increase {
 			k := rand.Uint64()
-			sz := rand.Intn(1024) << 20
+			sz := rand.Intn(maxMB) << 20
 			if prev, has := m[k]; has {
 				z.Free(prev)
 			}
 			buf := z.Calloc(sz)
-			rand.Read(buf)
+			copy(buf, fill)
 			m[k] = buf
 		} else {
 			for k, val := range m {
@@ -108,8 +130,34 @@ func viaMap() {
 		}
 		memory()
 	}
+	for k, val := range m {
+		delete(m, k)
+		z.Free(val)
+		memory()
+	}
 }
 
 func main() {
-	viaLL()
+	fill = make([]byte, maxMB<<20)
+	rand.Read(fill)
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		fmt.Println("Stopping")
+		atomic.StoreInt32(&stop, 1)
+	}()
+	go func() {
+		log.Println(http.ListenAndServe("localhost:8080", nil))
+	}()
+
+	// viaLL()
+	viaMap()
+	if left := atomic.LoadInt64(&z.NumAllocBytes); left != 0 {
+		log.Fatalf("Unable to deallocate all memory: %v\n", left)
+	}
+	runtime.GC()
+	fmt.Println("Done. Reduced to zero memory usage.")
+	time.Sleep(5 * time.Second)
 }
