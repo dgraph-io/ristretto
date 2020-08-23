@@ -103,7 +103,11 @@ func viaLL() {
 }
 
 func viaMap() {
-	m := make(map[uint64][]byte)
+	m := make(map[int][]byte)
+	N := 1000000
+	for i := 0; i < N; i++ {
+		m[i] = nil
+	}
 
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
@@ -113,19 +117,22 @@ func viaMap() {
 			break
 		}
 		if increase {
-			k := rand.Uint64()
+			k := rand.Intn(1000000)
 			sz := rand.Intn(maxMB) << 20
-			if prev, has := m[k]; has {
-				z.Free(prev)
-			}
+
+			prev := m[k]
+			z.Free(prev)
+
 			buf := z.Calloc(sz)
 			copy(buf, fill)
 			m[k] = buf
 		} else {
 			for k, val := range m {
-				delete(m, k)
-				z.Free(val)
-				break
+				if val != nil {
+					z.Free(val)
+					m[k] = nil
+					break
+				}
 			}
 		}
 		memory()
@@ -135,6 +142,35 @@ func viaMap() {
 		z.Free(val)
 		memory()
 	}
+}
+
+func viaList() {
+	var slices [][]byte
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if atomic.LoadInt32(&stop) == 1 {
+			break
+		}
+		if increase {
+			sz := rand.Intn(maxMB) << 20
+			buf := z.Calloc(sz)
+			copy(buf, fill)
+			slices = append(slices, buf)
+		} else {
+			idx := len(slices) - 1
+			z.Free(slices[idx])
+			slices = slices[:idx]
+		}
+		memory()
+	}
+	for _, val := range slices {
+		z.Free(val)
+		memory()
+	}
+	slices = nil
 }
 
 func main() {
@@ -149,11 +185,14 @@ func main() {
 		atomic.StoreInt32(&stop, 1)
 	}()
 	go func() {
-		log.Println(http.ListenAndServe("localhost:8080", nil))
+		if err := http.ListenAndServe("localhost:8080", nil); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
 	}()
 
-	// viaLL()
-	viaMap()
+	viaLL()
+	// viaMap()
+	// viaList()
 	if left := atomic.LoadInt64(&z.NumAllocBytes); left != 0 {
 		log.Fatalf("Unable to deallocate all memory: %v\n", left)
 	}
