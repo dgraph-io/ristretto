@@ -4,7 +4,11 @@
 
 package z
 
-// #include <stdlib.h>
+/*
+#cgo LDFLAGS: -L/usr/local/lib -Wl,-rpath,/usr/local/lib -ljemalloc -lm -lstdc++ -pthread -ldl
+#include <stdlib.h>
+#include <jemalloc/jemalloc.h>
+*/
 import "C"
 import (
 	"sync/atomic"
@@ -46,7 +50,7 @@ func Calloc(n int) []byte {
 	//   passing uninitialized C memory to Go code if the Go code is going to
 	//   store pointer values in it. Zero out the memory in C before passing it
 	//   to Go.
-	ptr := C.calloc(C.size_t(n), 1)
+	ptr := C.jemalloc_calloc(C.size_t(n), 1)
 	if ptr == nil {
 		// NB: throw is like panic, except it guarantees the process will be
 		// terminated. The call below is exactly what the Go runtime invokes when
@@ -65,7 +69,7 @@ func Free(b []byte) {
 			b = b[:cap(b)]
 		}
 		ptr := unsafe.Pointer(&b[0])
-		C.free(ptr)
+		C.jemalloc_free(ptr)
 		atomic.AddInt64(&NumAllocBytes, -int64(sz))
 	}
 }
