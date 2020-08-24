@@ -174,6 +174,8 @@ func viaList() {
 }
 
 func main() {
+	z.StatsPrint()
+
 	fill = make([]byte, maxMB<<20)
 	rand.Read(fill)
 

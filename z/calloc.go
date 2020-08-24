@@ -50,6 +50,12 @@ func Calloc(n int) []byte {
 	//   passing uninitialized C memory to Go code if the Go code is going to
 	//   store pointer values in it. Zero out the memory in C before passing it
 	//   to Go.
+
+	// https://android.googlesource.com/platform/external/jemalloc_new/+/6840b22e8e11cb68b493297a5cd757d6eaa0b406/TUNING.md
+	// These two config options seems useful for frequent allocations and deallocations in
+	// multi-threaded programs (like we have).
+	// MALLOC_CONF="background_thread:true,metadata_thp:auto"
+
 	ptr := C.jemalloc_calloc(C.size_t(n), 1)
 	if ptr == nil {
 		// NB: throw is like panic, except it guarantees the process will be
@@ -72,4 +78,10 @@ func Free(b []byte) {
 		C.jemalloc_free(ptr)
 		atomic.AddInt64(&NumAllocBytes, -int64(sz))
 	}
+}
+
+func StatsPrint() {
+	opts := C.CString("mdablxe")
+	C.jemalloc_malloc_stats_print(nil, nil, opts)
+	C.free(unsafe.Pointer(opts))
 }
