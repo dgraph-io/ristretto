@@ -51,12 +51,13 @@ func Calloc(n int) []byte {
 	//   store pointer values in it. Zero out the memory in C before passing it
 	//   to Go.
 
+	// Compile jemalloc with ./configure --with-jemalloc-prefix="je_"
 	// https://android.googlesource.com/platform/external/jemalloc_new/+/6840b22e8e11cb68b493297a5cd757d6eaa0b406/TUNING.md
 	// These two config options seems useful for frequent allocations and deallocations in
 	// multi-threaded programs (like we have).
 	// MALLOC_CONF="background_thread:true,metadata_thp:auto"
 
-	ptr := C.jemalloc_calloc(C.size_t(n), 1)
+	ptr := C.je_calloc(C.size_t(n), 1)
 	if ptr == nil {
 		// NB: throw is like panic, except it guarantees the process will be
 		// terminated. The call below is exactly what the Go runtime invokes when
@@ -75,13 +76,13 @@ func Free(b []byte) {
 			b = b[:cap(b)]
 		}
 		ptr := unsafe.Pointer(&b[0])
-		C.jemalloc_free(ptr)
+		C.je_free(ptr)
 		atomic.AddInt64(&NumAllocBytes, -int64(sz))
 	}
 }
 
 func StatsPrint() {
 	opts := C.CString("mdablxe")
-	C.jemalloc_malloc_stats_print(nil, nil, opts)
+	C.je_malloc_stats_print(nil, nil, opts)
 	C.free(unsafe.Pointer(opts))
 }
