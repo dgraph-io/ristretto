@@ -137,6 +137,7 @@ type Item struct {
 	Value      interface{}
 	Cost       int64
 	Expiration time.Time
+	wg         *sync.WaitGroup
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -188,6 +189,16 @@ func NewCache(config *Config) (*Cache, error) {
 	//       usually be sufficient
 	go cache.processItems()
 	return cache, nil
+}
+
+func (c *Cache) Wait() {
+	if c == nil {
+		return
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	c.setBuf <- &Item{wg: wg}
+	wg.Wait()
 }
 
 // Get returns the value (if any) and a boolean representing whether the
@@ -374,6 +385,10 @@ func (c *Cache) processItems() {
 	for {
 		select {
 		case i := <-c.setBuf:
+			if i.wg != nil {
+				i.wg.Done()
+				continue
+			}
 			// Calculate item cost value if new or update.
 			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
 				i.Cost = c.cost(i.Value)
