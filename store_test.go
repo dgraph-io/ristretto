@@ -10,27 +10,27 @@ import (
 func TestStoreSetGet(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    2,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
 	}
 	s.Set(&i)
 	val, ok := s.Get(key, conflict)
 	require.True(t, ok)
 	require.Equal(t, 2, val.(int))
 
-	i.value = 3
+	i.Value = 3
 	s.Set(&i)
 	val, ok = s.Get(key, conflict)
 	require.True(t, ok)
 	require.Equal(t, 3, val.(int))
 
 	key, conflict = z.KeyToHash(2)
-	i = item{
-		key:      key,
-		conflict: conflict,
-		value:    2,
+	i = Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
 	}
 	s.Set(&i)
 	val, ok = s.Get(key, conflict)
@@ -77,10 +77,10 @@ func TestStoreExpirationForMissingItem(t *testing.T) {
 func TestStoreDel(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	s.Set(&i)
 	s.Del(key, conflict)
@@ -95,14 +95,14 @@ func TestStoreClear(t *testing.T) {
 	s := newStore()
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
-		it := item{
-			key:      key,
-			conflict: conflict,
-			value:    i,
+		it := Item{
+			Key:      key,
+			Conflict: conflict,
+			Value:    i,
 		}
 		s.Set(&it)
 	}
-	s.Clear()
+	s.Clear(nil)
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
 		val, ok := s.Get(key, conflict)
@@ -114,14 +114,15 @@ func TestStoreClear(t *testing.T) {
 func TestStoreUpdate(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	s.Set(&i)
-	i.value = 2
-	require.True(t, s.Update(&i))
+	i.Value = 2
+	_, ok := s.Update(&i)
+	require.True(t, ok)
 
 	val, ok := s.Get(key, conflict)
 	require.True(t, ok)
@@ -131,20 +132,22 @@ func TestStoreUpdate(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 2, val.(int))
 
-	i.value = 3
-	require.True(t, s.Update(&i))
+	i.Value = 3
+	_, ok = s.Update(&i)
+	require.True(t, ok)
 
 	val, ok = s.Get(key, conflict)
 	require.True(t, ok)
 	require.Equal(t, 3, val.(int))
 
 	key, conflict = z.KeyToHash(2)
-	i = item{
-		key:      key,
-		conflict: conflict,
-		value:    2,
+	i = Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
 	}
-	require.False(t, s.Update(&i))
+	_, ok = s.Update(&i)
+	require.False(t, ok)
 	val, ok = s.Get(key, conflict)
 	require.False(t, ok)
 	require.Nil(t, val)
@@ -163,17 +166,18 @@ func TestStoreCollision(t *testing.T) {
 	require.False(t, ok)
 	require.Nil(t, val)
 
-	i := item{
-		key:      1,
-		conflict: 1,
-		value:    2,
+	i := Item{
+		Key:      1,
+		Conflict: 1,
+		Value:    2,
 	}
 	s.Set(&i)
 	val, ok = s.Get(1, 0)
 	require.True(t, ok)
 	require.NotEqual(t, 2, val.(int))
 
-	require.False(t, s.Update(&i))
+	_, ok = s.Update(&i)
+	require.False(t, ok)
 	val, ok = s.Get(1, 0)
 	require.True(t, ok)
 	require.NotEqual(t, 2, val.(int))
@@ -187,10 +191,10 @@ func TestStoreCollision(t *testing.T) {
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	s.Set(&i)
 	b.SetBytes(1)
@@ -207,10 +211,10 @@ func BenchmarkStoreSet(b *testing.B) {
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := item{
-				key:      key,
-				conflict: conflict,
-				value:    1,
+			i := Item{
+				Key:      key,
+				Conflict: conflict,
+				Value:    1,
 			}
 			s.Set(&i)
 		}
@@ -220,19 +224,19 @@ func BenchmarkStoreSet(b *testing.B) {
 func BenchmarkStoreUpdate(b *testing.B) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	s.Set(&i)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			s.Update(&item{
-				key:      key,
-				conflict: conflict,
-				value:    2,
+			s.Update(&Item{
+				Key:      key,
+				Conflict: conflict,
+				Value:    2,
 			})
 		}
 	})

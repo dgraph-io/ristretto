@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,7 +35,7 @@ var (
 	setBufSize = 32 * 1024
 )
 
-type onEvictFunc func(uint64, uint64, interface{}, int64)
+type itemCallback func(*Item)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -49,9 +50,13 @@ type Cache struct {
 	getBuf *ringBuffer
 	// setBuf is a buffer allowing us to batch/drop Sets during times of high
 	// contention.
-	setBuf chan *item
+	setBuf chan *Item
 	// onEvict is called for item evictions.
-	onEvict onEvictFunc
+	onEvict itemCallback
+	// onReject is called when an item is rejected via admission policy.
+	onReject itemCallback
+	// onExit is called whenever a value goes out of scope from the cache.
+	onExit (func(interface{}))
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -99,7 +104,13 @@ type Config struct {
 	Metrics bool
 	// OnEvict is called for every eviction and passes the hashed key, value,
 	// and cost to the function.
-	OnEvict func(key, conflict uint64, value interface{}, cost int64)
+	OnEvict func(item *Item)
+	// OnReject is called for every rejection done via the policy.
+	OnReject func(item *Item)
+	// OnExit is called whenever a value is removed from cache. This can be
+	// used to do manual memory deallocation. Would also be called on eviction
+	// and rejection of the value.
+	OnExit func(val interface{})
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -118,14 +129,15 @@ const (
 	itemUpdate
 )
 
-// item is passed to setBuf so items can eventually be added to the cache.
-type item struct {
+// Item is passed to setBuf so items can eventually be added to the cache.
+type Item struct {
 	flag       itemFlag
-	key        uint64
-	conflict   uint64
-	value      interface{}
-	cost       int64
-	expiration time.Time
+	Key        uint64
+	Conflict   uint64
+	Value      interface{}
+	Cost       int64
+	Expiration time.Time
+	wg         *sync.WaitGroup
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -143,12 +155,28 @@ func NewCache(config *Config) (*Cache, error) {
 		store:         newStore(),
 		policy:        policy,
 		getBuf:        newRingBuffer(policy, config.BufferItems),
-		setBuf:        make(chan *item, setBufSize),
-		onEvict:       config.OnEvict,
+		setBuf:        make(chan *Item, setBufSize),
 		keyToHash:     config.KeyToHash,
 		stop:          make(chan struct{}),
 		cost:          config.Cost,
 		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+	}
+	cache.onExit = func(val interface{}) {
+		if config.OnExit != nil && val != nil {
+			config.OnExit(val)
+		}
+	}
+	cache.onEvict = func(item *Item) {
+		if config.OnEvict != nil {
+			config.OnEvict(item)
+		}
+		cache.onExit(item.Value)
+	}
+	cache.onReject = func(item *Item) {
+		if config.OnReject != nil {
+			config.OnReject(item)
+		}
+		cache.onExit(item.Value)
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash
@@ -161,6 +189,16 @@ func NewCache(config *Config) (*Cache, error) {
 	//       usually be sufficient
 	go cache.processItems()
 	return cache, nil
+}
+
+func (c *Cache) Wait() {
+	if c == nil {
+		return
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	c.setBuf <- &Item{wg: wg}
+	wg.Wait()
 }
 
 // Get returns the value (if any) and a boolean representing whether the
@@ -245,17 +283,18 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
-	i := &item{
+	i := &Item{
 		flag:       itemNew,
-		key:        keyHash,
-		conflict:   conflictHash,
-		value:      value,
-		cost:       cost,
-		expiration: expiration,
+		Key:        keyHash,
+		Conflict:   conflictHash,
+		Value:      value,
+		Cost:       cost,
+		Expiration: expiration,
 	}
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
-	if c.store.Update(i) {
+	if prev, ok := c.store.Update(i); ok {
+		c.onExit(prev)
 		i.flag = itemUpdate
 	}
 	// Attempt to send item to policy.
@@ -281,15 +320,16 @@ func (c *Cache) Del(key interface{}) {
 	}
 	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
-	c.store.Del(keyHash, conflictHash)
+	_, prev := c.store.Del(keyHash, conflictHash)
+	c.onExit(prev)
 	// If we've set an item, it would be applied slightly later.
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemDelete,
-		key:      keyHash,
-		conflict: conflictHash,
+		Key:      keyHash,
+		Conflict: conflictHash,
 	}
 }
 
@@ -320,7 +360,12 @@ func (c *Cache) Clear() {
 loop:
 	for {
 		select {
-		case <-c.setBuf:
+		case i := <-c.setBuf:
+			if i.flag != itemUpdate {
+				// In itemUpdate, the value is already set in the store.  So, no need to call
+				// onEvict here.
+				c.onEvict(i)
+			}
 		default:
 			break loop
 		}
@@ -328,7 +373,7 @@ loop:
 
 	// Clear value hashmap and policy data.
 	c.policy.Clear()
-	c.store.Clear()
+	c.store.Clear(c.onEvict)
 	// Only reset metrics if they're enabled.
 	if c.Metrics != nil {
 		c.Metrics.Clear()
@@ -339,36 +384,69 @@ loop:
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
+	startTs := make(map[uint64]time.Time)
+	numToKeep := 100000 // TODO: Make this configurable via options.
+
+	trackAdmission := func(key uint64) {
+		if c.Metrics == nil {
+			return
+		}
+		startTs[key] = time.Now()
+		if len(startTs) > numToKeep {
+			for k := range startTs {
+				if len(startTs) <= numToKeep {
+					break
+				}
+				delete(startTs, k)
+			}
+		}
+	}
+	onEvict := func(i *Item) {
+		if ts, has := startTs[i.Key]; has {
+			c.Metrics.trackEviction(int64(time.Since(ts) / time.Second))
+			delete(startTs, i.Key)
+		}
+		if c.onEvict != nil {
+			c.onEvict(i)
+		}
+	}
+
 	for {
 		select {
 		case i := <-c.setBuf:
+			if i.wg != nil {
+				i.wg.Done()
+				continue
+			}
 			// Calculate item cost value if new or update.
-			if i.cost == 0 && c.cost != nil && i.flag != itemDelete {
-				i.cost = c.cost(i.value)
+			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
+				i.Cost = c.cost(i.Value)
 			}
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.key, i.cost)
+				victims, added := c.policy.Add(i.Key, i.Cost)
 				if added {
 					c.store.Set(i)
-					c.Metrics.add(keyAdd, i.key, 1)
+					c.Metrics.add(keyAdd, i.Key, 1)
+					trackAdmission(i.Key)
+				} else {
+					c.onReject(i)
 				}
 				for _, victim := range victims {
-					victim.conflict, victim.value = c.store.Del(victim.key, 0)
-					if c.onEvict != nil {
-						c.onEvict(victim.key, victim.conflict, victim.value, victim.cost)
-					}
+					victim.Conflict, victim.Value = c.store.Del(victim.Key, 0)
+					onEvict(victim)
 				}
 
 			case itemUpdate:
-				c.policy.Update(i.key, i.cost)
+				c.policy.Update(i.Key, i.Cost)
 
 			case itemDelete:
-				c.policy.Del(i.key) // Deals with metrics updates.
-				c.store.Del(i.key, i.conflict)
+				c.policy.Del(i.Key) // Deals with metrics updates.
+				_, val := c.store.Del(i.Key, i.Conflict)
+				c.onExit(val)
 			}
 		case <-c.cleanupTicker.C:
-			c.store.Cleanup(c.policy, c.onEvict)
+			c.store.Cleanup(c.policy, onEvict)
 		case <-c.stop:
 			return
 		}
@@ -438,10 +516,15 @@ func stringFor(t metricType) string {
 // Metrics is a snapshot of performance statistics for the lifetime of a cache instance.
 type Metrics struct {
 	all [doNotUse][]*uint64
+
+	mu   sync.RWMutex
+	life *z.HistogramData // Tracks the life expectancy of a key.
 }
 
 func newMetrics() *Metrics {
-	s := &Metrics{}
+	s := &Metrics{
+		life: z.NewHistogramData(z.HistogramBounds(1, 16)),
+	}
 	for i := 0; i < doNotUse; i++ {
 		s.all[i] = make([]*uint64, 256)
 		slice := s.all[i]
@@ -545,6 +628,24 @@ func (p *Metrics) Ratio() float64 {
 	return float64(hits) / float64(hits+misses)
 }
 
+func (p *Metrics) trackEviction(numSeconds int64) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.life.Update(numSeconds)
+}
+
+func (p *Metrics) LifeExpectancySeconds() *z.HistogramData {
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.life.Copy()
+}
+
 // Clear resets all the metrics.
 func (p *Metrics) Clear() {
 	if p == nil {
@@ -555,6 +656,9 @@ func (p *Metrics) Clear() {
 			atomic.StoreUint64(p.all[i][j], 0)
 		}
 	}
+	p.mu.Lock()
+	p.life = z.NewHistogramData(z.HistogramBounds(1, 16))
+	p.mu.Unlock()
 }
 
 // String returns a string representation of the metrics.

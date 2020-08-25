@@ -3,9 +3,11 @@ package ristretto
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -155,10 +157,10 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -167,33 +169,33 @@ func TestCacheProcessItems(t *testing.T) {
 	var conflict uint64
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    1,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.True(t, c.policy.Has(1))
 	require.Equal(t, int64(1), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemUpdate,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.Equal(t, int64(2), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemDelete,
-		key:      key,
-		conflict: conflict,
+		Key:      key,
+		Conflict: conflict,
 	}
 	time.Sleep(wait)
 	key, conflict = z.KeyToHash(1)
@@ -203,36 +205,36 @@ func TestCacheProcessItems(t *testing.T) {
 	require.False(t, c.policy.Has(1))
 
 	key, conflict = z.KeyToHash(2)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(3)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(4)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(5)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     5,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     5,
 	}
 	time.Sleep(wait)
 	m.Lock()
@@ -243,7 +245,7 @@ func TestCacheProcessItems(t *testing.T) {
 		require.NotNil(t, recover())
 	}()
 	c.Close()
-	c.setBuf <- &item{flag: itemNew}
+	c.setBuf <- &Item{flag: itemNew}
 }
 
 func TestCacheGet(t *testing.T) {
@@ -256,10 +258,10 @@ func TestCacheGet(t *testing.T) {
 	require.NoError(t, err)
 
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	c.store.Set(&i)
 	val, ok := c.Get(1)
@@ -400,12 +402,12 @@ func TestCacheSet(t *testing.T) {
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
 		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &item{
+		c.setBuf <- &Item{
 			flag:     itemUpdate,
-			key:      key,
-			conflict: conflict,
-			value:    1,
-			cost:     1,
+			Key:      key,
+			Conflict: conflict,
+			Value:    1,
+			Cost:     1,
 		}
 	}
 	require.False(t, c.Set(2, 2, 1))
@@ -466,10 +468,10 @@ func TestCacheSetWithTTL(t *testing.T) {
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -740,8 +742,8 @@ func TestDropUpdates(t *testing.T) {
 			MaxCost:     10,
 			BufferItems: 64,
 			Metrics:     true,
-			OnEvict: func(_, _ uint64, value interface{}, _ int64) {
-				handler(nil, value)
+			OnEvict: func(item *Item) {
+				handler(nil, item.Value)
 			},
 		})
 		require.NoError(t, err)
@@ -766,4 +768,84 @@ func TestDropUpdates(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		test()
 	}
+}
+
+func TestRistrettoCalloc(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256)
+				rd.Read(v)
+				if !r.Set(k, v, 256) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	r.Clear()
+	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
+}
+
+func TestRistrettoCallocTTL(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256)
+				rd.Read(v)
+				if !r.SetWithTTL(k, v, 256, time.Second) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	time.Sleep(5 * time.Second)
+	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
 }
