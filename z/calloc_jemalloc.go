@@ -36,7 +36,7 @@ func NumAllocBytes() int64 {
 // New allocates a slice of size n. The returned slice is from manually managed
 // memory and MUST be released by calling Free. Failure to do so will result in
 // a memory leak.
-func Calloc(n int) []byte {
+func Calloc(n int, _ Ref) []byte {
 	if n == 0 {
 		return make([]byte, 0)
 	}

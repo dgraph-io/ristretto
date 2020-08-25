@@ -33,9 +33,9 @@ var (
 )
 
 func newS(sz int) *S {
-	b := z.Calloc(ssz)
+	b := z.Calloc(ssz, z.RefNone)
 	s := (*S)(unsafe.Pointer(&b[0]))
-	s.val = z.Calloc(sz)
+	s.val = z.Calloc(sz, z.RefDirect)
 	copy(s.val, fill)
 	if s.next != nil {
 		log.Fatalf("news.next must be nil: %p", s.next)
@@ -123,7 +123,7 @@ func viaMap() {
 			prev := m[k]
 			z.Free(prev)
 
-			buf := z.Calloc(sz)
+			buf := z.Calloc(sz, z.RefDirect)
 			copy(buf, fill)
 			m[k] = buf
 		} else {
@@ -156,7 +156,7 @@ func viaList() {
 		}
 		if increase {
 			sz := rand.Intn(maxMB) << 20
-			buf := z.Calloc(sz)
+			buf := z.Calloc(sz, z.RefDirect)
 			copy(buf, fill)
 			slices = append(slices, buf)
 		} else {
