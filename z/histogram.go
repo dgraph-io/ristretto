@@ -96,6 +96,11 @@ func (histogram *HistogramData) Update(value int64) {
 	}
 }
 
+// Mean returns the mean value for the histogram.
+func (histogram *HistogramData) Mean() float64 {
+	return float64(histogram.Sum) / float64(histogram.Count)
+}
+
 // String converts the histogram data into human-readable string.
 func (histogram *HistogramData) String() string {
 	if histogram == nil {
@@ -106,8 +111,7 @@ func (histogram *HistogramData) String() string {
 	b.WriteString(" -- Histogram: ")
 	b.WriteString(fmt.Sprintf("Min value: %d ", histogram.Min))
 	b.WriteString(fmt.Sprintf("Max value: %d ", histogram.Max))
-	b.WriteString(fmt.Sprintf("Mean: %.2f ",
-		float64(histogram.Sum)/float64(histogram.Count)))
+	b.WriteString(fmt.Sprintf("Mean: %.2f ", histogram.Mean()))
 
 	numBounds := len(histogram.Bounds)
 	for index, count := range histogram.CountPerBucket {
