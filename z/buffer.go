@@ -27,7 +27,7 @@ type Buffer struct {
 
 func NewBuffer(sz int) *Buffer {
 	return &Buffer{
-		buf:    Calloc(sz, RefDirect),
+		buf:    Calloc(sz),
 		offset: 0,
 	}
 }
@@ -46,10 +46,10 @@ const smallBufferSize = 64
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
 	if len(b.buf) == 0 && n <= smallBufferSize {
-		b.buf = Calloc(smallBufferSize, RefDirect)
+		b.buf = Calloc(smallBufferSize)
 		return
 	} else if b.buf == nil {
-		b.buf = Calloc(n, RefDirect)
+		b.buf = Calloc(n)
 		return
 	}
 	if b.offset+n < len(b.buf) {
@@ -57,7 +57,7 @@ func (b *Buffer) Grow(n int) {
 	}
 
 	sz := 2*len(b.buf) + n
-	newBuf := Calloc(sz, RefDirect)
+	newBuf := Calloc(sz)
 	copy(newBuf, b.buf[:b.offset])
 	Free(b.buf)
 	b.buf = newBuf

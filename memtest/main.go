@@ -21,6 +21,7 @@ type S struct {
 	key  uint64
 	val  []byte
 	next *S
+	inGo bool
 }
 
 var (
@@ -33,9 +34,13 @@ var (
 )
 
 func newS(sz int) *S {
-	b := z.Calloc(ssz, z.RefNone)
-	s := (*S)(unsafe.Pointer(&b[0]))
-	s.val = z.Calloc(sz, z.RefDirect)
+	var s *S
+	if b := z.CallocNoRef(ssz); len(b) > 0 {
+		s = (*S)(unsafe.Pointer(&b[0]))
+	} else {
+		s = &S{inGo: true}
+	}
+	s.val = z.Calloc(sz)
 	copy(s.val, fill)
 	if s.next != nil {
 		log.Fatalf("news.next must be nil: %p", s.next)
@@ -45,8 +50,10 @@ func newS(sz int) *S {
 
 func freeS(s *S) {
 	z.Free(s.val)
-	buf := (*[z.MaxArrayLen]byte)(unsafe.Pointer(s))[:ssz:ssz]
-	z.Free(buf)
+	if !s.inGo {
+		buf := (*[z.MaxArrayLen]byte)(unsafe.Pointer(s))[:ssz:ssz]
+		z.Free(buf)
+	}
 }
 
 func (s *S) allocateNext(sz int) {
@@ -64,6 +71,7 @@ func (s *S) deallocNext() {
 }
 
 func memory() {
+	// In normal mode, z.NumAllocBytes would always be zero. So, this program would misbehave.
 	curMem := z.NumAllocBytes()
 	if increase {
 		if curMem > hi {
@@ -123,7 +131,7 @@ func viaMap() {
 			prev := m[k]
 			z.Free(prev)
 
-			buf := z.Calloc(sz, z.RefDirect)
+			buf := z.Calloc(sz)
 			copy(buf, fill)
 			m[k] = buf
 		} else {
@@ -156,7 +164,7 @@ func viaList() {
 		}
 		if increase {
 			sz := rand.Intn(maxMB) << 20
-			buf := z.Calloc(sz, z.RefDirect)
+			buf := z.Calloc(sz)
 			copy(buf, fill)
 			slices = append(slices, buf)
 		} else {

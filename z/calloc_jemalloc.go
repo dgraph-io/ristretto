@@ -36,7 +36,7 @@ func NumAllocBytes() int64 {
 // New allocates a slice of size n. The returned slice is from manually managed
 // memory and MUST be released by calling Free. Failure to do so will result in
 // a memory leak.
-func Calloc(n int, _ Ref) []byte {
+func Calloc(n int) []byte {
 	if n == 0 {
 		return make([]byte, 0)
 	}
@@ -69,6 +69,11 @@ func Calloc(n int, _ Ref) []byte {
 	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
 	return (*[MaxArrayLen]byte)(unsafe.Pointer(ptr))[:n:n]
+}
+
+// CallocNoRef does the exact same thing as Calloc with jemalloc enabled.
+func CallocNoRef(n int) []byte {
+	return Calloc(n)
 }
 
 // Free frees the specified slice.
