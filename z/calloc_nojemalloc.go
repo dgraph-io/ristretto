@@ -22,6 +22,8 @@ func Calloc(n int) []byte {
 
 // CallocNoRef will not give you memory back without jemalloc.
 func CallocNoRef(n int) []byte {
+	// We do the add here just to stay compatible with a corresponding Free call.
+	atomic.AddInt64(&numBytes, int64(n))
 	return nil
 }
 
