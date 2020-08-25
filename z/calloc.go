@@ -6,8 +6,14 @@
 
 package z
 
+import "fmt"
+
 // Provides versions of New and Free when cgo is not available (e.g. cross
 // compilation).
+
+func NumAllocBytes() int64 {
+	return 0
+}
 
 // New allocates a slice of size n.
 func Calloc(n int) []byte {
@@ -16,4 +22,8 @@ func Calloc(n int) []byte {
 
 // Free frees the specified slice.
 func Free(b []byte) {
+}
+
+func StatsPrint() {
+	fmt.Printf("Using Go memory")
 }

@@ -27,10 +27,10 @@ func throw(s string)
 // runtime page allocator and allocate large chunks of memory using mmap or
 // similar.
 
-var NumAllocBytes int64
+var numBytes int64
 
-func NumAllocsMB() int64 {
-	return atomic.LoadInt64(&NumAllocBytes) / (1 << 20)
+func NumAllocBytes() int64 {
+	return atomic.LoadInt64(&numBytes)
 }
 
 // New allocates a slice of size n. The returned slice is from manually managed
@@ -66,7 +66,7 @@ func Calloc(n int) []byte {
 		// it cannot allocate memory.
 		throw("out of memory")
 	}
-	atomic.AddInt64(&NumAllocBytes, int64(n))
+	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
 	return (*[MaxArrayLen]byte)(unsafe.Pointer(ptr))[:n:n]
 }
@@ -79,7 +79,7 @@ func Free(b []byte) {
 		}
 		ptr := unsafe.Pointer(&b[0])
 		C.je_free(ptr)
-		atomic.AddInt64(&NumAllocBytes, -int64(sz))
+		atomic.AddInt64(&numBytes, -int64(sz))
 	}
 }
 

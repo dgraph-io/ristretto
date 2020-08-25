@@ -64,7 +64,7 @@ func (s *S) deallocNext() {
 }
 
 func memory() {
-	curMem := atomic.LoadInt64(&z.NumAllocBytes)
+	curMem := z.NumAllocBytes()
 	if increase {
 		if curMem > hi {
 			increase = false
@@ -195,7 +195,7 @@ func main() {
 	viaLL()
 	// viaMap()
 	// viaList()
-	if left := atomic.LoadInt64(&z.NumAllocBytes); left != 0 {
+	if left := z.NumAllocBytes(); left != 0 {
 		log.Fatalf("Unable to deallocate all memory: %v\n", left)
 	}
 	runtime.GC()
