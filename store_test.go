@@ -1,10 +1,11 @@
 package ristretto
 
 import (
-	"github.com/dgraph-io/ristretto/z"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/ristretto/z"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStoreSetGet(t *testing.T) {
@@ -43,11 +44,11 @@ func TestStoreExpiration(t *testing.T) {
 	key, conflict := z.KeyToHash(1)
 
 	expiration := time.Now().Add(1 * time.Second)
-	i := item{
-		key:        key,
-		conflict:   conflict,
-		value:      1,
-		expiration: expiration,
+	i := Item{
+		Key:        key,
+		Conflict:   conflict,
+		Value:      1,
+		Expiration: expiration,
 	}
 
 	s.Set(&i)
