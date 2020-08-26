@@ -82,6 +82,7 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+// TODO: Perhaps keep the offsets separate in another buffer, and allow access to slices via index.
 func (b *Buffer) SliceOffsets(offsets []int) []int {
 	start := 0
 	for start < b.offset {
