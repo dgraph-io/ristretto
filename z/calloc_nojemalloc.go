@@ -8,7 +8,6 @@ package z
 
 import (
 	"fmt"
-	"sync/atomic"
 )
 
 // Provides versions of New and Free when cgo is not available (e.g. cross
@@ -16,22 +15,19 @@ import (
 
 // Calloc allocates a slice of size n.
 func Calloc(n int) []byte {
-	atomic.AddInt64(&numBytes, int64(n))
 	return make([]byte, n)
 }
 
 // CallocNoRef will not give you memory back without jemalloc.
 func CallocNoRef(n int) []byte {
 	// We do the add here just to stay compatible with a corresponding Free call.
-	atomic.AddInt64(&numBytes, int64(n))
 	return nil
 }
 
 // Free does not do anything in this mode.
 func Free(b []byte) {
-	atomic.AddInt64(&numBytes, -int64(cap(b)))
 }
 
 func StatsPrint() {
-	fmt.Printf("Using Go memory")
+	fmt.Println("Using Go memory")
 }
