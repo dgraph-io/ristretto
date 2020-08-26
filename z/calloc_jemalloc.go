@@ -27,12 +27,6 @@ func throw(s string)
 // runtime page allocator and allocate large chunks of memory using mmap or
 // similar.
 
-var numBytes int64
-
-func NumAllocBytes() int64 {
-	return atomic.LoadInt64(&numBytes)
-}
-
 // New allocates a slice of size n. The returned slice is from manually managed
 // memory and MUST be released by calling Free. Failure to do so will result in
 // a memory leak.
