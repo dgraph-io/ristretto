@@ -77,8 +77,11 @@ type Config struct {
 	// accuracy and subsequent hit ratios.
 	//
 	// For example, if you expect your cache to hold 1,000,000 items when full,
-	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
-	// keeping 10,000,000 counters would require 5MB of memory.
+	// NumCounters should be 10,000,000 (10x). Each counter takes up roughly
+	// 3 bytes (4 bits for each counter * 4 copies plus about a byte per
+	// counter for the bloom filter). Note that the number of counters is
+	// internally rounded up to the nearest power of 2, so the space usage
+	// may be a little larger than 3 bytes * NumCounters.
 	NumCounters int64
 	// MaxCost can be considered as the cache capacity, in whatever units you
 	// choose to use.
