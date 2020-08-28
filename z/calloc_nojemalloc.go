@@ -25,8 +25,7 @@ func CallocNoRef(n int) []byte {
 }
 
 // Free does not do anything in this mode.
-func Free(b []byte) {
-}
+func Free(b []byte) {}
 
 func StatsPrint() {
 	fmt.Println("Using Go memory")
