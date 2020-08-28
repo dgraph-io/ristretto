@@ -85,7 +85,3 @@ func StatsPrint() {
 	C.je_malloc_stats_print(nil, nil, opts)
 	C.free(unsafe.Pointer(opts))
 }
-
-func UsingManualMemory() bool {
-	return true
-}

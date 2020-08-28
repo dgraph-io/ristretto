@@ -30,7 +30,3 @@ func Free(b []byte) {}
 func StatsPrint() {
 	fmt.Println("Using Go memory")
 }
-
-func UsingManualMemory() bool {
-	return false
-}

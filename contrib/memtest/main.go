@@ -198,8 +198,10 @@ func viaList() {
 }
 
 func main() {
-	if !z.UsingManualMemory() {
+	if buf := z.CallocNoRef(1); len(buf) == 0 {
 		log.Fatalf("Not using manual memory management. Compile with jemalloc.")
+	} else {
+		z.Free(buf)
 	}
 	z.StatsPrint()
 
