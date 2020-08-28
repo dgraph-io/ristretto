@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -722,7 +721,7 @@ func TestRistrettoCalloc(t *testing.T) {
 	}
 	wg.Wait()
 	r.Clear()
-	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
+	require.Zero(t, z.NumAllocBytes())
 }
 
 func TestRistrettoCallocTTL(t *testing.T) {
@@ -762,5 +761,5 @@ func TestRistrettoCallocTTL(t *testing.T) {
 	}
 	wg.Wait()
 	time.Sleep(5 * time.Second)
-	require.Zero(t, atomic.LoadInt64(&z.NumAllocBytes))
+	require.Zero(t, z.NumAllocBytes())
 }
