@@ -30,6 +30,14 @@ func throw(s string)
 // New allocates a slice of size n. The returned slice is from manually managed
 // memory and MUST be released by calling Free. Failure to do so will result in
 // a memory leak.
+//
+// Compile jemalloc with ./configure --with-jemalloc-prefix="je_"
+// https://android.googlesource.com/platform/external/jemalloc_new/+/6840b22e8e11cb68b493297a5cd757d6eaa0b406/TUNING.md
+// These two config options seems useful for frequent allocations and deallocations in
+// multi-threaded programs (like we have).
+// JE_MALLOC_CONF="background_thread:true,metadata_thp:auto"
+//
+// Compile Go program with `go build -tags=jemalloc` to enable this.
 func Calloc(n int) []byte {
 	if n == 0 {
 		return make([]byte, 0)
@@ -46,12 +54,6 @@ func Calloc(n int) []byte {
 	//   passing uninitialized C memory to Go code if the Go code is going to
 	//   store pointer values in it. Zero out the memory in C before passing it
 	//   to Go.
-
-	// Compile jemalloc with ./configure --with-jemalloc-prefix="je_"
-	// https://android.googlesource.com/platform/external/jemalloc_new/+/6840b22e8e11cb68b493297a5cd757d6eaa0b406/TUNING.md
-	// These two config options seems useful for frequent allocations and deallocations in
-	// multi-threaded programs (like we have).
-	// JE_MALLOC_CONF="background_thread:true,metadata_thp:auto"
 
 	ptr := C.je_calloc(C.size_t(n), 1)
 	if ptr == nil {
