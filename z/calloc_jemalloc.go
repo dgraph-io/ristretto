@@ -23,10 +23,6 @@ import (
 //go:linkname throw runtime.throw
 func throw(s string)
 
-// TODO(peter): Rather than relying an C malloc/free, we could fork the Go
-// runtime page allocator and allocate large chunks of memory using mmap or
-// similar.
-
 // New allocates a slice of size n. The returned slice is from manually managed
 // memory and MUST be released by calling Free. Failure to do so will result in
 // a memory leak.
