@@ -182,6 +182,9 @@ func viaList() {
 }
 
 func main() {
+	if !z.UsingManualMemory() {
+		log.Fatalf("Not using manual memory management. Compile with jemalloc.")
+	}
 	z.StatsPrint()
 
 	fill = make([]byte, maxMB<<20)
