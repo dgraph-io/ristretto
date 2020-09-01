@@ -98,6 +98,9 @@ func (histogram *HistogramData) Update(value int64) {
 
 // Mean returns the mean value for the histogram.
 func (histogram *HistogramData) Mean() float64 {
+	if histogram.Count == 0 {
+		return 0
+	}
 	return float64(histogram.Sum) / float64(histogram.Count)
 }
 
