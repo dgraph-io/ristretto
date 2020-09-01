@@ -17,17 +17,18 @@
 package z
 
 import (
-	"github.com/cespare/xxhash"
+	"hash/maphash"
 )
 
-// TODO: Figure out a way to re-use memhash for the second uint64 hash, we
-//       already know that appending bytes isn't reliable for generating a
-//       second hash (see Ristretto PR #88).
-//
-//       We also know that while the Go runtime has a runtime memhash128
-//       function, it's not possible to use it to generate [2]uint64 or
-//       anything resembling a 128bit hash, even though that's exactly what
-//       we need in this situation.
+// We need two seeds, one for each hash value returned by
+// KeyToHash.
+var (
+	seed1 = maphash.MakeSeed()
+	seed2 = maphash.MakeSeed()
+)
+
+// KeyToHash returns two hashes of the given key. It's the default KeyToHash
+// function used by ristretto. It accepts string, bytes and all integer types except uintptr.
 func KeyToHash(key interface{}) (uint64, uint64) {
 	if key == nil {
 		return 0, 0
@@ -35,10 +36,6 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 	switch k := key.(type) {
 	case uint64:
 		return k, 0
-	case string:
-		return MemHashString(k), xxhash.Sum64String(k)
-	case []byte:
-		return MemHash(k), xxhash.Sum64(k)
 	case byte:
 		return uint64(k), 0
 	case int:
@@ -49,7 +46,25 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 		return uint64(k), 0
 	case int64:
 		return uint64(k), 0
+	case string:
+		return memHashString(seed1, k), memHashString(seed2, k)
+	case []byte:
+		return memHash(seed1, k), memHash(seed2, k)
 	default:
 		panic("Key type not supported")
 	}
+}
+
+func memHash(seed maphash.Seed, data []byte) uint64 {
+	var h maphash.Hash
+	h.SetSeed(seed)
+	h.Write(data)
+	return h.Sum64()
+}
+
+func memHashString(seed maphash.Seed, str string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(seed)
+	h.WriteString(str)
+	return h.Sum64()
 }
