@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/dustin/go-humanize"
 )
 
 // Creates bounds for an histogram. The bounds are powers of two of the form
@@ -111,9 +113,9 @@ func (histogram *HistogramData) String() string {
 	}
 	var b strings.Builder
 
-	b.WriteString(" -- Histogram: ")
-	b.WriteString(fmt.Sprintf("Min value: %d ", histogram.Min))
-	b.WriteString(fmt.Sprintf("Max value: %d ", histogram.Max))
+	b.WriteString("\n -- Histogram: \n")
+	b.WriteString(fmt.Sprintf("Min value: %d \n", histogram.Min))
+	b.WriteString(fmt.Sprintf("Max value: %d \n", histogram.Max))
 	b.WriteString(fmt.Sprintf("Mean: %.2f ", histogram.Mean()))
 
 	numBounds := len(histogram.Bounds)
@@ -126,21 +128,23 @@ func (histogram *HistogramData) String() string {
 		// the last bound up to infinity so it's processed differently than the
 		// other buckets.
 		if index == len(histogram.CountPerBucket)-1 {
-			lowerBound := int(histogram.Bounds[numBounds-1])
-			b.WriteString(fmt.Sprintf("[%d, %s) %d %.2f%% ", lowerBound, "infinity",
-				count, float64(count*100)/float64(histogram.Count)))
+			lowerBound := uint64(histogram.Bounds[numBounds-1])
+			page := float64(count*100) / float64(histogram.Count)
+			b.WriteString(fmt.Sprintf("[%s, %s) %d %.2f%% \n",
+				humanize.IBytes(lowerBound), "infinity", count, page))
 			continue
 		}
 
-		upperBound := int(histogram.Bounds[index])
-		lowerBound := 0
+		upperBound := uint64(histogram.Bounds[index])
+		lowerBound := uint64(0)
 		if index > 0 {
-			lowerBound = int(histogram.Bounds[index-1])
+			lowerBound = uint64(histogram.Bounds[index-1])
 		}
 
-		b.WriteString(fmt.Sprintf("[%d, %d) %d %.2f%% ", lowerBound, upperBound,
-			count, float64(count*100)/float64(histogram.Count)))
+		page := float64(count*100) / float64(histogram.Count)
+		b.WriteString(fmt.Sprintf("[%s, %s) %d %.2f%% \n",
+			humanize.IBytes(lowerBound), humanize.IBytes(upperBound), count, page))
 	}
-	b.WriteString(" --")
+	b.WriteString(" --\n")
 	return b.String()
 }
