@@ -80,6 +80,31 @@ func Free(b []byte) {
 	}
 }
 
+// ReadJEMallocStats populates stats with JE Malloc statistics.
+func ReadJEMallocStats(stats *JEMallocStats) {
+	if stats == nil {
+		panic("function argument should not be nil")
+	}
+	stats.Allocated = fetchStat("stats.allocated")
+	stats.Active = fetchStat("stats.active")
+	stats.Resident = fetchStat("stats.resident")
+	stats.Retained = fetchStat("stats.retained")
+}
+
+// fetchStat is used to read a specific attribute from je malloc stats using
+// mallctl.
+func fetchStat(s string) uint64 {
+	var out uint64
+	sz := unsafe.Sizeof(&out)
+	C.je_mallctl(
+		(C.CString)(s),                   // Query: eg: stats.allocated, stats.resident, etc.
+		unsafe.Pointer(&out),             // Variable to store the output.
+		(*C.size_t)(unsafe.Pointer(&sz)), // Size of the output variable.
+		nil,                              // Input variable used to set a value.
+		0)                                // Size of the input variable.
+	return out
+}
+
 func StatsPrint() {
 	opts := C.CString("mdablxe")
 	C.je_malloc_stats_print(nil, nil, opts)

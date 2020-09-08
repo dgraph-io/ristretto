@@ -10,8 +10,8 @@ import (
 	"fmt"
 )
 
-// Provides versions of New and Free when cgo is not available (e.g. cross
-// compilation).
+// Provides versions of Calloc, CallocNoRef, etc when jemalloc is not available
+// (eg: build without jemalloc tag).
 
 // Calloc allocates a slice of size n.
 func Calloc(n int) []byte {
@@ -30,3 +30,7 @@ func Free(b []byte) {}
 func StatsPrint() {
 	fmt.Println("Using Go memory")
 }
+
+// ReadJEMallocStats doesn't do anything since all the memory is being managed
+// by the Go runtime.
+func ReadJEMallocStats(_ *JEMallocStats) { return }
