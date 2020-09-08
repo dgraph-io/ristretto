@@ -83,7 +83,7 @@ func Free(b []byte) {
 // ReadJEMallocStats populates stats with JE Malloc statistics.
 func ReadJEMallocStats(stats *JEMallocStats) {
 	if stats == nil {
-		panic("function argument should not be nil")
+		return
 	}
 	stats.Allocated = fetchStat("stats.allocated")
 	stats.Active = fetchStat("stats.active")
@@ -91,8 +91,7 @@ func ReadJEMallocStats(stats *JEMallocStats) {
 	stats.Retained = fetchStat("stats.retained")
 }
 
-// fetchStat is used to read a specific attribute from je malloc stats using
-// mallctl.
+// fetchStat is used to read a specific attribute from je malloc stats using mallctl.
 func fetchStat(s string) uint64 {
 	var out uint64
 	sz := unsafe.Sizeof(&out)
