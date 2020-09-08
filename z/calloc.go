@@ -28,7 +28,7 @@ type JEMallocStats struct {
 	// resident if they correspond to demand-zeroed virtual memory that has not
 	// yet been touched. This is a multiple of the page size, and is larger
 	// than stats.active.
-	//	http://jemalloc.net/jemalloc.3.html#stats.resident
+	// http://jemalloc.net/jemalloc.3.html#stats.resident
 	Resident uint64
 	// Total number of bytes in virtual memory mappings that were retained
 	// rather than being returned to the operating system via e.g. munmap(2) or
