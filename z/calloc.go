@@ -10,9 +10,9 @@ func NumAllocBytes() int64 {
 	return atomic.LoadInt64(&numBytes)
 }
 
-// JEMallocStats is used to fetch JE Malloc Stats. The stats are fetched from
+// MemStats is used to fetch JE Malloc Stats. The stats are fetched from
 // the mallctl namespace http://jemalloc.net/jemalloc.3.html#mallctl_namespace.
-type JEMallocStats struct {
+type MemStats struct {
 	// Total number of bytes allocated by the application.
 	// http://jemalloc.net/jemalloc.3.html#stats.allocated
 	Allocated uint64

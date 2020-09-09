@@ -80,8 +80,8 @@ func Free(b []byte) {
 	}
 }
 
-// ReadJEMallocStats populates stats with JE Malloc statistics.
-func ReadJEMallocStats(stats *JEMallocStats) {
+// ReadMemStats populates stats with JE Malloc statistics.
+func ReadMemStats(stats *JEMallocStats) {
 	if stats == nil {
 		return
 	}

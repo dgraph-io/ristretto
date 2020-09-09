@@ -31,6 +31,6 @@ func StatsPrint() {
 	fmt.Println("Using Go memory")
 }
 
-// ReadJEMallocStats doesn't do anything since all the memory is being managed
+// ReadMemStats doesn't do anything since all the memory is being managed
 // by the Go runtime.
-func ReadJEMallocStats(_ *JEMallocStats) { return }
+func ReadMemStats(_ *MemStats) { return }
