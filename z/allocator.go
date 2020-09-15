@@ -16,7 +16,15 @@
 
 package z
 
-import "fmt"
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/dustin/go-humanize"
+)
 
 // Allocator amortizes the cost of small allocations by allocating memory in bigger chunks.
 // Internally it uses z.Calloc to allocate memory. Once allocated, the memory is not moved,
@@ -27,11 +35,61 @@ type Allocator struct {
 	curIdx   int
 	buffers  [][]byte
 	size     uint64
+	Ref      uint64
+	Tag      string
+}
+
+// allocs keeps references to all Allocators, so we can safely discard them later.
+var allocsMu *sync.Mutex
+var allocRef uint64
+var allocs map[uint64]*Allocator
+
+func init() {
+	allocsMu = new(sync.Mutex)
+	allocs = make(map[uint64]*Allocator)
+
+	// Set up a unique Ref per process.
+	rand.Seed(time.Now().UnixNano())
+	allocRef = uint64(rand.Int63n(1<<16)) << 48
+	fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
 }
 
 // NewAllocator creates an allocator starting with the given size.
 func NewAllocator(sz int) *Allocator {
-	return &Allocator{pageSize: sz}
+	ref := atomic.AddUint64(&allocRef, 1)
+	a := &Allocator{
+		pageSize: sz,
+		Ref:      ref,
+	}
+
+	allocsMu.Lock()
+	allocs[ref] = a
+	allocsMu.Unlock()
+	return a
+}
+
+func PrintAllocators() {
+	allocsMu.Lock()
+	tags := make(map[string]int)
+	var total uint64
+	for _, ac := range allocs {
+		tags[ac.Tag]++
+		total += ac.Size()
+	}
+	for tag, count := range tags {
+		fmt.Printf("Allocator Tag: %s Count: %d\n", tag, count)
+	}
+	fmt.Printf("Total allocators: %d. Total Size: %s\n",
+		len(allocs), humanize.IBytes(total))
+	allocsMu.Unlock()
+}
+
+// AllocatorFrom would return the allocator corresponding to the ref.
+func AllocatorFrom(ref uint64) *Allocator {
+	allocsMu.Lock()
+	a := allocs[ref]
+	allocsMu.Unlock()
+	return a
 }
 
 // Size returns the size of the allocations so far.
@@ -41,9 +99,16 @@ func (a *Allocator) Size() uint64 {
 
 // Release would release the memory back. Remember to make this call to avoid memory leaks.
 func (a *Allocator) Release() {
+	if a == nil {
+		return
+	}
 	for _, b := range a.buffers {
 		Free(b)
 	}
+
+	allocsMu.Lock()
+	delete(allocs, a.Ref)
+	allocsMu.Unlock()
 }
 
 const maxAlloc = 1 << 30
