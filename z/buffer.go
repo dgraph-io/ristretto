@@ -18,21 +18,91 @@ package z
 
 import (
 	"encoding/binary"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"math"
+	"os"
+
+	"github.com/pkg/errors"
 )
 
 // Buffer is equivalent of bytes.Buffer without the ability to read. It uses z.Calloc to allocate
 // memory, which depending upon how the code is compiled could use jemalloc for allocations.
 type Buffer struct {
-	buf    []byte
-	offset int
+	buf     []byte
+	offset  int
+	curSz   int
+	maxSz   int
+	fd      *os.File
+	bufType BufferType
 }
 
-// NewBuffer would allocate a buffer of size sz upfront.
-func NewBuffer(sz int) *Buffer {
-	return &Buffer{
-		buf:    Calloc(sz),
-		offset: 0,
+type BufferType int
+
+func (t BufferType) String() string {
+	switch t {
+	case UseCalloc:
+		return "UseCalloc"
+	case UseMmap:
+		return "UseMmap"
 	}
+	return "invalid"
+}
+
+const (
+	UseCalloc BufferType = iota
+	UseMmap
+	UseInvalid
+)
+
+// smallBufferSize is an initial allocation minimal capacity.
+const smallBufferSize = 64
+
+// NewBuffer would allocate a buffer of size sz upfront.
+func NewBuffer(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+	var buf []byte
+	var fd *os.File
+
+	if sz == 0 {
+		sz = smallBufferSize
+	}
+	if maxSz == 0 {
+		maxSz = math.MaxInt32
+	}
+
+	switch bufType {
+	case UseCalloc:
+		buf = Calloc(sz)
+
+	case UseMmap:
+		var err error
+		fd, err = ioutil.TempFile("", "buffer")
+		if err != nil {
+			return nil, err
+		}
+		if err := fd.Truncate(int64(sz)); err != nil {
+			return nil, errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), sz)
+		}
+
+		buf, err = Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
+		if err != nil {
+			return nil, errors.Wrapf(err, "while mmapping %s", fd.Name())
+		}
+
+	default:
+		log.Fatalf("Invalid bufType: %q\n", bufType)
+	}
+
+	buf[0] = 0x00
+	return &Buffer{
+		buf:     buf,
+		offset:  1, // Always leave offset 0.
+		curSz:   sz,
+		maxSz:   maxSz,
+		fd:      fd,
+		bufType: bufType,
+	}, nil
 }
 
 // Len would return the number of bytes written to the buffer so far.
@@ -42,33 +112,43 @@ func (b *Buffer) Len() int {
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	return b.buf[0:b.offset]
+	return b.buf[1:b.offset]
 }
-
-// smallBufferSize is an initial allocation minimal capacity.
-const smallBufferSize = 64
 
 // Grow would grow the buffer to have at least n more bytes. In case the buffer is at capacity, it
 // would reallocate twice the size of current capacity + n, to ensure n bytes can be written to the
 // buffer without further allocation.
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
-	if len(b.buf) == 0 && n <= smallBufferSize {
-		b.buf = Calloc(smallBufferSize)
-		return
-	} else if b.buf == nil {
-		b.buf = Calloc(n)
-		return
+	if b.buf == nil {
+		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.offset+n < len(b.buf) {
+	if b.maxSz-b.offset < n {
+		panic(fmt.Sprintf("Buffer max size exceeded: %d."+
+			" Offset: %d. Grow: %d", b.maxSz, b.offset, n))
+	}
+	if b.curSz-b.offset > n {
 		return
 	}
 
-	sz := 2*len(b.buf) + n
-	newBuf := Calloc(sz)
-	copy(newBuf, b.buf[:b.offset])
-	Free(b.buf)
-	b.buf = newBuf
+	growBy := b.curSz + n
+	if growBy > 1<<30 {
+		growBy = 1 << 30
+	}
+	b.curSz += growBy
+
+	switch b.bufType {
+	case UseCalloc:
+		newBuf := Calloc(b.curSz)
+		copy(newBuf, b.buf[:b.offset])
+		Free(b.buf)
+		b.buf = newBuf
+	case UseMmap:
+		if err := b.fd.Truncate(int64(b.curSz)); err != nil {
+			log.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
+				b.fd.Name(), b.curSz, err)
+		}
+	}
 }
 
 // Allocate is a way to get a slice of size n back from the buffer. This slice can be directly
@@ -79,6 +159,14 @@ func (b *Buffer) Allocate(n int) []byte {
 	off := b.offset
 	b.offset += n
 	return b.buf[off:b.offset]
+}
+
+// AllocateOffset works the same way as allocate, but instead of returning a byte slice, it returns
+// the offset of the allocation.
+func (b *Buffer) AllocateOffset(n int) int {
+	b.Grow(n)
+	b.offset += n
+	return b.offset - n
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -100,7 +188,7 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 // SliceOffsets would return the offsets of all slices written to the buffer.
 // TODO: Perhaps keep the offsets separate in another buffer, and allow access to slices via index.
 func (b *Buffer) SliceOffsets(offsets []int) []int {
-	start := 0
+	start := 1
 	for start < b.offset {
 		offsets = append(offsets, start)
 		sz := binary.BigEndian.Uint32(b.buf[start:])
@@ -126,11 +214,30 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = 0
+	b.offset = 1
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
 // important to call Release, otherwise a memory leak can happen.
-func (b *Buffer) Release() {
-	Free(b.buf)
+func (b *Buffer) Release() error {
+	switch b.bufType {
+	case UseCalloc:
+		Free(b.buf)
+
+	case UseMmap:
+		fname := b.fd.Name()
+		if err := Munmap(b.buf); err != nil {
+			return errors.Wrapf(err, "while munmap file %s", fname)
+		}
+		if err := b.fd.Truncate(0); err != nil {
+			return errors.Wrapf(err, "while truncating file %s", fname)
+		}
+		if err := b.fd.Close(); err != nil {
+			return errors.Wrapf(err, "while closing file %s", fname)
+		}
+		if err := os.Remove(b.fd.Name()); err != nil {
+			return errors.Wrapf(err, "while deleting file %s", fname)
+		}
+	}
+	return nil
 }
