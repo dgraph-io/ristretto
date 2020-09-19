@@ -18,8 +18,10 @@ package z
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
+	"sort"
 	"testing"
 	"time"
 
@@ -35,7 +37,7 @@ func TestBuffer(t *testing.T) {
 			var bytesBuffer bytes.Buffer // This is just for verifying result.
 			bytesBuffer.Grow(512)
 
-			cBuffer, err := NewBuffer(512, 4<<30, btype)
+			cBuffer, err := NewBufferWith(512, 4<<30, btype)
 			require.Nil(t, err)
 			defer cBuffer.Release()
 
@@ -68,7 +70,7 @@ func TestBufferWrite(t *testing.T) {
 			var wb [128]byte
 			rand.Read(wb[:])
 
-			cb, err := NewBuffer(32, 4<<30, btype)
+			cb, err := NewBufferWith(32, 4<<30, btype)
 			require.Nil(t, err)
 			defer cb.Release()
 
@@ -94,16 +96,16 @@ func TestBufferSlice(t *testing.T) {
 	for btype := UseCalloc; btype < UseInvalid; btype++ {
 		name := fmt.Sprintf("Using mode %s", btype)
 		t.Run(name, func(t *testing.T) {
-			buf, err := NewBuffer(0, 0, btype)
+			buf, err := NewBufferWith(0, 0, btype)
 			require.Nil(t, err)
 			defer buf.Release()
 
-			count := 10000
-			expectedSlice := make([][]byte, 0, count)
+			count := 10
+			exp := make([][]byte, 0, count)
 
 			// Create "count" number of slices.
 			for i := 0; i < count; i++ {
-				sz := rand.Intn(1000)
+				sz := rand.Intn(64)
 				testBuf := make([]byte, sz)
 				rand.Read(testBuf)
 
@@ -111,16 +113,34 @@ func TestBufferSlice(t *testing.T) {
 				require.Equal(t, sz, copy(newSlice, testBuf))
 
 				// Save testBuf for verification.
-				expectedSlice = append(expectedSlice, testBuf)
+				exp = append(exp, testBuf)
 			}
 
-			offsets := buf.SliceOffsets(nil)
-			require.Equal(t, len(expectedSlice), len(offsets))
-			for i, off := range offsets {
-				// All the slices returned by the buffer should be equal to what we
-				// inserted earlier.
-				require.Equal(t, expectedSlice[i], buf.Slice(off))
+			compare := func() {
+				next, i := 1, 0
+				for next != 0 {
+					// All the slices returned by the buffer should be equal to what we
+					// inserted earlier.
+					var slice []byte
+					slice, next = buf.Slice(next)
+					if !bytes.Equal(exp[i], slice) {
+						fmt.Printf("exp: %s got: %s\n", hex.Dump(exp[i]), hex.Dump(slice))
+						t.Fail()
+					}
+					require.Equal(t, exp[i], slice)
+					i++
+				}
+				require.Equal(t, len(exp), i)
 			}
+			compare() // same order as inserted.
+
+			sort.Slice(exp, func(i, j int) bool {
+				return bytes.Compare(exp[i], exp[j]) < 0
+			})
+			buf.SortSlice(func(a, b []byte) bool {
+				return bytes.Compare(a, b) < 0
+			})
+			compare() // same order after sort.
 		})
 	}
 }

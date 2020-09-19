@@ -199,31 +199,66 @@ func (b *Buffer) writeLen(sz int) {
 // SliceAllocate would encode the size provided into the buffer, followed by a call to Allocate,
 // hence returning the slice of size sz. This can be used to allocate a lot of small buffers into
 // this big buffer.
-// Note that SliceAllocate should NOT be mixed with normal calls to Write. Otherwise, SliceOffsets
-// won't work.
+// Note that SliceAllocate should NOT be mixed with normal calls to Write.
 func (b *Buffer) SliceAllocate(sz int) []byte {
 	b.Grow(4 + sz)
 	b.writeLen(sz)
 	return b.Allocate(sz)
 }
 
-// SliceOffsets would return the offsets of all slices written to the buffer.
-// TODO: Perhaps keep the offsets separate in another buffer, and allow access to slices via index.
-func (b *Buffer) SliceOffsets(offsets []int) []int {
-	start := 1
-	for start < b.offset {
-		offsets = append(offsets, start)
-		sz := binary.BigEndian.Uint32(b.buf[start:])
-		start += 4 + int(sz)
+func assert(b bool) {
+	if !b {
+		log.Fatalf("Assertion failure")
 	}
-	return offsets
+}
+
+func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
+	b.SortSliceBetween(1, b.offset, less)
+}
+
+func (b *Buffer) SortSliceBetween(start, end int, less func(left, right []byte) bool) {
+	tmpBuf := make([]byte, 0, 1024)
+
+	// We use bubble sort here, to only deal with two consecutive buffers at a time.
+	didSwap := true
+	for didSwap { // No swap happened, slice is sorted.
+		didSwap = false
+		lo := start
+		for lo < end {
+			left := b.rawSlice(lo)
+			ro := lo + len(left)
+			if ro >= end {
+				break
+			}
+			right := b.rawSlice(ro)
+			if !less(left[4:], right[4:]) {
+				didSwap = true
+				tmpBuf = append(tmpBuf[:0], left...)
+				assert(copy(b.buf[lo:], right) == len(right))
+				assert(copy(b.buf[lo+len(right):], tmpBuf) == len(left))
+				lo += len(right)
+			} else {
+				lo += len(left)
+			}
+		}
+	}
+}
+
+func (b *Buffer) rawSlice(offset int) []byte {
+	sz := binary.BigEndian.Uint32(b.buf[offset:])
+	return b.buf[offset : offset+4+int(sz)]
 }
 
 // Slice would return the slice written at offset.
-func (b *Buffer) Slice(offset int) []byte {
+func (b *Buffer) Slice(offset int) ([]byte, int) {
 	sz := binary.BigEndian.Uint32(b.buf[offset:])
 	start := offset + 4
-	return b.buf[start : start+int(sz)]
+	next := start + int(sz)
+	res := b.buf[start:next]
+	if next >= b.offset {
+		next = 0
+	}
+	return res, next
 }
 
 func (b *Buffer) Data(offset int) []byte {
