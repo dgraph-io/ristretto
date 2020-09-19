@@ -27,8 +27,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Buffer is equivalent of bytes.Buffer without the ability to read. It uses z.Calloc to allocate
-// memory, which depending upon how the code is compiled could use jemalloc for allocations.
+// Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
+//
+// In UseCalloc mode, z.Calloc is used to allocate memory, which depending upon how the code is
+// compiled could use jemalloc for allocations.
+//
+// In UseMmap mode, Buffer  uses file mmap to allocate memory. This allows us to store big data
+// structures without using physical memory.
+//
+// MaxSize can be set to limit the memory usage.
 type Buffer struct {
 	buf     []byte
 	offset  int
@@ -59,8 +66,19 @@ const (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-// NewBuffer would allocate a buffer of size sz upfront.
-func NewBuffer(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+// Newbuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
+func NewBuffer(sz int) *Buffer {
+	buf, err := NewBufferWith(sz, math.MaxInt64, UseCalloc)
+	if err != nil {
+		log.Fatalf("while creating buffer: %v", err)
+	}
+	return buf
+}
+
+// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
+// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
+// used. Buffer can't be used without initialization via NewBuffer.
+func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	var buf []byte
 	var fd *os.File
 
@@ -87,7 +105,7 @@ func NewBuffer(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 
 		buf, err = Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
 		if err != nil {
-			return nil, errors.Wrapf(err, "while mmapping %s", fd.Name())
+			return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
 		}
 
 	default:
@@ -105,6 +123,10 @@ func NewBuffer(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	}, nil
 }
 
+func (b *Buffer) IsEmpty() bool {
+	return b.offset == 1
+}
+
 // Len would return the number of bytes written to the buffer so far.
 func (b *Buffer) Len() int {
 	return b.offset
@@ -117,7 +139,7 @@ func (b *Buffer) Bytes() []byte {
 
 // Grow would grow the buffer to have at least n more bytes. In case the buffer is at capacity, it
 // would reallocate twice the size of current capacity + n, to ensure n bytes can be written to the
-// buffer without further allocation.
+// buffer without further allocation. In UseMmap mode, this might result in underlying file expansion.
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
 	if b.buf == nil {
@@ -202,6 +224,13 @@ func (b *Buffer) Slice(offset int) []byte {
 	sz := binary.BigEndian.Uint32(b.buf[offset:])
 	start := offset + 4
 	return b.buf[start : start+int(sz)]
+}
+
+func (b *Buffer) Data(offset int) []byte {
+	if offset > b.curSz {
+		panic("offset beyond current size")
+	}
+	return b.buf[offset:b.curSz]
 }
 
 // Write would write p bytes to the buffer.
