@@ -23,6 +23,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"sort"
 
 	"github.com/pkg/errors"
 )
@@ -206,43 +207,179 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+type LessFunc func(a, b []byte) bool
+type sortHelper struct {
+	offsets []int
+	b       *Buffer
+	tmp     *Buffer
+	less    LessFunc
+	small   []int
+}
+
+func (s *sortHelper) sortSmall(start, end int) {
+	fmt.Printf("sortSmall: %d %d\n", start, end)
+	s.tmp.Reset()
+	s.small = s.small[:0]
+	next := start
+	for next != 0 && next < end {
+		s.small = append(s.small, next)
+		_, next = s.b.Slice(next)
+	}
+
+	sort.Slice(s.small, func(i, j int) bool {
+		left, _ := s.b.Slice(s.small[i])
+		right, _ := s.b.Slice(s.small[j])
+		return s.less(left, right)
+	})
+	for _, off := range s.small {
+		s.tmp.Write(s.b.rawSlice(off))
+	}
+	assert(s.tmp.Len()-1 == end-start)
+	copy(s.b.buf[start:end], s.tmp.Bytes())
+}
+
 func assert(b bool) {
 	if !b {
 		log.Fatalf("Assertion failure")
 	}
 }
-
-func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
-	b.SortSliceBetween(1, b.offset, less)
+func check(err error) {
+	assert(err == nil)
+}
+func check2(_ interface{}, err error) {
+	check(err)
 }
 
-func (b *Buffer) SortSliceBetween(start, end int, less func(left, right []byte) bool) {
-	tmpBuf := make([]byte, 0, 1024)
+func (s *sortHelper) merge(lo, m, hi int) {
+	left := s.offsets[lo]
+	mid := s.offsets[m]
+	right := s.offsets[hi]
+	fmt.Printf("merge: %d %d %d\n", left, mid, right)
+	if left == mid {
+		return
+	}
+	s.tmp.Reset()
+	check2(s.tmp.Write(s.b.buf[left:mid]))
 
-	// We use bubble sort here, to only deal with two consecutive buffers at a time.
-	didSwap := true
-	for didSwap { // No swap happened, slice is sorted.
-		didSwap = false
-		lo := start
-		for lo < end {
-			left := b.rawSlice(lo)
-			ro := lo + len(left)
-			if ro >= end {
-				break
-			}
-			right := b.rawSlice(ro)
-			if !less(left[4:], right[4:]) {
-				didSwap = true
-				tmpBuf = append(tmpBuf[:0], left...)
-				assert(copy(b.buf[lo:], right) == len(right))
-				assert(copy(b.buf[lo+len(right):], tmpBuf) == len(left))
-				lo += len(right)
+	ln, rn := 1, mid
+	var ls, rs []byte
+
+	copyLeft := func() {
+		assert(len(ls) == copy(s.b.buf[left:], ls))
+		ln += len(ls)
+		left += len(ls)
+	}
+	copyRight := func() {
+		assert(len(rs) == copy(s.b.buf[left:], rs))
+		rn += len(rs)
+		left += len(rs)
+	}
+
+	for left < right {
+		if ln >= s.tmp.Len() {
+			rs = s.b.rawSlice(rn)
+			copyRight()
+
+		} else if rn >= right {
+			ls = s.tmp.rawSlice(ln)
+			copyLeft()
+
+		} else {
+			ls = s.tmp.rawSlice(ln)
+			rs = s.b.rawSlice(rn)
+
+			if s.less(ls[4:], rs[4:]) {
+				copyLeft()
 			} else {
-				lo += len(left)
+				copyRight()
 			}
 		}
 	}
 }
+
+func (s *sortHelper) sort(lo, hi int) {
+	fmt.Printf("sort: lo: %d hi: %d\n", lo, hi)
+	if hi <= lo {
+		return
+	}
+	mid := lo + (hi-lo)/2
+	s.sort(lo, mid)
+	s.sort(mid+1, hi)
+	s.merge(lo, mid, hi)
+}
+
+// SortSlice is like SortSliceBetween but sorting over the entire buffer.
+func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
+	b.SortSliceBetween(1, b.offset, less)
+}
+func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
+	offsets := make([]int, 0, 1024)
+	next, count := start, 0
+	for next != 0 && next < end {
+		if count%1024 == 0 {
+			offsets = append(offsets, next)
+		}
+		_, next = b.Slice(next)
+		count++
+	}
+	if offsets[len(offsets)-1] != end {
+		offsets = append(offsets, end)
+	}
+
+	s := &sortHelper{
+		offsets: offsets,
+		b:       b,
+		less:    less,
+		small:   make([]int, 0, 1024),
+		tmp:     NewBuffer((end - start) / 2),
+	}
+	defer s.tmp.Release()
+
+	left := offsets[0]
+	for _, off := range offsets[1:] {
+		s.sortSmall(left, off)
+		left = off
+	}
+	s.sort(0, len(offsets)-1)
+	fmt.Printf("tmp buffer size: %d. slice size: %d\n", s.tmp.curSz, end-start)
+}
+
+// SortSliceBetween accepts a less function, to allow in-place sorting of slices. It also accepts
+// start and end offsets in the buffer, to only sort portion of the buffer. Ensure that the less
+// function returns false on equals.
+// func (b *Buffer) SortSliceBetweenX(start, end int, less func(a, b []byte) bool) {
+// 	tmpBuf := make([]byte, 0, 1024)
+
+// 	// We use bubble sort here, to only deal with two consecutive buffers at a time.
+// 	didSwap := true
+// 	cycles := 0
+// 	for didSwap { // No swap happened, slice is sorted.
+// 		didSwap = false
+// 		lo := start
+// 		count := 0
+// 		for lo < end {
+// 			count++
+// 			left := b.rawSlice(lo)
+// 			ro := lo + len(left)
+// 			if ro >= end {
+// 				break
+// 			}
+// 			right := b.rawSlice(ro)
+// 			if less(right[4:], left[4:]) {
+// 				// fmt.Printf("swapping: %x with %x\n", right[4:], left[4:])
+// 				didSwap = true
+// 				tmpBuf = append(tmpBuf[:0], left...)
+// 				assert(copy(b.buf[lo:], right) == len(right))
+// 				assert(copy(b.buf[lo+len(right):], tmpBuf) == len(left))
+// 				lo += len(right)
+// 			} else {
+// 				lo += len(left)
+// 			}
+// 		}
+// 		cycles++
+// 		fmt.Printf("Count: %d. Cycles: %d\n", count, cycles)
+// 	}
+// }
 
 func (b *Buffer) rawSlice(offset int) []byte {
 	sz := binary.BigEndian.Uint32(b.buf[offset:])

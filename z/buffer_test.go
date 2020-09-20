@@ -18,6 +18,7 @@ package z
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math/rand"
@@ -92,6 +93,34 @@ func TestBufferWrite(t *testing.T) {
 	}
 }
 
+func TestBufferSimpleSort(t *testing.T) {
+	buf := NewBuffer(1 << 20)
+	for i := 0; i < 25600; i++ {
+		b := buf.SliceAllocate(4)
+		binary.BigEndian.PutUint32(b, uint32(rand.Int31n(256000)))
+	}
+	buf.SortSlice(func(ls, rs []byte) bool {
+		left := binary.BigEndian.Uint32(ls)
+		right := binary.BigEndian.Uint32(rs)
+		return left < right
+	})
+	var last uint32
+	var i int
+	slice, next := []byte{}, 1
+	for next != 0 {
+		slice, next = buf.Slice(next)
+		num := binary.BigEndian.Uint32(slice)
+		if num < last {
+			fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
+		}
+		assert(num >= last)
+		i++
+		// require.GreaterOrEqual(t, num, last)
+		last = num
+		// fmt.Printf("Got number: %d\n", num)
+	}
+}
+
 func TestBufferSlice(t *testing.T) {
 	for btype := UseCalloc; btype < UseInvalid; btype++ {
 		name := fmt.Sprintf("Using mode %s", btype)
@@ -100,12 +129,12 @@ func TestBufferSlice(t *testing.T) {
 			require.Nil(t, err)
 			defer buf.Release()
 
-			count := 10
+			count := 10000
 			exp := make([][]byte, 0, count)
 
 			// Create "count" number of slices.
 			for i := 0; i < count; i++ {
-				sz := rand.Intn(64)
+				sz := 1 + rand.Intn(8)
 				testBuf := make([]byte, sz)
 				rand.Read(testBuf)
 
@@ -134,13 +163,61 @@ func TestBufferSlice(t *testing.T) {
 			}
 			compare() // same order as inserted.
 
+			t.Logf("Sorting using sort.Slice\n")
 			sort.Slice(exp, func(i, j int) bool {
 				return bytes.Compare(exp[i], exp[j]) < 0
 			})
+			t.Logf("Sorting using buf.SortSlice\n")
 			buf.SortSlice(func(a, b []byte) bool {
 				return bytes.Compare(a, b) < 0
 			})
+			t.Logf("Done sorting\n")
 			compare() // same order after sort.
+		})
+	}
+}
+
+func TestBufferSort(t *testing.T) {
+	for btype := UseCalloc; btype < UseInvalid; btype++ {
+		name := fmt.Sprintf("Using mode %s", btype)
+		t.Run(name, func(t *testing.T) {
+			buf, err := NewBufferWith(0, 0, btype)
+			require.Nil(t, err)
+			defer buf.Release()
+
+			N := 10000
+
+			for i := 0; i < N; i++ {
+				newSlice := buf.SliceAllocate(8)
+				uid := uint64(rand.Int63())
+				binary.BigEndian.PutUint64(newSlice, uid)
+			}
+
+			test := func(start, end int) {
+				start = 1 + 12*start
+				end = 1 + 12*end
+				buf.SortSliceBetween(start, end, func(ls, rs []byte) bool {
+					lhs := binary.BigEndian.Uint64(ls)
+					rhs := binary.BigEndian.Uint64(rs)
+					return lhs < rhs
+				})
+
+				slice, next := []byte{}, start
+				var last uint64
+				var count int
+				for next != 0 && next < end {
+					slice, next = buf.Slice(next)
+					uid := binary.BigEndian.Uint64(slice)
+					require.GreaterOrEqual(t, uid, last)
+					last = uid
+					count++
+				}
+				require.Equal(t, (end-start)/12, count)
+			}
+			for i := 10; i <= N; i += 10 {
+				test(i-10, i)
+			}
+			test(0, N)
 		})
 	}
 }
