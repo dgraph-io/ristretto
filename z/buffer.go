@@ -217,7 +217,6 @@ type sortHelper struct {
 }
 
 func (s *sortHelper) sortSmall(start, end int) {
-	fmt.Printf("sortSmall: %d %d\n", start, end)
 	s.tmp.Reset()
 	s.small = s.small[:0]
 	next := start
@@ -232,7 +231,7 @@ func (s *sortHelper) sortSmall(start, end int) {
 		return s.less(left, right)
 	})
 	for _, off := range s.small {
-		s.tmp.Write(s.b.rawSlice(off))
+		s.tmp.Write(rawSlice(s.b.buf[off:]))
 	}
 	assert(s.tmp.Len()-1 == end-start)
 	copy(s.b.buf[start:end], s.tmp.Bytes())
@@ -250,43 +249,39 @@ func check2(_ interface{}, err error) {
 	check(err)
 }
 
-func (s *sortHelper) merge(lo, m, hi int) {
-	left := s.offsets[lo]
-	mid := s.offsets[m]
-	right := s.offsets[hi]
-	fmt.Printf("merge: %d %d %d\n", left, mid, right)
-	if left == mid {
+func (s *sortHelper) merge(left, right []byte, start, end int) {
+	if len(left) == 0 || len(right) == 0 {
 		return
 	}
 	s.tmp.Reset()
-	check2(s.tmp.Write(s.b.buf[left:mid]))
+	check2(s.tmp.Write(left))
 
-	ln, rn := 1, mid
+	li, ri := 1, 0
 	var ls, rs []byte
 
 	copyLeft := func() {
-		assert(len(ls) == copy(s.b.buf[left:], ls))
-		ln += len(ls)
-		left += len(ls)
+		assert(len(ls) == copy(s.b.buf[start:], ls))
+		li += len(ls)
+		start += len(ls)
 	}
 	copyRight := func() {
-		assert(len(rs) == copy(s.b.buf[left:], rs))
-		rn += len(rs)
-		left += len(rs)
+		assert(len(rs) == copy(s.b.buf[start:], rs))
+		ri += len(rs)
+		start += len(rs)
 	}
 
-	for left < right {
-		if ln >= s.tmp.Len() {
-			rs = s.b.rawSlice(rn)
+	for start < end {
+		if li >= s.tmp.Len() {
+			rs = rawSlice(right[ri:])
 			copyRight()
 
-		} else if rn >= right {
-			ls = s.tmp.rawSlice(ln)
+		} else if ri >= len(right) {
+			ls = rawSlice(s.tmp.buf[li:])
 			copyLeft()
 
 		} else {
-			ls = s.tmp.rawSlice(ln)
-			rs = s.b.rawSlice(rn)
+			ls = rawSlice(s.tmp.buf[li:])
+			rs = rawSlice(right[ri:])
 
 			if s.less(ls[4:], rs[4:]) {
 				copyLeft()
@@ -297,15 +292,21 @@ func (s *sortHelper) merge(lo, m, hi int) {
 	}
 }
 
-func (s *sortHelper) sort(lo, hi int) {
-	fmt.Printf("sort: lo: %d hi: %d\n", lo, hi)
-	if hi <= lo {
-		return
-	}
+func (s *sortHelper) sort(lo, hi int) []byte {
+	assert(lo <= hi)
+
 	mid := lo + (hi-lo)/2
-	s.sort(lo, mid)
-	s.sort(mid+1, hi)
-	s.merge(lo, mid, hi)
+	loff, hoff := s.offsets[lo], s.offsets[hi]
+	if lo == mid {
+		// No need to sort, just return the buffer.
+		return s.b.buf[loff:hoff]
+	}
+
+	left := s.sort(lo, mid)
+	right := s.sort(mid, hi)
+
+	s.merge(left, right, loff, hoff)
+	return s.b.buf[loff:hoff]
 }
 
 // SortSlice is like SortSliceBetween but sorting over the entire buffer.
@@ -313,7 +314,11 @@ func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
 	b.SortSliceBetween(1, b.offset, less)
 }
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
-	offsets := make([]int, 0, 1024)
+	if start >= end {
+		return
+	}
+
+	var offsets []int
 	next, count := start, 0
 	for next != 0 && next < end {
 		if count%1024 == 0 {
@@ -322,16 +327,18 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		_, next = b.Slice(next)
 		count++
 	}
+	assert(len(offsets) > 0)
 	if offsets[len(offsets)-1] != end {
 		offsets = append(offsets, end)
 	}
 
+	szTmp := int(float64((end-start)/2) * 1.1)
 	s := &sortHelper{
 		offsets: offsets,
 		b:       b,
 		less:    less,
 		small:   make([]int, 0, 1024),
-		tmp:     NewBuffer((end - start) / 2),
+		tmp:     NewBuffer(szTmp),
 	}
 	defer s.tmp.Release()
 
@@ -341,7 +348,6 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		left = off
 	}
 	s.sort(0, len(offsets)-1)
-	fmt.Printf("tmp buffer size: %d. slice size: %d\n", s.tmp.curSz, end-start)
 }
 
 // SortSliceBetween accepts a less function, to allow in-place sorting of slices. It also accepts
@@ -381,9 +387,9 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 // 	}
 // }
 
-func (b *Buffer) rawSlice(offset int) []byte {
-	sz := binary.BigEndian.Uint32(b.buf[offset:])
-	return b.buf[offset : offset+4+int(sz)]
+func rawSlice(buf []byte) []byte {
+	sz := binary.BigEndian.Uint32(buf)
+	return buf[:4+int(sz)]
 }
 
 // Slice would return the slice written at offset.

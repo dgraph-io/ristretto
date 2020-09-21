@@ -113,9 +113,8 @@ func TestBufferSimpleSort(t *testing.T) {
 		if num < last {
 			fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
 		}
-		assert(num >= last)
 		i++
-		// require.GreaterOrEqual(t, num, last)
+		require.GreaterOrEqual(t, num, last)
 		last = num
 		// fmt.Printf("Got number: %d\n", num)
 	}
