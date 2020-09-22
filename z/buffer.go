@@ -140,7 +140,8 @@ func (b *Buffer) Bytes() []byte {
 
 // Grow would grow the buffer to have at least n more bytes. In case the buffer is at capacity, it
 // would reallocate twice the size of current capacity + n, to ensure n bytes can be written to the
-// buffer without further allocation. In UseMmap mode, this might result in underlying file expansion.
+// buffer without further allocation. In UseMmap mode, this might result in underlying file
+// expansion.
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
 	if b.buf == nil {
@@ -157,6 +158,10 @@ func (b *Buffer) Grow(n int) {
 	growBy := b.curSz + n
 	if growBy > 1<<30 {
 		growBy = 1 << 30
+	}
+	if n > growBy {
+		// Always at least allocate n, even if it exceeds the 1GB limit above.
+		growBy = n
 	}
 	b.curSz += growBy
 
@@ -225,16 +230,17 @@ func (s *sortHelper) sortSmall(start, end int) {
 		_, next = s.b.Slice(next)
 	}
 
+	// We are sorting the slices pointed to by s.small offsets, but only moving the offsets around.
 	sort.Slice(s.small, func(i, j int) bool {
 		left, _ := s.b.Slice(s.small[i])
 		right, _ := s.b.Slice(s.small[j])
 		return s.less(left, right)
 	})
+	// Now we iterate over the s.small offsets and copy over the slices. The result is now in order.
 	for _, off := range s.small {
 		s.tmp.Write(rawSlice(s.b.buf[off:]))
 	}
-	assert(s.tmp.Len()-1 == end-start)
-	copy(s.b.buf[start:end], s.tmp.Bytes())
+	assert(end-start == copy(s.b.buf[start:end], s.tmp.Bytes()))
 }
 
 func assert(b bool) {
@@ -255,39 +261,38 @@ func (s *sortHelper) merge(left, right []byte, start, end int) {
 	}
 	s.tmp.Reset()
 	check2(s.tmp.Write(left))
+	left = s.tmp.Bytes()
 
-	li, ri := 1, 0
 	var ls, rs []byte
 
 	copyLeft := func() {
 		assert(len(ls) == copy(s.b.buf[start:], ls))
-		li += len(ls)
+		left = left[len(ls):]
 		start += len(ls)
 	}
 	copyRight := func() {
 		assert(len(rs) == copy(s.b.buf[start:], rs))
-		ri += len(rs)
+		right = right[len(rs):]
 		start += len(rs)
 	}
 
 	for start < end {
-		if li >= s.tmp.Len() {
-			rs = rawSlice(right[ri:])
-			copyRight()
+		if len(left) == 0 {
+			assert(len(right) == copy(s.b.buf[start:end], right))
+			return
+		}
+		if len(right) == 0 {
+			assert(len(left) == copy(s.b.buf[start:end], left))
+			return
+		}
+		ls = rawSlice(left)
+		rs = rawSlice(right)
 
-		} else if ri >= len(right) {
-			ls = rawSlice(s.tmp.buf[li:])
+		// We skip the first 4 bytes in the rawSlice, because that stores the length.
+		if s.less(ls[4:], rs[4:]) {
 			copyLeft()
-
 		} else {
-			ls = rawSlice(s.tmp.buf[li:])
-			rs = rawSlice(right[ri:])
-
-			if s.less(ls[4:], rs[4:]) {
-				copyLeft()
-			} else {
-				copyRight()
-			}
+			copyRight()
 		}
 	}
 }
@@ -302,7 +307,10 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 		return s.b.buf[loff:hoff]
 	}
 
+	// lo, mid would sort from [offset[lo], offset[mid]) .
 	left := s.sort(lo, mid)
+	// Typically we'd use mid+1, but here mid represents an offset in the buffer. Each offset
+	// contains a thousand entries. So, if we do mid+1, we'd skip over those entries.
 	right := s.sort(mid, hi)
 
 	s.merge(left, right, loff, hoff)
@@ -316,6 +324,9 @@ func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
 		return
+	}
+	if start == 0 {
+		panic("start can never be zero")
 	}
 
 	var offsets []int
@@ -349,43 +360,6 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	}
 	s.sort(0, len(offsets)-1)
 }
-
-// SortSliceBetween accepts a less function, to allow in-place sorting of slices. It also accepts
-// start and end offsets in the buffer, to only sort portion of the buffer. Ensure that the less
-// function returns false on equals.
-// func (b *Buffer) SortSliceBetweenX(start, end int, less func(a, b []byte) bool) {
-// 	tmpBuf := make([]byte, 0, 1024)
-
-// 	// We use bubble sort here, to only deal with two consecutive buffers at a time.
-// 	didSwap := true
-// 	cycles := 0
-// 	for didSwap { // No swap happened, slice is sorted.
-// 		didSwap = false
-// 		lo := start
-// 		count := 0
-// 		for lo < end {
-// 			count++
-// 			left := b.rawSlice(lo)
-// 			ro := lo + len(left)
-// 			if ro >= end {
-// 				break
-// 			}
-// 			right := b.rawSlice(ro)
-// 			if less(right[4:], left[4:]) {
-// 				// fmt.Printf("swapping: %x with %x\n", right[4:], left[4:])
-// 				didSwap = true
-// 				tmpBuf = append(tmpBuf[:0], left...)
-// 				assert(copy(b.buf[lo:], right) == len(right))
-// 				assert(copy(b.buf[lo+len(right):], tmpBuf) == len(left))
-// 				lo += len(right)
-// 			} else {
-// 				lo += len(left)
-// 			}
-// 		}
-// 		cycles++
-// 		fmt.Printf("Count: %d. Cycles: %d\n", count, cycles)
-// 	}
-// }
 
 func rawSlice(buf []byte) []byte {
 	sz := binary.BigEndian.Uint32(buf)
