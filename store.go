@@ -26,7 +26,7 @@ type storeItem struct {
 	key        uint64
 	conflict   uint64
 	value      interface{}
-	expiration time.Time
+	expiration int64
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -39,7 +39,7 @@ type store interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (interface{}, bool)
 	// Expiration returns the expiration time for this key.
-	Expiration(uint64) time.Time
+	Expiration(uint64) int64
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
 	// item object.
@@ -82,7 +82,7 @@ func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
 	return sm.shards[key%numShards].get(key, conflict)
 }
 
-func (sm *shardedMap) Expiration(key uint64) time.Time {
+func (sm *shardedMap) Expiration(key uint64) int64 {
 	return sm.shards[key%numShards].Expiration(key)
 }
 
@@ -138,13 +138,13 @@ func (m *lockedMap) get(key, conflict uint64) (interface{}, bool) {
 	}
 
 	// Handle expired items.
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+	if item.expiration != 0 && time.Now().Unix() > item.expiration {
 		return nil, false
 	}
 	return item.value, true
 }
 
-func (m *lockedMap) Expiration(key uint64) time.Time {
+func (m *lockedMap) Expiration(key uint64) int64 {
 	m.RLock()
 	defer m.RUnlock()
 	return m.data[key].expiration
@@ -193,7 +193,7 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 		return 0, nil
 	}
 
-	if !item.expiration.IsZero() {
+	if item.expiration != 0 {
 		m.em.del(key, item.expiration)
 	}
 

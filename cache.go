@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -36,6 +37,8 @@ var (
 )
 
 type itemCallback func(*Item)
+
+const itemSize = int64(unsafe.Sizeof(storeItem{}))
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -136,7 +139,7 @@ type Item struct {
 	Conflict   uint64
 	Value      interface{}
 	Cost       int64
-	Expiration time.Time
+	Expiration int64
 	wg         *sync.WaitGroup
 }
 
@@ -241,7 +244,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		return false
 	}
 
-	var expiration time.Time
+	var expiration int64
 	switch {
 	case ttl == 0:
 		// No expiration.
@@ -250,7 +253,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		// Treat this a a no-op.
 		return false
 	default:
-		expiration = time.Now().Add(ttl)
+		expiration = time.Now().Add(ttl).Unix()
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
@@ -393,6 +396,9 @@ func (c *Cache) processItems() {
 			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
 				i.Cost = c.cost(i.Value)
 			}
+			// Add the cost of internally storing the object.
+			i.Cost += itemSize
+
 			switch i.flag {
 			case itemNew:
 				victims, added := c.policy.Add(i.Key, i.Cost)
