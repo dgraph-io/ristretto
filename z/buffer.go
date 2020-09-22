@@ -394,6 +394,10 @@ func rawSlice(buf []byte) []byte {
 
 // Slice would return the slice written at offset.
 func (b *Buffer) Slice(offset int) ([]byte, int) {
+	if offset >= b.offset {
+		return nil, 0
+	}
+
 	sz := binary.BigEndian.Uint32(b.buf[offset:])
 	start := offset + 4
 	next := start + int(sz)
