@@ -124,6 +124,50 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	}, nil
 }
 
+func NewMmapFile(sz, maxSz, offset int, path string) (*Buffer, error) {
+	var buf []byte
+	var fd *os.File
+
+	if sz == 0 {
+		sz = smallBufferSize
+	}
+	if maxSz == 0 {
+		maxSz = math.MaxInt32
+	}
+
+	var err error
+	fd, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	if err := fd.Truncate(int64(sz)); err != nil {
+		return nil, errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), sz)
+	}
+
+	buf, err = Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
+	if err != nil {
+		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
+	}
+
+	buf[0] = 0x00
+	return &Buffer{
+		buf:     buf,
+		offset:  offset,
+		curSz:   sz,
+		maxSz:   maxSz,
+		fd:      fd,
+		bufType: UseMmap,
+	}, nil
+}
+
+// First will return the first n bytes in the buffer.
+func (b *Buffer) First(n int) ([]byte, error) {
+	if len(b.buf) < n {
+		return nil, errors.Errorf("not enough capacity in the buffer to return %d bytes", n)
+	}
+	return b.buf[0:n], nil
+}
+
 func (b *Buffer) IsEmpty() bool {
 	return b.offset == 1
 }
@@ -212,6 +256,94 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+// Slice would return the slice written at offset.
+func (b *Buffer) Slice(offset int) ([]byte, int) {
+	if offset >= b.offset {
+		return nil, 0
+	}
+
+	sz := binary.BigEndian.Uint32(b.buf[offset:])
+	start := offset + 4
+	next := start + int(sz)
+	res := b.buf[start:next]
+	if next >= b.offset {
+		next = 0
+	}
+	return res, next
+}
+
+func (b *Buffer) Data(offset int) []byte {
+	if offset > b.curSz {
+		panic("offset beyond current size")
+	}
+	return b.buf[offset:b.curSz]
+}
+
+// Write would write p bytes to the buffer.
+func (b *Buffer) Write(p []byte) (n int, err error) {
+	b.Grow(len(p))
+	n = copy(b.buf[b.offset:], p)
+	b.offset += n
+	return n, nil
+}
+
+func (b *Buffer) WriteAt(p []byte, offset int) (int, error) {
+	if offset+len(p) > len(b.buf) {
+		return 0, errors.Errorf("cannot write buffer of size %d at offset %d", len(p), offset)
+	}
+
+	n := copy(b.buf[offset:], p)
+	return n, nil
+}
+
+func (b *Buffer) WriteSliceAt(p []byte, offset int) (int, error) {
+	if offset+4+len(p) > len(b.buf) {
+		return 0, errors.Errorf("cannot write buffer of size %d at offset %d", len(p), offset)
+	}
+
+	binary.BigEndian.PutUint32(b.buf[offset:offset+4], uint32(len(p)))
+	n := copy(b.buf[offset+4:], p)
+	return n, nil
+}
+
+func (b *Buffer) ReadAt(n, offset int) ([]byte, error) {
+	if offset+n > len(b.buf) {
+		return nil, errors.Errorf("cannot %d bytes at offset %d", n, offset)
+	}
+
+	return b.buf[offset : offset+n], nil
+}
+
+// Reset would reset the buffer to be reused.
+func (b *Buffer) Reset() {
+	b.offset = 1
+}
+
+// Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
+// important to call Release, otherwise a memory leak can happen.
+func (b *Buffer) Release() error {
+	switch b.bufType {
+	case UseCalloc:
+		Free(b.buf)
+
+	case UseMmap:
+		fname := b.fd.Name()
+		if err := Munmap(b.buf); err != nil {
+			return errors.Wrapf(err, "while munmap file %s", fname)
+		}
+		if err := b.fd.Truncate(0); err != nil {
+			return errors.Wrapf(err, "while truncating file %s", fname)
+		}
+		if err := b.fd.Close(); err != nil {
+			return errors.Wrapf(err, "while closing file %s", fname)
+		}
+		if err := os.Remove(b.fd.Name()); err != nil {
+			return errors.Wrapf(err, "while deleting file %s", fname)
+		}
+	}
+	return nil
+}
+
 type LessFunc func(a, b []byte) bool
 type sortHelper struct {
 	offsets []int
@@ -248,9 +380,11 @@ func assert(b bool) {
 		log.Fatalf("Assertion failure")
 	}
 }
+
 func check(err error) {
 	assert(err == nil)
 }
+
 func check2(_ interface{}, err error) {
 	check(err)
 }
@@ -321,6 +455,7 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
 	b.SortSliceBetween(1, b.offset, less)
 }
+
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
 		return
@@ -364,65 +499,4 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 func rawSlice(buf []byte) []byte {
 	sz := binary.BigEndian.Uint32(buf)
 	return buf[:4+int(sz)]
-}
-
-// Slice would return the slice written at offset.
-func (b *Buffer) Slice(offset int) ([]byte, int) {
-	if offset >= b.offset {
-		return nil, 0
-	}
-
-	sz := binary.BigEndian.Uint32(b.buf[offset:])
-	start := offset + 4
-	next := start + int(sz)
-	res := b.buf[start:next]
-	if next >= b.offset {
-		next = 0
-	}
-	return res, next
-}
-
-func (b *Buffer) Data(offset int) []byte {
-	if offset > b.curSz {
-		panic("offset beyond current size")
-	}
-	return b.buf[offset:b.curSz]
-}
-
-// Write would write p bytes to the buffer.
-func (b *Buffer) Write(p []byte) (n int, err error) {
-	b.Grow(len(p))
-	n = copy(b.buf[b.offset:], p)
-	b.offset += n
-	return n, nil
-}
-
-// Reset would reset the buffer to be reused.
-func (b *Buffer) Reset() {
-	b.offset = 1
-}
-
-// Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
-// important to call Release, otherwise a memory leak can happen.
-func (b *Buffer) Release() error {
-	switch b.bufType {
-	case UseCalloc:
-		Free(b.buf)
-
-	case UseMmap:
-		fname := b.fd.Name()
-		if err := Munmap(b.buf); err != nil {
-			return errors.Wrapf(err, "while munmap file %s", fname)
-		}
-		if err := b.fd.Truncate(0); err != nil {
-			return errors.Wrapf(err, "while truncating file %s", fname)
-		}
-		if err := b.fd.Close(); err != nil {
-			return errors.Wrapf(err, "while closing file %s", fname)
-		}
-		if err := os.Remove(b.fd.Name()); err != nil {
-			return errors.Wrapf(err, "while deleting file %s", fname)
-		}
-	}
-	return nil
 }
