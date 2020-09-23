@@ -38,12 +38,13 @@ import (
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
-	buf     []byte
-	offset  int
-	curSz   int
-	maxSz   int
-	fd      *os.File
-	bufType BufferType
+	buf           []byte
+	offset        int
+	curSz         int
+	maxSz         int
+	fd            *os.File
+	bufType       BufferType
+	autoMmapAfter int
 }
 
 type BufferType int
@@ -76,13 +77,35 @@ func NewBuffer(sz int) *Buffer {
 	return buf
 }
 
+func (b *Buffer) doMmap(maxSz int) error {
+	curBuf := b.buf
+	fd, err := ioutil.TempFile("", "buffer")
+	if err != nil {
+		return err
+	}
+	if err := fd.Truncate(int64(b.curSz)); err != nil {
+		return errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), b.curSz)
+	}
+
+	buf, err := Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
+	if err != nil {
+		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
+	}
+	if len(curBuf) > 0 {
+		assert(b.offset == copy(buf, curBuf[:b.offset]))
+		Free(curBuf)
+	}
+	b.buf = buf
+	b.bufType = UseMmap
+	b.fd = fd
+	b.maxSz = maxSz
+	return nil
+}
+
 // NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
 // exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
 // used. Buffer can't be used without initialization via NewBuffer.
 func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
-	var buf []byte
-	var fd *os.File
-
 	if sz == 0 {
 		sz = smallBufferSize
 	}
@@ -90,38 +113,26 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 		maxSz = math.MaxInt32
 	}
 
+	b := &Buffer{
+		offset:  1,
+		curSz:   sz,
+		maxSz:   maxSz,
+		bufType: UseCalloc, // by default.
+	}
+
 	switch bufType {
 	case UseCalloc:
-		buf = Calloc(sz)
-
+		b.buf = Calloc(sz)
 	case UseMmap:
-		var err error
-		fd, err = ioutil.TempFile("", "buffer")
-		if err != nil {
+		if err := b.doMmap(maxSz); err != nil {
 			return nil, err
 		}
-		if err := fd.Truncate(int64(sz)); err != nil {
-			return nil, errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), sz)
-		}
-
-		buf, err = Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
-		if err != nil {
-			return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
-		}
-
 	default:
 		log.Fatalf("Invalid bufType: %q\n", bufType)
 	}
 
-	buf[0] = 0x00
-	return &Buffer{
-		buf:     buf,
-		offset:  1, // Always leave offset 0.
-		curSz:   sz,
-		maxSz:   maxSz,
-		fd:      fd,
-		bufType: bufType,
-	}, nil
+	b.buf[0] = 0x00
+	return b, nil
 }
 
 func (b *Buffer) IsEmpty() bool {
@@ -136,6 +147,12 @@ func (b *Buffer) Len() int {
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
 	return b.buf[1:b.offset]
+}
+
+const maxMmapSize = 64 << 30
+
+func (b *Buffer) AutoMmapAfter(size int) {
+	b.autoMmapAfter = size
 }
 
 // Grow would grow the buffer to have at least n more bytes. In case the buffer is at capacity, it
@@ -167,10 +184,16 @@ func (b *Buffer) Grow(n int) {
 
 	switch b.bufType {
 	case UseCalloc:
-		newBuf := Calloc(b.curSz)
-		copy(newBuf, b.buf[:b.offset])
-		Free(b.buf)
-		b.buf = newBuf
+		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
+			// This would do copy as well.
+			check(b.doMmap(maxMmapSize))
+
+		} else {
+			newBuf := Calloc(b.curSz)
+			copy(newBuf, b.buf[:b.offset])
+			Free(b.buf)
+			b.buf = newBuf
+		}
 	case UseMmap:
 		if err := b.fd.Truncate(int64(b.curSz)); err != nil {
 			log.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
