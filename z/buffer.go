@@ -77,7 +77,7 @@ func NewBuffer(sz int) *Buffer {
 	return buf
 }
 
-func (b *Buffer) doMmap(maxSz int) error {
+func (b *Buffer) doMmap() error {
 	curBuf := b.buf
 	fd, err := ioutil.TempFile("", "buffer")
 	if err != nil {
@@ -87,9 +87,9 @@ func (b *Buffer) doMmap(maxSz int) error {
 		return errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), b.curSz)
 	}
 
-	buf, err := Mmap(fd, true, int64(maxSz)) // Mmap up to max size.
+	buf, err := Mmap(fd, true, int64(b.maxSz)) // Mmap up to max size.
 	if err != nil {
-		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
+		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), b.maxSz)
 	}
 	if len(curBuf) > 0 {
 		assert(b.offset == copy(buf, curBuf[:b.offset]))
@@ -98,7 +98,6 @@ func (b *Buffer) doMmap(maxSz int) error {
 	b.buf = buf
 	b.bufType = UseMmap
 	b.fd = fd
-	b.maxSz = maxSz
 	return nil
 }
 
@@ -124,7 +123,7 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	case UseCalloc:
 		b.buf = Calloc(sz)
 	case UseMmap:
-		if err := b.doMmap(maxSz); err != nil {
+		if err := b.doMmap(); err != nil {
 			return nil, err
 		}
 	default:
@@ -148,8 +147,6 @@ func (b *Buffer) Len() int {
 func (b *Buffer) Bytes() []byte {
 	return b.buf[1:b.offset]
 }
-
-const maxMmapSize = 64 << 30
 
 func (b *Buffer) AutoMmapAfter(size int) {
 	b.autoMmapAfter = size
@@ -186,7 +183,7 @@ func (b *Buffer) Grow(n int) {
 	case UseCalloc:
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
 			// This would do copy as well.
-			check(b.doMmap(maxMmapSize))
+			check(b.doMmap())
 
 		} else {
 			newBuf := Calloc(b.curSz)
