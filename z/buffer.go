@@ -277,6 +277,12 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+func (b *Buffer) SliceAllocateOffset(sz int) ([]byte, int) {
+	b.Grow(4 + sz)
+	b.writeLen(sz)
+	return b.Allocate(sz), b.offset - sz - 4
+}
+
 // Slice would return the slice written at offset.
 func (b *Buffer) Slice(offset int) ([]byte, int) {
 	if offset >= b.offset {
