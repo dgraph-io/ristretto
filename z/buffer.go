@@ -140,7 +140,24 @@ func NewMmapFile(sz, maxSz, offset int, path string) (*Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := fd.Truncate(int64(sz)); err != nil {
+
+	// If the file already exists and its size is larger than sz, truncate the file to
+	// its existing size to avoid losing existing data. Otherwise truncate to the given
+	// size.
+	fi, err := fd.Stat()
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot stat file")
+	}
+	fileSize := fi.Size()
+	if fileSize > int64(maxSz) {
+		return nil, errors.Errorf("file size %d is already bigger than max size %d",
+			fileSize, maxSz)
+	}
+	truncateSize := int64(sz)
+	if fileSize > truncateSize {
+		truncateSize = fileSize
+	}
+	if err := fd.Truncate(truncateSize); err != nil {
 		return nil, errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), sz)
 	}
 
@@ -149,7 +166,11 @@ func NewMmapFile(sz, maxSz, offset int, path string) (*Buffer, error) {
 		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), maxSz)
 	}
 
-	buf[0] = 0x00
+	// If the file exists, also set the offset to the maximum of fileSize and offset.
+	if int(fileSize) > offset {
+		offset = int(fileSize)
+	}
+
 	return &Buffer{
 		buf:     buf,
 		offset:  offset,
