@@ -93,6 +93,36 @@ func TestBufferWrite(t *testing.T) {
 	}
 }
 
+func TestBufferAutoMmap(t *testing.T) {
+	buf := NewBuffer(1 << 20)
+	buf.AutoMmapAfter(64 << 20)
+
+	N := 128 << 10
+	var wb [1024]byte
+	for i := 0; i < N; i++ {
+		rand.Read(wb[:])
+		b := buf.SliceAllocate(len(wb))
+		copy(b, wb[:])
+	}
+	t.Logf("Buffer size: %d\n", buf.Len())
+
+	buf.SortSlice(func(l, r []byte) bool {
+		return bytes.Compare(l, r) < 0
+	})
+	t.Logf("sort done\n")
+
+	var count int
+	var last []byte
+	slice, next := []byte{}, 1
+	for next != 0 {
+		slice, next = buf.Slice(next)
+		require.True(t, bytes.Compare(slice, last) >= 0)
+		last = append(last[:0], slice...)
+		count++
+	}
+	require.Equal(t, N, count)
+}
+
 func TestBufferSimpleSort(t *testing.T) {
 	buf := NewBuffer(1 << 20)
 	for i := 0; i < 25600; i++ {
