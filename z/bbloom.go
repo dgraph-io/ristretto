@@ -132,8 +132,8 @@ func (bl *Bloom) AddIfNotHas(hash uint64) bool {
 }
 
 // TotalSize returns the total size of the bloom filter.
-func (bl *Bloom) TotalSize() uint64 {
-	return uint64(len(bl.bitset)*8) + 5*8
+func (bl *Bloom) TotalSize() int {
+	return len(bl.bitset)*8 + 5*8
 }
 
 // Size makes Bloom filter with as bitset of size sz.
