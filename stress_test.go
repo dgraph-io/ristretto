@@ -15,10 +15,11 @@ import (
 
 func TestStressSetGet(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 1000,
-		MaxCost:     100,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        1000,
+		MaxCost:            100,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 

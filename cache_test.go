@@ -19,9 +19,10 @@ var wait = time.Millisecond * 10
 func TestCacheKeyToHash(t *testing.T) {
 	keyToHashCount := 0
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        10,
+		MaxCost:            1000,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
 		KeyToHash: func(key interface{}) (uint64, uint64) {
 			keyToHashCount++
 			return z.KeyToHash(key)
@@ -150,9 +151,10 @@ func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
@@ -249,10 +251,11 @@ func TestCacheProcessItems(t *testing.T) {
 
 func TestCacheGet(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -299,10 +302,11 @@ func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Durat
 
 func TestCacheSet(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -333,12 +337,30 @@ func TestCacheSet(t *testing.T) {
 	require.False(t, c.Set(1, 1, 1))
 }
 
-func TestRecacheWithTTL(t *testing.T) {
+func TestCacheInternalCost(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	// Get should return false because the cache's cost is too small to store the item
+	// when accounting for the internal cost.
+	c.SetWithTTL(1, 1, 1, 0)
+	time.Sleep(wait)
+	_, ok := c.Get(1)
+	require.False(t, ok)
+}
+
+func TestRecacheWithTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 
 	require.NoError(t, err)
@@ -378,10 +400,11 @@ func TestCacheSetWithTTL(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
@@ -451,9 +474,10 @@ func TestCacheDel(t *testing.T) {
 
 func TestCacheDelWithTTL(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
 	})
 	require.NoError(t, err)
 	retrySet(t, c, 3, 1, 1, 10*time.Second)
@@ -468,10 +492,11 @@ func TestCacheDelWithTTL(t *testing.T) {
 
 func TestCacheClear(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -493,10 +518,11 @@ func TestCacheClear(t *testing.T) {
 
 func TestCacheMetrics(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
