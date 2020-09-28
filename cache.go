@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -36,6 +37,8 @@ var (
 )
 
 type itemCallback func(*Item)
+
+const itemSize = int64(unsafe.Sizeof(storeItem{}))
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -65,6 +68,9 @@ type Cache struct {
 	stop chan struct{}
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
+	// ignoreInternalCost dictates whether to ignore the cost of internally storing
+	// the item in the cost calculation.
+	ignoreInternalCost bool
 	// cleanupTicker is used to periodically check for entries whose TTL has passed.
 	cleanupTicker *time.Ticker
 	// Metrics contains a running log of important statistics like hits, misses,
@@ -119,6 +125,11 @@ type Config struct {
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
 	Cost func(value interface{}) int64
+	// IgnoreInternalCost set to true indicates to the cache that the cost of
+	// internally storing the value should be ignored. This is useful when the
+	// cost passed to set is not using bytes as units. Keep in mind that setting
+	// this to true will increase the memory usage.
+	IgnoreInternalCost bool
 }
 
 type itemFlag byte
@@ -136,7 +147,7 @@ type Item struct {
 	Conflict   uint64
 	Value      interface{}
 	Cost       int64
-	Expiration time.Time
+	Expiration int64
 	wg         *sync.WaitGroup
 }
 
@@ -152,14 +163,15 @@ func NewCache(config *Config) (*Cache, error) {
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:         newStore(),
-		policy:        policy,
-		getBuf:        newRingBuffer(policy, config.BufferItems),
-		setBuf:        make(chan *Item, setBufSize),
-		keyToHash:     config.KeyToHash,
-		stop:          make(chan struct{}),
-		cost:          config.Cost,
-		cleanupTicker: time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+		store:              newStore(),
+		policy:             policy,
+		getBuf:             newRingBuffer(policy, config.BufferItems),
+		setBuf:             make(chan *Item, setBufSize),
+		keyToHash:          config.KeyToHash,
+		stop:               make(chan struct{}),
+		cost:               config.Cost,
+		ignoreInternalCost: config.IgnoreInternalCost,
+		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
 	}
 	cache.onExit = func(val interface{}) {
 		if config.OnExit != nil && val != nil {
@@ -241,7 +253,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		return false
 	}
 
-	var expiration time.Time
+	var expiration int64
 	switch {
 	case ttl == 0:
 		// No expiration.
@@ -250,7 +262,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		// Treat this a a no-op.
 		return false
 	default:
-		expiration = time.Now().Add(ttl)
+		expiration = time.Now().Add(ttl).Unix()
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
@@ -393,6 +405,11 @@ func (c *Cache) processItems() {
 			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
 				i.Cost = c.cost(i.Value)
 			}
+			if !c.ignoreInternalCost {
+				// Add the cost of internally storing the object.
+				i.Cost += itemSize
+			}
+
 			switch i.flag {
 			case itemNew:
 				victims, added := c.policy.Add(i.Key, i.Cost)
