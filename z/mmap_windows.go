@@ -89,3 +89,8 @@ func madvise(b []byte, readahead bool) error {
 	// Do Nothing. We don’t care about this setting on Windows
 	return nil
 }
+
+func msync(b []byte) error {
+	// TODO: Figure out how to do msync on Windows.
+	return nil
+}

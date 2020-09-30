@@ -38,3 +38,7 @@ func munmap(b []byte) error {
 func madvise(b []byte, readahead bool) error {
 	return syscall.EPLAN9
 }
+
+func msync(b []byte) error {
+	return syscall.EPLAN9
+}

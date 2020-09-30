@@ -37,3 +37,8 @@ func Munmap(b []byte) error {
 func Madvise(b []byte, readahead bool) error {
 	return madvise(b, readahead)
 }
+
+// Msync would call sync on the mmapped data.
+func Msync(b []byte) error {
+	return msync(b)
+}

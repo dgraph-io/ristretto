@@ -49,3 +49,7 @@ func madvise(b []byte, readahead bool) error {
 	}
 	return unix.Madvise(b, flags)
 }
+
+func msync(b []byte) error {
+	return unix.Msync(b, unix.MS_SYNC)
+}
