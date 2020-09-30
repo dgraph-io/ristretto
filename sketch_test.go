@@ -58,6 +58,15 @@ func TestSketchClear(t *testing.T) {
 	}
 }
 
+func TestNext2Power(t *testing.T) {
+	sz := 12 << 30
+	szf := float64(sz) * 0.01
+	val := int64(szf)
+	t.Logf("szf = %.2f val = %d\n", szf, val)
+	pow := next2Power(val)
+	t.Logf("pow = %d. mult 4 = %d\n", pow, pow*4)
+}
+
 func BenchmarkSketchIncrement(b *testing.B) {
 	s := newCmSketch(16)
 	b.SetBytes(1)
