@@ -131,6 +131,13 @@ func (bl *Bloom) AddIfNotHas(hash uint64) bool {
 	return true
 }
 
+// TotalSize returns the total size of the bloom filter.
+func (bl *Bloom) TotalSize() int {
+	// The bl struct has 5 members and each one is 8 byte. The bitset is a
+	// uint64 byte slice.
+	return len(bl.bitset)*8 + 5*8
+}
+
 // Size makes Bloom filter with as bitset of size sz.
 func (bl *Bloom) Size(sz uint64) {
 	bl.bitset = make([]uint64, sz>>6)
