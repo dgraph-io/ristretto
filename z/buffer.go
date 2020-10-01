@@ -404,6 +404,17 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 	return res, next
 }
 
+// SliceOffsets is an expensive function. Use sparingly.
+func (b *Buffer) SliceOffsets() []int {
+	next := 1
+	var offsets []int
+	for next != 0 {
+		offsets = append(offsets, next)
+		_, next = b.Slice(next)
+	}
+	return offsets
+}
+
 func (b *Buffer) Data(offset int) []byte {
 	if offset > b.curSz {
 		panic("offset beyond current size")
