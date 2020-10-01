@@ -97,6 +97,7 @@ func TestUpdateMaxCost(t *testing.T) {
 		BufferItems: 64,
 	})
 	require.NoError(t, err)
+	require.Equal(t, int64(10), c.MaxCost())
 	if c.Set(1, 1, 1) {
 		time.Sleep(wait)
 		_, ok := c.Get(1)
@@ -107,6 +108,7 @@ func TestUpdateMaxCost(t *testing.T) {
 
 	// Update the max cost of the cache and retry.
 	c.UpdateMaxCost(1000)
+	require.Equal(t, int64(1000), c.MaxCost())
 	if c.Set(1, 1, 1) {
 		time.Sleep(wait)
 		val, ok := c.Get(1)

@@ -365,6 +365,14 @@ loop:
 	go c.processItems()
 }
 
+// MaxCost returns the max cost of the cache.
+func (c *Cache) MaxCost() int64 {
+	if c == nil {
+		return 0
+	}
+	return c.policy.MaxCost()
+}
+
 // UpdateMaxCost updates the maxCost of an existing cache.
 func (c *Cache) UpdateMaxCost(maxCost int64) {
 	if c == nil {

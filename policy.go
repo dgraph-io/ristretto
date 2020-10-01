@@ -56,6 +56,8 @@ type policy interface {
 	CollectMetrics(*Metrics)
 	// Clear zeroes out all counters and clears hashmaps.
 	Clear()
+	// MaxCost returns the current max cost of the cache policy.
+	MaxCost() int64
 	// UpdateMaxCost updates the max cost of the cache policy.
 	UpdateMaxCost(int64)
 }
@@ -250,6 +252,13 @@ func (p *defaultPolicy) Close() {
 	close(p.itemsCh)
 }
 
+func (p *defaultPolicy) MaxCost() int64 {
+	if p == nil || p.evict == nil {
+		return 0
+	}
+	return p.evict.getMaxCost()
+}
+
 func (p *defaultPolicy) UpdateMaxCost(maxCost int64) {
 	if p == nil || p.evict == nil {
 		return
@@ -278,7 +287,6 @@ func (p *sampledLFU) getMaxCost() int64 {
 
 func (p *sampledLFU) updateMaxCost(maxCost int64) {
 	atomic.StoreInt64(&p.maxCost, maxCost)
-	return
 }
 
 func (p *sampledLFU) roomLeft(cost int64) int64 {
