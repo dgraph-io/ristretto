@@ -125,3 +125,12 @@ func (lc *Closer) SignalAndWait() {
 	lc.Signal()
 	lc.Wait()
 }
+
+// ZeroOut zeroes out all the bytes in the range [start, end).
+func ZeroOut(dst []byte, start, end int) {
+	buf := dst[start:end]
+	buf[0] = 0x00
+	for i := 1; i < len(buf); i *= 2 {
+		copy(buf[i:], buf[:i])
+	}
+}
