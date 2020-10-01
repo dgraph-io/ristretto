@@ -365,6 +365,14 @@ loop:
 	go c.processItems()
 }
 
+// UpdateMaxCost updates the maxCost of an existing cache.
+func (c *Cache) UpdateMaxCost(maxCost int64) {
+	if c == nil {
+		return
+	}
+	c.policy.UpdateMaxCost(maxCost)
+}
+
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
 	startTs := make(map[uint64]time.Time)

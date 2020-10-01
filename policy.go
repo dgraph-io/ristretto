@@ -19,6 +19,7 @@ package ristretto
 import (
 	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -55,6 +56,8 @@ type policy interface {
 	CollectMetrics(*Metrics)
 	// Clear zeroes out all counters and clears hashmaps.
 	Clear()
+	// UpdateMaxCost updates the max cost of the cache policy.
+	UpdateMaxCost(int64)
 }
 
 func newPolicy(numCounters, maxCost int64) policy {
@@ -126,7 +129,7 @@ func (p *defaultPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	defer p.Unlock()
 
 	// Cannot add an item bigger than entire cache.
-	if cost > p.evict.maxCost {
+	if cost > p.evict.getMaxCost() {
 		return nil, false
 	}
 
@@ -212,7 +215,7 @@ func (p *defaultPolicy) Del(key uint64) {
 
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
-	capacity := int64(p.evict.maxCost - p.evict.used)
+	capacity := int64(p.evict.getMaxCost() - p.evict.used)
 	p.Unlock()
 	return capacity
 }
@@ -247,6 +250,13 @@ func (p *defaultPolicy) Close() {
 	close(p.itemsCh)
 }
 
+func (p *defaultPolicy) UpdateMaxCost(maxCost int64) {
+	if p == nil || p.evict == nil {
+		return
+	}
+	p.evict.updateMaxCost(maxCost)
+}
+
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
 	keyCosts map[uint64]int64
@@ -262,8 +272,17 @@ func newSampledLFU(maxCost int64) *sampledLFU {
 	}
 }
 
+func (p *sampledLFU) getMaxCost() int64 {
+	return atomic.LoadInt64(&p.maxCost)
+}
+
+func (p *sampledLFU) updateMaxCost(maxCost int64) {
+	atomic.StoreInt64(&p.maxCost, maxCost)
+	return
+}
+
 func (p *sampledLFU) roomLeft(cost int64) int64 {
-	return p.maxCost - (p.used + cost)
+	return p.getMaxCost() - (p.used + cost)
 }
 
 func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
