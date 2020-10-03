@@ -117,6 +117,7 @@ func (histogram *HistogramData) String() string {
 	b.WriteString(fmt.Sprintf("Min value: %d \n", histogram.Min))
 	b.WriteString(fmt.Sprintf("Max value: %d \n", histogram.Max))
 	b.WriteString(fmt.Sprintf("Mean: %.2f \n", histogram.Mean()))
+	b.WriteString(fmt.Sprintf("Count: %d \n", histogram.Count))
 
 	numBounds := len(histogram.Bounds)
 	for index, count := range histogram.CountPerBucket {
