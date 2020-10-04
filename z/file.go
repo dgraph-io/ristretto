@@ -19,6 +19,46 @@ type MmapFile struct {
 
 var NewFile = errors.New("Create a new file")
 
+func OpenMmapFileUsing(fd *os.File, maxSz int, writable bool) (*MmapFile, error) {
+	filename := fd.Name()
+	fi, err := fd.Stat()
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot stat file: %s", filename)
+	}
+
+	var rerr error
+	fileSize := fi.Size()
+	if maxSz > 0 {
+		// We have a legit maxSz provided.
+		if fileSize == 0 {
+			// If file is empty, truncate it to maxSz.
+			if err := fd.Truncate(int64(maxSz)); err != nil {
+				return nil, errors.Wrapf(err, "error while truncation")
+			}
+			fileSize = int64(maxSz)
+			rerr = NewFile
+
+		} else if fileSize > int64(maxSz) {
+			return nil, errors.Errorf("file size %d greater than max size %d",
+				fileSize, maxSz)
+		}
+	}
+
+	buf, err := Mmap(fd, writable, fileSize) // Mmap up to file size.
+	if err != nil {
+		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), fileSize)
+	}
+
+	if fileSize == 0 {
+		dir, _ := path.Split(filename)
+		go SyncDir(dir)
+	}
+	return &MmapFile{
+		Data: buf,
+		Fd:   fd,
+	}, rerr
+}
+
 // OpenMmapFile opens an existing file or creates a new file. If the file is
 // created, it would truncate the file to maxSz. In both cases, it would mmap
 // the file to maxSz and returned it. In case the file is created, z.NewFile is
@@ -28,42 +68,11 @@ func OpenMmapFile(filename string, flag int, maxSz int) (*MmapFile, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to open: %s", filename)
 	}
-
-	fi, err := fd.Stat()
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot stat file: %s", filename)
+	writable := true
+	if flag&os.O_RDONLY > 0 {
+		writable = false
 	}
-
-	fileSize := fi.Size()
-
-	// If file is empty, truncate it to maxSz.
-	if fileSize == 0 {
-		if err := fd.Truncate(int64(maxSz)); err != nil {
-			return nil, errors.Wrapf(err, "error while truncation")
-		}
-
-	} else if fileSize > int64(maxSz) {
-		return nil, errors.Errorf("file size %d does not match zero or max size %d",
-			fileSize, maxSz)
-	} else {
-		maxSz = int(fileSize)
-	}
-
-	buf, err := Mmap(fd, true, int64(maxSz)) // Mmap up to file size.
-	if err != nil {
-		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), fileSize)
-	}
-
-	err = nil
-	if fileSize == 0 {
-		err = NewFile
-		dir, _ := path.Split(filename)
-		go SyncDir(dir)
-	}
-	return &MmapFile{
-		Data: buf,
-		Fd:   fd,
-	}, err
+	return OpenMmapFileUsing(fd, maxSz, writable)
 }
 
 type mmapReader struct {
@@ -90,6 +99,15 @@ func (m *MmapFile) NewReader(offset int) io.Reader {
 	}
 }
 
+// Bytes returns data starting from offset off of size sz. If there's not enough data, it would
+// return nil slice and io.EOF.
+func (m *MmapFile) Bytes(off, sz int) ([]byte, error) {
+	if len(m.Data[off:]) < sz {
+		return nil, io.EOF
+	}
+	return m.Data[off : off+sz], nil
+}
+
 // Slice returns the slice at the given offset.
 func (m *MmapFile) Slice(offset int) []byte {
 	sz := binary.BigEndian.Uint32(m.Data[offset:])
@@ -113,6 +131,12 @@ func (m *MmapFile) Sync() error {
 }
 
 func (m *MmapFile) Delete() error {
+	// Badger can set the m.Data directly, without setting any Fd. In that case, this should be a
+	// NOOP.
+	if m.Fd == nil {
+		return nil
+	}
+
 	if err := Munmap(m.Data); err != nil {
 		return fmt.Errorf("while munmap file: %s, error: %v\n", m.Fd.Name(), err)
 	}
@@ -138,7 +162,14 @@ func (m *MmapFile) Truncate(maxSz int64) error {
 	return err
 }
 
+// Close would close the file. It would also truncate the file if maxSz >= 0.
 func (m *MmapFile) Close(maxSz int64) error {
+	// Badger can set the m.Data directly, without setting any Fd. In that case, this should be a
+	// NOOP.
+	if m.Fd == nil {
+		return nil
+	}
+
 	if err := Munmap(m.Data); err != nil {
 		return fmt.Errorf("while munmap file: %s, error: %v\n", m.Fd.Name(), err)
 	}
