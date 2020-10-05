@@ -63,11 +63,12 @@ func newPolicy(numCounters, maxCost int64) policy {
 
 type defaultPolicy struct {
 	sync.Mutex
-	admit   *tinyLFU
-	evict   *sampledLFU
-	itemsCh chan []uint64
-	stop    chan struct{}
-	metrics *Metrics
+	admit    *tinyLFU
+	evict    *sampledLFU
+	itemsCh  chan []uint64
+	stop     chan struct{}
+	isClosed bool
+	metrics  *Metrics
 }
 
 func newDefaultPolicy(numCounters, maxCost int64) *defaultPolicy {
@@ -105,9 +106,14 @@ func (p *defaultPolicy) processItems() {
 }
 
 func (p *defaultPolicy) Push(keys []uint64) bool {
+	if p.isClosed {
+		return false
+	}
+
 	if len(keys) == 0 {
 		return true
 	}
+
 	select {
 	case p.itemsCh <- keys:
 		p.metrics.add(keepGets, keys[0], uint64(len(keys)))
@@ -241,10 +247,15 @@ func (p *defaultPolicy) Clear() {
 }
 
 func (p *defaultPolicy) Close() {
+	if p.isClosed {
+		return
+	}
+
 	// Block until the p.processItems goroutine returns.
 	p.stop <- struct{}{}
 	close(p.stop)
 	close(p.itemsCh)
+	p.isClosed = true
 }
 
 // sampledLFU is an eviction helper storing key-cost pairs.
