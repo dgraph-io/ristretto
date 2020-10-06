@@ -141,6 +141,18 @@ func TestPolicyClose(t *testing.T) {
 	p.itemsCh <- []uint64{1}
 }
 
+func TestPushAfterClose(t *testing.T) {
+	p := newDefaultPolicy(100, 10)
+	p.Close()
+	require.False(t, p.Push([]uint64{1, 2}))
+}
+
+func TestAddAfterClose(t *testing.T) {
+	p := newDefaultPolicy(100, 10)
+	p.Close()
+	p.Add(1, 1)
+}
+
 func TestSampledLFUAdd(t *testing.T) {
 	e := newSampledLFU(4)
 	e.add(1, 1)
