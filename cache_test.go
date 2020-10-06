@@ -175,6 +175,47 @@ func TestMultipleClose(t *testing.T) {
 	c.Close()
 }
 
+func TestSetAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	c.Close()
+	require.False(t, c.Set(1, 1, 1))
+}
+
+func TestClearAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	c.Close()
+	c.Clear()
+}
+
+func TestGetAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	require.True(t, c.Set(1, 1, 1))
+	c.Close()
+
+	_, ok := c.Get(1)
+	require.False(t, ok)
+}
+
+func TestDelAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	require.True(t, c.Set(1, 1, 1))
+	c.Close()
+
+	c.Del(1)
+}
+
 func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
@@ -816,4 +857,13 @@ func TestRistrettoCallocTTL(t *testing.T) {
 	wg.Wait()
 	time.Sleep(5 * time.Second)
 	require.Zero(t, z.NumAllocBytes())
+}
+
+func newTestCache() (*Cache, error) {
+	return NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
 }

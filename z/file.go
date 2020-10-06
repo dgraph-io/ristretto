@@ -44,6 +44,7 @@ func OpenMmapFileUsing(fd *os.File, maxSz int, writable bool) (*MmapFile, error)
 		}
 	}
 
+	// fmt.Printf("Mmaping file: %s with writable: %v filesize: %d\n", fd.Name(), writable, fileSize)
 	buf, err := Mmap(fd, writable, fileSize) // Mmap up to file size.
 	if err != nil {
 		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), fileSize)
@@ -64,12 +65,13 @@ func OpenMmapFileUsing(fd *os.File, maxSz int, writable bool) (*MmapFile, error)
 // the file to maxSz and returned it. In case the file is created, z.NewFile is
 // returned.
 func OpenMmapFile(filename string, flag int, maxSz int) (*MmapFile, error) {
+	// fmt.Printf("opening file %s with flag: %v\n", filename, flag)
 	fd, err := os.OpenFile(filename, flag, 0666)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to open: %s", filename)
 	}
 	writable := true
-	if flag&os.O_RDONLY > 0 {
+	if flag == os.O_RDONLY {
 		writable = false
 	}
 	return OpenMmapFileUsing(fd, maxSz, writable)
