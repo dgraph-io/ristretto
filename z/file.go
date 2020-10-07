@@ -129,6 +129,9 @@ func (m *MmapFile) AllocateSlice(sz, offset int) ([]byte, int) {
 }
 
 func (m *MmapFile) Sync() error {
+	if m == nil {
+		return nil
+	}
 	return Msync(m.Data)
 }
 
