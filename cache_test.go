@@ -90,6 +90,32 @@ func TestCacheMaxCost(t *testing.T) {
 	}
 }
 
+func TestUpdateMaxCost(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 10,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(10), c.MaxCost())
+	require.True(t, c.Set(1, 1, 1))
+	time.Sleep(wait)
+	_, ok := c.Get(1)
+	// Set is rejected because the cost of the entry is too high
+	// when accounting for the internal cost of storing the entry.
+	require.False(t, ok)
+
+	// Update the max cost of the cache and retry.
+	c.UpdateMaxCost(1000)
+	require.Equal(t, int64(1000), c.MaxCost())
+	require.True(t, c.Set(1, 1, 1))
+	time.Sleep(wait)
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.NotNil(t, val)
+	c.Del(1)
+}
+
 func TestNewCache(t *testing.T) {
 	_, err := NewCache(&Config{
 		NumCounters: 0,
