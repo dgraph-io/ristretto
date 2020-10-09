@@ -156,6 +156,9 @@ func (m *MmapFile) Delete() error {
 // others, we could directly just truncate the underlying file, but in Windows,
 // we can't do that. So, unmap first, then truncate, then re-map.
 func (m *MmapFile) Truncate(maxSz int64) error {
+	if err := m.Sync(); err != nil {
+		return fmt.Errorf("while sync file: %s, error: %v\n", m.Fd.Name(), err)
+	}
 	if err := Munmap(m.Data); err != nil {
 		return fmt.Errorf("while munmap file: %s, error: %v\n", m.Fd.Name(), err)
 	}
@@ -174,7 +177,9 @@ func (m *MmapFile) Close(maxSz int64) error {
 	if m.Fd == nil {
 		return nil
 	}
-
+	if err := m.Sync(); err != nil {
+		return fmt.Errorf("while sync file: %s, error: %v\n", m.Fd.Name(), err)
+	}
 	if err := Munmap(m.Data); err != nil {
 		return fmt.Errorf("while munmap file: %s, error: %v\n", m.Fd.Name(), err)
 	}
