@@ -129,6 +129,12 @@ func (a *Allocator) AllocateAligned(sz int) []byte {
 	return out[start : start+sz]
 }
 
+func (a *Allocator) Copy(buf []byte) []byte {
+	out := a.Allocate(len(buf))
+	copy(out, buf)
+	return out
+}
+
 // Allocate would allocate a byte slice of length sz. It is safe to use this memory to unsafe cast
 // to Go structs.
 func (a *Allocator) Allocate(sz int) []byte {
