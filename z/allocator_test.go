@@ -18,6 +18,7 @@ package z
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -30,4 +31,22 @@ func TestAllocate(t *testing.T) {
 	require.Equal(t, 1<<20, len(a.Allocate(1<<20)))
 	require.Equal(t, 256<<20, len(a.Allocate(256<<20)))
 	require.Panics(t, func() { a.Allocate(1 << 30) })
+}
+
+func TestAllocateAligned(t *testing.T) {
+	a := NewAllocator(1024)
+	defer a.Release()
+
+	a.Allocate(1)
+	out := a.Allocate(1)
+	ptr := uintptr(unsafe.Pointer(&out[0]))
+	require.True(t, ptr%8 == 1)
+
+	out = a.AllocateAligned(5)
+	ptr = uintptr(unsafe.Pointer(&out[0]))
+	require.True(t, ptr%8 == 0)
+
+	out = a.AllocateAligned(3)
+	ptr = uintptr(unsafe.Pointer(&out[0]))
+	require.True(t, ptr%8 == 0)
 }

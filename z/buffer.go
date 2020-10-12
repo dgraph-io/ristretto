@@ -232,6 +232,22 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+func (b *Buffer) WriteSlice(slice []byte) {
+	dst := b.SliceAllocate(len(slice))
+	copy(dst, slice)
+}
+
+func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
+	slice, next := []byte{}, 1
+	for next != 0 {
+		slice, next = b.Slice(next)
+		if err := f(slice); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type LessFunc func(a, b []byte) bool
 type sortHelper struct {
 	offsets []int

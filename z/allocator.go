@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/dustin/go-humanize"
 )
@@ -115,6 +116,23 @@ const maxAlloc = 1 << 30
 
 func (a *Allocator) MaxAlloc() int {
 	return maxAlloc
+}
+
+const nodeAlign = int(unsafe.Sizeof(uint64(0))) - 1
+
+func (a *Allocator) AllocateAligned(sz int) []byte {
+	tsz := sz + nodeAlign
+	out := a.Allocate(tsz)
+	aligned := (a.curIdx - tsz + nodeAlign) & ^nodeAlign
+
+	start := tsz - (a.curIdx - aligned)
+	return out[start : start+sz]
+}
+
+func (a *Allocator) Copy(buf []byte) []byte {
+	out := a.Allocate(len(buf))
+	copy(out, buf)
+	return out
 }
 
 // Allocate would allocate a byte slice of length sz. It is safe to use this memory to unsafe cast
