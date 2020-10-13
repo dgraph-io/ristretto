@@ -149,6 +149,9 @@ func (a *Allocator) Copy(buf []byte) []byte {
 // Allocate would allocate a byte slice of length sz. It is safe to use this memory to unsafe cast
 // to Go structs.
 func (a *Allocator) Allocate(sz int) []byte {
+	if a == nil {
+		return make([]byte, sz)
+	}
 	if len(a.buffers) == 0 {
 		buf := Calloc(a.pageSize)
 		a.buffers = append(a.buffers, buf)
