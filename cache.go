@@ -323,6 +323,8 @@ func (c *Cache) Close() {
 	if c == nil || c.isClosed {
 		return
 	}
+	c.Clear()
+
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
 	close(c.stop)

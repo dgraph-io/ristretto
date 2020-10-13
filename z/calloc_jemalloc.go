@@ -13,6 +13,9 @@ package z
 */
 import "C"
 import (
+	"fmt"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -34,6 +37,17 @@ func throw(s string)
 // JE_MALLOC_CONF="background_thread:true,metadata_thp:auto"
 //
 // Compile Go program with `go build -tags=jemalloc` to enable this.
+
+type dalloc struct {
+	pc uintptr
+	no int
+	sz int
+}
+
+// Enabled via 'leak' build flag.
+var dallocsMu sync.Mutex
+var dallocs map[unsafe.Pointer]*dalloc
+
 func Calloc(n int) []byte {
 	if n == 0 {
 		return make([]byte, 0)
@@ -58,9 +72,24 @@ func Calloc(n int) []byte {
 		// it cannot allocate memory.
 		throw("out of memory")
 	}
+	uptr := unsafe.Pointer(ptr)
+
+	if dallocs != nil {
+		// If leak detection is enabled.
+		pc, _, l, ok := runtime.Caller(1)
+		if ok {
+			dallocsMu.Lock()
+			dallocs[uptr] = &dalloc{
+				pc: pc,
+				no: l,
+				sz: n,
+			}
+			dallocsMu.Unlock()
+		}
+	}
 	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
-	return (*[MaxArrayLen]byte)(unsafe.Pointer(ptr))[:n:n]
+	return (*[MaxArrayLen]byte)(uptr)[:n:n]
 }
 
 // CallocNoRef does the exact same thing as Calloc with jemalloc enabled.
@@ -71,12 +100,34 @@ func CallocNoRef(n int) []byte {
 // Free frees the specified slice.
 func Free(b []byte) {
 	if sz := cap(b); sz != 0 {
-		if len(b) == 0 {
-			b = b[:cap(b)]
-		}
+		b = b[:cap(b)]
 		ptr := unsafe.Pointer(&b[0])
 		C.je_free(ptr)
 		atomic.AddInt64(&numBytes, -int64(sz))
+
+		if dallocs != nil {
+			// If leak detection is enabled.
+			dallocsMu.Lock()
+			delete(dallocs, ptr)
+			dallocsMu.Unlock()
+		}
+	}
+}
+
+func PrintLeaks() {
+	if dallocs == nil {
+		fmt.Println("Leak detection disabled. Enable with 'leak' build flag.")
+		return
+	}
+	dallocsMu.Lock()
+	defer dallocsMu.Unlock()
+	if len(dallocs) == 0 {
+		fmt.Println("NO leaks found.")
+		return
+	}
+	for _, da := range dallocs {
+		pname := runtime.FuncForPC(da.pc).Name()
+		fmt.Printf("LEAK: %d at func: %s %d\n", da.sz, pname, da.no)
 	}
 }
 

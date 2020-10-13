@@ -75,7 +75,7 @@ func PrintAllocators() {
 	var total uint64
 	for _, ac := range allocs {
 		tags[ac.Tag]++
-		total += ac.Size()
+		total += ac.Allocated()
 	}
 	for tag, count := range tags {
 		fmt.Printf("Allocator Tag: %s Count: %d\n", tag, count)
@@ -96,6 +96,14 @@ func AllocatorFrom(ref uint64) *Allocator {
 // Size returns the size of the allocations so far.
 func (a *Allocator) Size() uint64 {
 	return a.size
+}
+
+func (a *Allocator) Allocated() uint64 {
+	var alloc int
+	for _, b := range a.buffers {
+		alloc += cap(b)
+	}
+	return uint64(alloc)
 }
 
 // Release would release the memory back. Remember to make this call to avoid memory leaks.
@@ -130,6 +138,9 @@ func (a *Allocator) AllocateAligned(sz int) []byte {
 }
 
 func (a *Allocator) Copy(buf []byte) []byte {
+	if a == nil {
+		return append([]byte{}, buf...)
+	}
 	out := a.Allocate(len(buf))
 	copy(out, buf)
 	return out
