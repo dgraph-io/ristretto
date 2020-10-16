@@ -104,7 +104,7 @@ func TestBufferAutoMmap(t *testing.T) {
 		b := buf.SliceAllocate(len(wb))
 		copy(b, wb[:])
 	}
-	t.Logf("Buffer size: %d\n", buf.Len())
+	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
 
 	buf.SortSlice(func(l, r []byte) bool {
 		return bytes.Compare(l, r) < 0
