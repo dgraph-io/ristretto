@@ -23,15 +23,16 @@ func NewTree(mf *MmapFile, numRanges int) *Tree {
 		nextPage: 1,
 	}
 	t.newNode(0)
-	if numRanges > 0 {
-		jump := uint64(math.MaxUint64) / uint64(numRanges)
-		fmt.Printf("jump = %d\n", jump)
-		start := jump
-		for i := 0; i < numRanges; i++ {
-			t.Set(start, 0)
-			start += jump
-		}
-	}
+	t.Set(math.MaxUint64-1, 0)
+	// if numRanges > 0 {
+	// 	jump := uint64(math.MaxUint64) / uint64(numRanges)
+	// 	fmt.Printf("jump = %d\n", jump)
+	// 	start := jump
+	// 	for i := 0; i < numRanges; i++ {
+	// 		t.Set(start, 0)
+	// 		start += jump
+	// 	}
+	// }
 	return t
 }
 
@@ -42,7 +43,7 @@ func (t *Tree) newNode(bit uint64) node {
 	ZeroOut(n, 0, len(n))
 	n.setBit(bitUsed | bit)
 	n.setAt(keyOffset(maxKeys), t.nextPage-1)
-	fmt.Printf("Created page of id: %d at offset: %d\n", n.pageId(), offset)
+	// fmt.Printf("Created page of id: %d at offset: %d\n", n.pageId(), offset)
 	return n
 }
 func (t *Tree) node(pid uint64) node {
@@ -54,6 +55,9 @@ func (t *Tree) node(pid uint64) node {
 }
 
 func (t *Tree) Set(k, v uint64) {
+	if k == math.MaxUint64 {
+		panic("Does not support setting MaxUint64")
+	}
 	root := t.node(1)
 	t.set(root, k, v)
 	if root.isFull() {
@@ -105,9 +109,11 @@ func (t *Tree) set(n node, k, v uint64) {
 	if idx >= maxKeys {
 		// We can just upgrade the key at maxKeys-1, so all key-values under k
 		// would get stored in the same child.
+		panic("this shouldn't happen")
 		n.setAt(keyOffset(maxKeys-1), k)
 		idx = maxKeys - 1
 	}
+	// fmt.Printf("found key: %d for inserting %d for pageid: %d\n", n.key(idx), k, n.pageId())
 	// If no key at idx.
 	if n.key(idx) == 0 {
 		n.setAt(keyOffset(idx), k)
@@ -118,15 +124,22 @@ func (t *Tree) set(n node, k, v uint64) {
 		n.setAt(valOffset(idx), child.pageId())
 		fmt.Printf("child is nil. Created child with id: %d\n", child.pageId())
 	}
+	fmt.Printf("setting %d at child: %d\n", k, child.pageId())
 	t.set(child, k, v)
 
 	if child.isFull() {
 		// Split child.
+		fmt.Println("Before")
+		n.print(0)
+		fmt.Printf("Child %d is full. Splitting\n", child.pageId())
 		nn := t.split(child)
 
 		// Set children.
 		n.set(child.maxKey(), child.pageId())
 		n.set(nn.maxKey(), nn.pageId())
+		n.print(0)
+		child.print(n.pageId())
+		nn.print(n.pageId())
 	}
 }
 
@@ -254,10 +267,10 @@ func (n node) print(parentId uint64) {
 			break
 		}
 	}
-	if len(keys) > 16 {
-		copy(keys[8:], keys[len(keys)-8:])
-		keys[7] = "..."
-		keys = keys[:16]
+	if len(keys) > 8 {
+		copy(keys[4:], keys[len(keys)-4:])
+		keys[3] = "..."
+		keys = keys[:8]
 	}
 	idx := n.search(math.MaxUint64)
 	numKeys := idx
