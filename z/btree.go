@@ -2,8 +2,11 @@ package z
 
 import (
 	"encoding/binary"
+	"fmt"
+	"math"
 	"os"
 	"sort"
+	"strings"
 )
 
 var pageSize = os.Getpagesize()
@@ -14,28 +17,89 @@ type Tree struct {
 	nextPage uint64
 }
 
-func (t *Tree) newPage() uint64 {
+func NewTree(mf *MmapFile, numRanges int) *Tree {
+	t := &Tree{
+		mf:       mf,
+		nextPage: 1,
+	}
+	t.newNode(0)
+	if numRanges > 0 {
+		jump := uint64(math.MaxUint64) / uint64(numRanges)
+		fmt.Printf("jump = %d\n", jump)
+		start := jump
+		for i := 0; i < numRanges; i++ {
+			t.Set(start, 0)
+			start += jump
+		}
+	}
+	return t
+}
+
+func (t *Tree) newNode(bit uint64) node {
 	offset := int(t.nextPage) * pageSize
 	t.nextPage++
 	n := node(t.mf.Data[offset : offset+pageSize])
-	n.setBit(bitUsed)
-	return t.nextPage - 1
+	ZeroOut(n, 0, len(n))
+	n.setBit(bitUsed | bit)
+	n.setAt(keyOffset(maxKeys), t.nextPage-1)
+	fmt.Printf("Created page of id: %d at offset: %d\n", n.pageId(), offset)
+	return n
 }
 func (t *Tree) node(pid uint64) node {
+	if pid == 0 {
+		return nil
+	}
 	start := pageSize * int(pid)
 	return node(t.mf.Data[start : start+pageSize])
+}
+
+func (t *Tree) Set(k, v uint64) {
+	root := t.node(1)
+	t.set(root, k, v)
+	if root.isFull() {
+		right := t.split(root)
+		left := t.newNode(root.bits())
+		copy(left[:keyOffset(maxKeys)], root)
+
+		part := root[:keyOffset(maxKeys)]
+		ZeroOut(part, 0, len(part))
+
+		root.set(left.maxKey(), left.pageId())
+		root.set(right.maxKey(), right.pageId())
+	}
+}
+
+func (t *Tree) print(n node, parentId uint64) {
+	// fmt.Printf("print called with n: %v, parentId: %d\n", &n[0], parentId)
+	n.print(parentId)
+	if n.isLeaf() {
+		return
+	}
+	pid := n.pageId()
+	for i := 0; i < maxKeys; i++ {
+		if n.key(i) == 0 {
+			return
+		}
+		childId := n.uint64(valOffset(i))
+		child := t.node(childId)
+		t.print(child, pid)
+	}
+}
+
+func (t *Tree) Print() {
+	root := t.node(1)
+	t.print(root, 0)
+	fmt.Println("Done")
 }
 
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
 func (t *Tree) set(n node, k, v uint64) {
 	if n.isLeaf() {
-		if n.isFull() {
-			// TODO: Split.
-		}
 		n.set(k, v)
 		return
 	}
+
 	// This is an internal node.
 	idx := n.search(k)
 	if idx >= maxKeys {
@@ -44,40 +108,41 @@ func (t *Tree) set(n node, k, v uint64) {
 		n.setAt(keyOffset(maxKeys-1), k)
 		idx = maxKeys - 1
 	}
+	// If no key at idx.
 	if n.key(idx) == 0 {
 		n.setAt(keyOffset(idx), k)
 	}
 	child := t.node(n.uint64(valOffset(idx)))
+	if child == nil {
+		child = t.newNode(bitLeaf)
+		n.setAt(valOffset(idx), child.pageId())
+		fmt.Printf("child is nil. Created child with id: %d\n", child.pageId())
+	}
 	t.set(child, k, v)
-}
 
-func (t *Tree) Set(k, v uint64) {
-	n := t.node(0)
-	for !n.isLeaf() {
+	if child.isFull() {
+		// Split child.
+		nn := t.split(child)
 
+		// Set children.
+		n.set(child.maxKey(), child.pageId())
+		n.set(nn.maxKey(), nn.pageId())
 	}
 }
 
-func (t *Tree) split(n node) {
+func (t *Tree) split(n node) node {
 	if !n.isFull() {
-		return
+		panic("This should be called only when n is full")
 	}
 	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys)]
 
 	// Create a new node nn, copy over half the keys from n, and set the parent to n's parent.
-	ni := t.newPage()
-	nn := t.node(ni)
+	nn := t.newNode(n.bits())
 	copy(nn, rightHalf)
-	nn.setAt(keyOffset(maxKeys), ni)
 
 	// Remove entries from node n.
 	ZeroOut(rightHalf, 0, len(rightHalf))
-
-	// Add nn in the common parent.
-	// p := t.node(n.parent())
-	// p.set(nn.key(0), uint64(ni))
-
-	// t.split(p) //
+	return nn
 }
 
 // Each node in the node is of size pageSize. Two kinds of nodes. Leaf nodes and internal nodes.
@@ -92,33 +157,43 @@ func (n node) uint64(start int) uint64 {
 	return binary.BigEndian.Uint64(n[start : start+8])
 }
 
-func keyOffset(i int) int       { return 16 * i }   // Last 16 bytes are kept off limits.
-func valOffset(i int) int       { return 16*i + 8 } // Last 16 bytes are kept off limits.
-func (n node) key(i int) uint64 { return n.uint64(keyOffset(i)) }
-func (n node) id() uint64       { return n.key(maxKeys) }
+func keyOffset(i int) int        { return 16 * i }   // Last 16 bytes are kept off limits.
+func valOffset(i int) int        { return 16*i + 8 } // Last 16 bytes are kept off limits.
+func (n node) pageId() uint64    { return n.uint64(keyOffset(maxKeys)) }
+func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
+func (n node) id() uint64        { return n.key(maxKeys) }
+func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) next(k uint64) node {
 	return nil
 }
 func (n node) setAt(start int, k uint64) {
+	// fmt.Printf("setAt: %d %d with pageId: %d\n", start, k, n.pageId())
 	binary.BigEndian.PutUint64(n[start:start+8], k)
 }
-func (n node) moveRight(i int) {
-	start := keyOffset(i)
-	copy(n[start+16:], n[start:])
-	// TODO: maybe we can optimize this to avoid moving the entries which are already zero.
+func (n node) moveRight(lo int) {
+	hi := n.search(math.MaxUint64)
+	if hi == maxKeys {
+		panic("endIdx == maxKeys")
+	}
+	for i := hi; i > lo; i-- {
+		copy(n.data(i), n.data(i-1))
+	}
 }
 
 const (
-	bitUsed = iota
-	bitInternal
-	bitLeaf
+	bitUsed = uint64(1)
+	bitLeaf = uint64(2)
 )
 
-func (n node) setBit(b int) {
+func (n node) setBit(b uint64) {
 	vo := valOffset(maxKeys)
 	v := n.uint64(vo)
-	n.setAt(vo, v|(1<<bitInternal))
+	n.setAt(vo, v|b)
+}
+func (n node) bits() uint64 {
+	vo := valOffset(maxKeys)
+	return n.uint64(vo)
 }
 
 func (n node) isLeaf() bool {
@@ -139,13 +214,22 @@ func (n node) search(k uint64) int {
 		return ks >= k
 	})
 }
+func (n node) maxKey() uint64 {
+	idx := n.search(math.MaxUint64)
+	// idx points to the first key which is zero.
+	if idx > 0 {
+		idx--
+	}
+	return n.key(idx)
+}
 func (n node) set(k, v uint64) {
 	idx := n.search(k)
-	if idx >= maxKeys {
-		return
+	if idx == maxKeys {
+		panic("node should not be full")
 	}
 	ki := n.key(idx)
 	if ki == 0 || ki == k {
+		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
 		return
 	}
@@ -159,4 +243,27 @@ func (n node) set(k, v uint64) {
 		return
 	}
 	panic("shouldn't reach here")
+}
+
+func (n node) print(parentId uint64) {
+	var keys []string
+	for i := 0; i < maxKeys; i++ {
+		if k := n.key(i); k > 0 {
+			keys = append(keys, fmt.Sprintf("%d", k))
+		} else {
+			break
+		}
+	}
+	if len(keys) > 16 {
+		copy(keys[8:], keys[len(keys)-8:])
+		keys[7] = "..."
+		keys = keys[:16]
+	}
+	idx := n.search(math.MaxUint64)
+	numKeys := idx
+	if idx > 0 {
+		idx--
+	}
+	fmt.Printf("%d Child of: %d bits: %04b num keys: %d, keys: %s\n",
+		n.pageId(), parentId, n.bits(), numKeys, strings.Join(keys, " "))
 }
