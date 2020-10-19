@@ -89,11 +89,44 @@ func (t *Tree) get(n node, k uint64) uint64 {
 	// This is internal node
 	idx := n.search(k)
 	if idx == maxKeys || n.key(idx) == 0 {
-		return math.MaxUint64
+		return 0
 	}
 	child := t.node(n.uint64(valOffset(idx)))
 	assert(child != nil)
 	return t.get(child, k)
+}
+
+// DeleteBelow sets value 0, for all the keys which have value below ts
+func (t *Tree) DeleteBelow(ts uint64) {
+	fn := func(n node, idx int) {
+		if n.val(idx) < ts {
+			n.setAt(valOffset(idx), 0)
+		}
+	}
+	t.Iterate(fn)
+}
+
+func (t *Tree) iterate(n node, fn func(node, int), parentId uint64) {
+	if n.isLeaf() {
+		n.iterate(fn, parentId)
+		return
+	}
+	pid := n.pageId()
+	for i := 0; i < maxKeys; i++ {
+		if n.key(i) == 0 {
+			return
+		}
+		childId := n.uint64(valOffset(i))
+		child := t.node(childId)
+		t.iterate(child, fn, pid)
+	}
+}
+
+// Iterate iterates ove the tree
+func (t *Tree) Iterate(fn func(node, int)) {
+	root := t.node(1)
+	t.iterate(root, fn, 0)
+	fmt.Println("Done iterating")
 }
 
 func (t *Tree) print(n node, parentId uint64) {
@@ -263,12 +296,12 @@ func (n node) get(k uint64) uint64 {
 	idx := n.search(k)
 	// key is not found
 	if idx == maxKeys {
-		return math.MaxUint64
+		return 0
 	}
 	if ki := n.key(idx); ki == k {
 		return n.val(idx)
 	}
-	return math.MaxUint64
+	return 0
 }
 func (n node) set(k, v uint64) {
 	idx := n.search(k)
@@ -291,6 +324,16 @@ func (n node) set(k, v uint64) {
 		return
 	}
 	panic("shouldn't reach here")
+}
+
+func (n node) iterate(fn func(node, int), parentId uint64) {
+	for i := 0; i < maxKeys; i++ {
+		if k := n.key(i); k > 0 {
+			fn(n, i)
+		} else {
+			break
+		}
+	}
 }
 
 func (n node) print(parentId uint64) {

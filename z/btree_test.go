@@ -2,7 +2,6 @@ package z
 
 import (
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"os"
 	"testing"
@@ -31,6 +30,15 @@ func TestTree(t *testing.T) {
 	for i := uint64(1); i < N; i++ {
 		require.Equal(t, i, bt.Get(i))
 	}
+
+	bt.DeleteBelow(100)
+	for i := uint64(1); i < 100; i++ {
+		require.Equal(t, uint64(0), bt.Get(i))
+	}
+	for i := uint64(100); i < N; i++ {
+		require.Equal(t, i, bt.Get(i))
+	}
+
 	bt.Print()
 }
 
@@ -75,7 +83,7 @@ func TestNode(t *testing.T) {
 		n.set(i, i)
 	}
 	n.print(0)
-	require.True(t, math.MaxUint64 == n.get(5))
+	require.True(t, 0 == n.get(5))
 	n.set(5, 5)
 	n.print(0)
 }
