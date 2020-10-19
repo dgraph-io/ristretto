@@ -60,6 +60,10 @@ func TestTreeBasic(t *testing.T) {
 		}
 	}
 	setAndGet()
+	defer func() {
+		pageSize = os.Getpagesize()
+		maxKeys = (pageSize / 16) - 1
+	}()
 	pageSize = 16 << 4
 	maxKeys = (pageSize / 16) - 1
 	setAndGet()
