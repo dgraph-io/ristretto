@@ -101,3 +101,23 @@ func TestNodeBasic(t *testing.T) {
 		require.Equal(t, v, n.get(k))
 	}
 }
+
+func TestNodeCompact(t *testing.T) {
+	n := node(make([]byte, pageSize))
+	n.setBit(bitLeaf)
+	N := uint64(256)
+	mp := make(map[uint64]uint64)
+	for i := uint64(1); i < N; i++ {
+		key := uint64(rand.Int63n(1<<60) + 1)
+		val := uint64(0)
+		if i%2 == 0 {
+			val = key / 2
+			mp[key] = val
+		}
+		n.set(key, val)
+	}
+	require.Equal(t, 255/2, n.compact())
+	for k, v := range mp {
+		require.Equal(t, v, n.get(k))
+	}
+}

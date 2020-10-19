@@ -103,29 +103,31 @@ func (t *Tree) DeleteBelow(ts uint64) {
 			n.setAt(valOffset(idx), 0)
 		}
 	}
-	t.Iterate(fn)
+	t.Iterate(fn, true)
 }
 
-func (t *Tree) iterate(n node, fn func(node, int), parentId uint64) {
+func (t *Tree) iterate(n node, fn func(node, int), doCompact bool) {
 	if n.isLeaf() {
-		n.iterate(fn, parentId)
+		n.iterate(fn)
+		if doCompact {
+			n.compact()
+		}
 		return
 	}
-	pid := n.pageId()
 	for i := 0; i < maxKeys; i++ {
 		if n.key(i) == 0 {
 			return
 		}
 		childId := n.uint64(valOffset(i))
 		child := t.node(childId)
-		t.iterate(child, fn, pid)
+		t.iterate(child, fn, doCompact)
 	}
 }
 
 // Iterate iterates ove the tree
-func (t *Tree) Iterate(fn func(node, int)) {
+func (t *Tree) Iterate(fn func(node, int), doCompact bool) {
 	root := t.node(1)
-	t.iterate(root, fn, 0)
+	t.iterate(root, fn, doCompact)
 	fmt.Println("Done iterating")
 }
 
@@ -292,6 +294,29 @@ func (n node) maxKey() uint64 {
 	}
 	return n.key(idx)
 }
+
+// compacts the node i.e., remove all the kvs with value 0. It returns the remaining number of keys.
+func (n node) compact() int {
+	// compact should be called only on leaf nodes
+	assert(n.isLeaf())
+	var si, di int
+	for si < maxKeys {
+		if n.key(si) == 0 {
+			break
+		}
+		if di != si {
+			copy(n.data(di), n.data(si))
+		}
+		if n.val(si) != 0 {
+			di++
+		}
+		si++
+	}
+	// zero out rest of the kv pairs
+	ZeroOut(n, keyOffset(di), keyOffset(si))
+	return di
+}
+
 func (n node) get(k uint64) uint64 {
 	idx := n.search(k)
 	// key is not found
@@ -326,7 +351,7 @@ func (n node) set(k, v uint64) {
 	panic("shouldn't reach here")
 }
 
-func (n node) iterate(fn func(node, int), parentId uint64) {
+func (n node) iterate(fn func(node, int)) {
 	for i := 0; i < maxKeys; i++ {
 		if k := n.key(i); k > 0 {
 			fn(n, i)
