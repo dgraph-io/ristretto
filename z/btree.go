@@ -73,6 +73,29 @@ func (t *Tree) Set(k, v uint64) {
 	}
 }
 
+// Get returns the corresponding value, else math.MaxUint64 if key is not found
+func (t *Tree) Get(k uint64) uint64 {
+	if k == math.MaxUint64 {
+		panic("Does not support getting MaxUint64")
+	}
+	root := t.node(1)
+	return t.get(root, k)
+}
+
+func (t *Tree) get(n node, k uint64) uint64 {
+	if n.isLeaf() {
+		return n.get(k)
+	}
+	// This is internal node
+	idx := n.search(k)
+	if idx == maxKeys || n.key(idx) == 0 {
+		return math.MaxUint64
+	}
+	child := t.node(n.uint64(valOffset(idx)))
+	assert(child != nil)
+	return t.get(child, k)
+}
+
 func (t *Tree) print(n node, parentId uint64) {
 	// fmt.Printf("print called with n: %v, parentId: %d\n", &n[0], parentId)
 	n.print(parentId)
@@ -174,6 +197,7 @@ func keyOffset(i int) int        { return 16 * i }   // Last 16 bytes are kept o
 func valOffset(i int) int        { return 16*i + 8 } // Last 16 bytes are kept off limits.
 func (n node) pageId() uint64    { return n.uint64(keyOffset(maxKeys)) }
 func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
+func (n node) val(i int) uint64  { return n.uint64(valOffset(i)) }
 func (n node) id() uint64        { return n.key(maxKeys) }
 func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
 
@@ -234,6 +258,17 @@ func (n node) maxKey() uint64 {
 		idx--
 	}
 	return n.key(idx)
+}
+func (n node) get(k uint64) uint64 {
+	idx := n.search(k)
+	// key is not found
+	if idx == maxKeys {
+		return math.MaxUint64
+	}
+	if ki := n.key(idx); ki == k {
+		return n.val(idx)
+	}
+	return math.MaxUint64
 }
 func (n node) set(k, v uint64) {
 	idx := n.search(k)
