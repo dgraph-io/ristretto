@@ -42,7 +42,7 @@ const padding = 8
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
 	buf           []byte
-	offset        uint64
+	offset        uint32
 	curSz         int
 	maxSz         int
 	fd            *os.File
@@ -95,9 +95,7 @@ func (b *Buffer) doMmap() error {
 		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), b.maxSz)
 	}
 	if len(curBuf) > 0 {
-		off := atomic.LoadUint64(&b.offset)
-		//	assert(b.offset == copy(buf, curBuf[:b.offset]))
-		assert(int(off) == copy(buf, curBuf[:off]))
+		assert(int(b.offset) == copy(buf, curBuf[:b.offset]))
 		Free(curBuf)
 	}
 	b.buf = buf
@@ -146,20 +144,20 @@ func (b *Buffer) IsEmpty() bool {
 // LenWithPadding would return the number of bytes written to the buffer so far
 // plus the padding at the start of the buffer.
 func (b *Buffer) LenWithPadding() int {
-	l := atomic.LoadUint64(&b.offset)
+	l := atomic.LoadUint32(&b.offset)
 	return int(l)
 }
 
 // LenNoPadding would return the number of bytes written to the buffer so far
 // (without the padding).
 func (b *Buffer) LenNoPadding() int {
-	l := atomic.LoadUint64(&b.offset)
+	l := atomic.LoadUint32(&b.offset)
 	return int(l - padding)
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	off := atomic.LoadUint64(&b.offset)
+	off := atomic.LoadUint32(&b.offset)
 	return b.buf[padding:off]
 }
 
@@ -173,15 +171,14 @@ func (b *Buffer) AutoMmapAfter(size int) {
 // expansion.
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
-	off := atomic.LoadUint64(&b.offset)
 	if b.buf == nil {
 		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.maxSz-int(off) < n {
+	if b.maxSz-int(b.offset) < n {
 		panic(fmt.Sprintf("Buffer max size exceeded: %d."+
 			" Offset: %d. Grow: %d", b.maxSz, b.offset, n))
 	}
-	if b.curSz-int(off) > n {
+	if b.curSz-int(b.offset) > n {
 		return
 	}
 
@@ -204,7 +201,7 @@ func (b *Buffer) Grow(n int) {
 		} else {
 			newBuf := Calloc(b.curSz)
 			//copy(newBuf, b.buf[:b.offset])
-			copy(newBuf, b.buf[:off])
+			copy(newBuf, b.buf[:b.offset])
 			Free(b.buf)
 			b.buf = newBuf
 		}
@@ -222,20 +219,25 @@ func (b *Buffer) Grow(n int) {
 func (b *Buffer) Allocate(n int) []byte {
 	// will also have to change b.Grow but leaving it for now because we dont need it
 	b.Grow(n)
-	off := atomic.LoadUint64(&b.offset)
-	offNew := atomic.AddUint64(&b.offset, uint64(n))
-	// b.offset += n
-	return b.buf[off:offNew]
+	off := b.offset
+	b.offset += uint32(n)
+	return b.buf[off:int(b.offset)]
 }
 
 // AllocateOffset works the same way as allocate, but instead of returning a byte slice, it returns
 // the offset of the allocation.
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
-	offNew := atomic.AddUint64(&b.offset, uint64(n))
-	// b.offset += n
-	//return b.offset - n
-	return int(offNew) - n
+	b.offset += uint32(n)
+	return int(b.offset) - n
+}
+
+// IncrementOffset returns the incremented offset
+func (b *Buffer) IncrementOffset(n int) (int, error) {
+	if int(atomic.LoadUint32(&b.offset))+n < b.curSz {
+		return int(atomic.AddUint32(&b.offset, uint32(n))), nil
+	}
+	return 0, errors.New("Buffer size limit hit")
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -254,10 +256,6 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 }
 
 func (b *Buffer) StartOffset() int { return padding }
-
-func (b *Buffer) CurrentOffset() int {
-	return int(atomic.LoadUint64(&b.offset))
-}
 
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
@@ -384,8 +382,7 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 
 // SortSlice is like SortSliceBetween but sorting over the entire buffer.
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
-	off := atomic.LoadUint64(&b.offset)
-	b.SortSliceBetween(b.StartOffset(), int(off), less)
+	b.SortSliceBetween(b.StartOffset(), int(b.offset), less)
 }
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
@@ -470,13 +467,13 @@ func (b *Buffer) Data(offset int) []byte {
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.Grow(len(p))
 	n = copy(b.buf[b.offset:], p)
-	b.offset += uint64(n)
+	b.offset += uint32(n)
 	return n, nil
 }
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = uint64(b.StartOffset())
+	b.offset = uint32(b.StartOffset())
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
