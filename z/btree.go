@@ -231,6 +231,7 @@ func (n node) moveRight(lo int, maxKeys int) {
 	if hi == maxKeys {
 		panic("endIdx == maxKeys")
 	}
+	// lo+1 is on the right. And copying is also left to right. So, you'll overwrite the contents.
 	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])
 }
 
