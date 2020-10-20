@@ -73,39 +73,51 @@ func TestTreeBasic(t *testing.T) {
 }
 
 func TestNode(t *testing.T) {
-	pageSize := os.Getpagesize()
-	maxKeys := (pageSize / 16) - 1
 	n := node(make([]byte, pageSize))
 	for i := uint64(1); i < 16; i *= 2 {
-		n.set(i, i, maxKeys)
+		n.set(i, i)
 	}
-	n.print(0, maxKeys)
-	require.True(t, 0 == n.get(5, maxKeys))
-	n.set(5, 5, maxKeys)
-	n.print(0, maxKeys)
+	n.print(0)
+	require.True(t, 0 == n.get(5))
+	n.set(5, 5)
+	n.print(0)
 }
 
 func TestNodeBasic(t *testing.T) {
-	pageSize := os.Getpagesize()
-	maxKeys := (pageSize / 16) - 1
 	n := node(make([]byte, pageSize))
 	N := uint64(256)
 	mp := make(map[uint64]uint64)
 	for i := uint64(1); i < N; i++ {
 		key := uint64(rand.Int63n(1<<60) + 1)
-		n.set(key, key, maxKeys)
+		n.set(key, key)
 		mp[key] = key
 	}
 	for k, v := range mp {
-		require.Equal(t, v, n.get(k, maxKeys))
+		require.Equal(t, v, n.get(k))
 	}
 }
 
-func TestNodeCompact(t *testing.T) {
-	pageSize := os.Getpagesize()
-	maxKeys := (pageSize / 16) - 1
+func TestNode_MoveRight(t *testing.T) {
 	n := node(make([]byte, pageSize))
-	n.setBit(bitLeaf, maxKeys)
+	N := uint64(10)
+	for i := uint64(1); i < N; i++ {
+		n.set(i, i)
+	}
+	n.moveRight(5)
+	n.iterate(func(n node, i int) {
+		if i < 5 {
+			require.Equal(t, uint64(i+1), n.key(i))
+			require.Equal(t, uint64(i+1), n.val(i))
+		} else if i > 5 {
+			require.Equal(t, uint64(i), n.key(i))
+			require.Equal(t, uint64(i), n.val(i))
+		}
+	})
+}
+
+func TestNodeCompact(t *testing.T) {
+	n := node(make([]byte, pageSize))
+	n.setBit(bitLeaf)
 	N := uint64(256)
 	mp := make(map[uint64]uint64)
 	for i := uint64(1); i < N; i++ {
@@ -115,11 +127,11 @@ func TestNodeCompact(t *testing.T) {
 			val = key / 2
 			mp[key] = val
 		}
-		n.set(key, val, maxKeys)
+		n.set(key, val)
 	}
-	require.Equal(t, 255/2, n.compact(maxKeys))
+	require.Equal(t, 255/2, n.compact())
 	for k, v := range mp {
-		require.Equal(t, v, n.get(k, maxKeys))
+		require.Equal(t, v, n.get(k))
 	}
 }
 
@@ -184,7 +196,7 @@ func BenchmarkRead(b *testing.B) {
 		bt.Set(k, k)
 	}
 	np := bt.NumPages()
-	fmt.Printf("Num pages: %d Size: %d\n", np, np*bt.pageSize)
+	fmt.Printf("Num pages: %d Size: %d\n", np, np*pageSize)
 	fmt.Println("Writes done")
 
 	b.Run("btree", func(b *testing.B) {
