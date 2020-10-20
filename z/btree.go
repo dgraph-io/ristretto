@@ -27,7 +27,9 @@ func NewTree(mf *MmapFile, pageSize int) *Tree {
 	t.newNode(0)
 	return t
 }
-
+func (t *Tree) NumPages() int {
+	return int(t.nextPage - 1)
+}
 func (t *Tree) newNode(bit uint64) node {
 	offset := int(t.nextPage) * t.pageSize
 	t.nextPage++
@@ -65,6 +67,40 @@ func (t *Tree) Set(k, v uint64) {
 	}
 }
 
+// For internal nodes, they contain <key, ptr>.
+// where all entries <= key are stored in the corresponding ptr.
+func (t *Tree) set(n node, k, v uint64) {
+	if n.isLeaf(t.maxKeys) {
+		n.set(k, v, t.maxKeys)
+		return
+	}
+
+	// This is an internal node.
+	idx := n.search(k, t.maxKeys)
+	if idx >= t.maxKeys {
+		panic("this shouldn't happen")
+	}
+	// If no key at idx.
+	if n.key(idx) == 0 {
+		n.setAt(keyOffset(idx), k)
+	}
+	child := t.node(n.uint64(valOffset(idx)))
+	if child == nil {
+		child = t.newNode(bitLeaf)
+		n.setAt(valOffset(idx), child.pageID(t.maxKeys))
+	}
+	t.set(child, k, v)
+
+	if child.isFull(t.maxKeys) {
+		// Split child.
+		nn := t.split(child)
+
+		// Set children.
+		n.set(child.maxKey(t.maxKeys), child.pageID(t.maxKeys), t.maxKeys)
+		n.set(nn.maxKey(t.maxKeys), nn.pageID(t.maxKeys), t.maxKeys)
+	}
+}
+
 // Get looks for key and returns the corresponding value.
 // If key is not found, 0 is returned.
 func (t *Tree) Get(k uint64) uint64 {
@@ -90,6 +126,7 @@ func (t *Tree) get(n node, k uint64) uint64 {
 }
 
 // DeleteBelow sets value 0, for all the keys which have value below ts
+// TODO(naman): Optimize this if needed.
 func (t *Tree) DeleteBelow(ts uint64) {
 	fn := func(n node) {
 		// Set the values to 0.
@@ -124,7 +161,6 @@ func (t *Tree) iterate(n node, fn func(node)) {
 func (t *Tree) Iterate(fn func(node)) {
 	root := t.node(1)
 	t.iterate(root, fn)
-	fmt.Println("Done iterating")
 }
 
 func (t *Tree) print(n node, parentID uint64) {
@@ -147,40 +183,6 @@ func (t *Tree) print(n node, parentID uint64) {
 func (t *Tree) Print() {
 	root := t.node(1)
 	t.print(root, 0)
-}
-
-// For internal nodes, they contain <key, ptr>.
-// where all entries <= key are stored in the corresponding ptr.
-func (t *Tree) set(n node, k, v uint64) {
-	if n.isLeaf(t.maxKeys) {
-		n.set(k, v, t.maxKeys)
-		return
-	}
-
-	// This is an internal node.
-	idx := n.search(k, t.maxKeys)
-	if idx >= t.maxKeys {
-		panic("this shouldn't happen")
-	}
-	// If no key at idx.
-	if n.key(idx) == 0 {
-		n.setAt(keyOffset(idx), k)
-	}
-	child := t.node(n.uint64(valOffset(idx)))
-	if child == nil {
-		child = t.newNode(bitLeaf)
-		n.setAt(valOffset(idx), child.pageID(t.maxKeys))
-	}
-	t.set(child, k, v)
-
-	if child.isFull(t.maxKeys) {
-		// Split child.
-		nn := t.split(child)
-
-		// Set children.
-		n.set(child.maxKey(t.maxKeys), child.pageID(t.maxKeys), t.maxKeys)
-		n.set(nn.maxKey(t.maxKeys), nn.pageID(t.maxKeys), t.maxKeys)
-	}
 }
 
 func (t *Tree) split(n node) node {
@@ -226,9 +228,7 @@ func (n node) moveRight(lo int, maxKeys int) {
 	if hi == maxKeys {
 		panic("endIdx == maxKeys")
 	}
-	for i := hi; i > lo; i-- {
-		copy(n.data(i), n.data(i-1))
-	}
+	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])
 }
 
 const (
@@ -256,7 +256,6 @@ func (n node) isFull(maxKeys int) bool {
 }
 func (n node) search(k uint64, maxKeys int) int {
 	return sort.Search(maxKeys, func(i int) bool {
-		// ks := n.keyAt(i + 1)
 		ks := n.key(i)
 		if ks == 0 {
 			return true
@@ -307,6 +306,7 @@ func (n node) get(k uint64, maxKeys int) uint64 {
 	}
 	return 0
 }
+
 func (n node) set(k, v uint64, maxKeys int) {
 	idx := n.search(k, maxKeys)
 	if idx == maxKeys {
@@ -351,6 +351,6 @@ func (n node) print(parentID uint64, maxKeys int) {
 		keys = keys[:8]
 	}
 	numKeys := n.search(math.MaxUint64, maxKeys)
-	fmt.Printf("%d Child of: %d bits: %04b num keys: %d, keys: %s\n",
+	fmt.Printf("%d Child of: %d bits: %04b num keys: %d keys: %s\n",
 		n.pageID(maxKeys), parentID, n.bits(maxKeys), numKeys, strings.Join(keys, " "))
 }
