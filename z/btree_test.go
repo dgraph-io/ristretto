@@ -167,7 +167,7 @@ func BenchmarkRead(b *testing.B) {
 	N := 10 << 20
 	mp := make(map[uint64]uint64)
 	for i := 0; i < N; i++ {
-		k := uint64(rand.Intn(2 * N))
+		k := uint64(rand.Intn(2*N)) + 1
 		mp[k] = k
 	}
 	b.Run("map", func(b *testing.B) {
@@ -192,7 +192,7 @@ func BenchmarkRead(b *testing.B) {
 
 	bt := NewTree(mf, os.Getpagesize())
 	for i := 0; i < N; i++ {
-		k := uint64(rand.Intn(2 * N))
+		k := uint64(rand.Intn(2*N)) + 1
 		bt.Set(k, k)
 	}
 	np := bt.NumPages()
@@ -202,7 +202,7 @@ func BenchmarkRead(b *testing.B) {
 	b.Run("btree", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			k := uint64(rand.Intn(2 * N))
+			k := uint64(rand.Intn(2*N)) + 1
 			v := bt.Get(k)
 			_ = v
 		}
