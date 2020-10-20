@@ -20,7 +20,7 @@ type Tree struct {
 }
 
 // NewTree returns a memory mapped B+ tree
-func NewTree(mf *MmapFile, pageSize int) *Tree {
+func NewTree(mf *MmapFile) *Tree {
 	t := &Tree{
 		mf:       mf,
 		nextPage: 1,
@@ -275,7 +275,7 @@ func (n node) isLeaf() bool {
 
 // isFull checks that the node is already full.
 func (n node) isFull() bool {
-	return n.key(maxKeys-1) > 0
+	return n.numKeys() == maxKeys
 }
 func (n node) search(k uint64) int {
 	linear := func() int {

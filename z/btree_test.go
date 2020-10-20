@@ -10,6 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func setPageSize(sz int) {
+	pageSize = sz
+	maxKeys = (pageSize / 16) - 1
+}
 func TestTree(t *testing.T) {
 	f, err := ioutil.TempFile(".", "tree")
 	require.NoError(t, err)
@@ -21,7 +25,7 @@ func TestTree(t *testing.T) {
 	}
 	defer mf.Close(0)
 
-	bt := NewTree(mf, os.Getpagesize())
+	bt := NewTree(mf)
 	bt.Print()
 
 	N := uint64(256 * 256)
@@ -44,7 +48,7 @@ func TestTree(t *testing.T) {
 }
 
 func TestTreeBasic(t *testing.T) {
-	setAndGet := func(pageSize int) {
+	setAndGet := func() {
 		f, err := ioutil.TempFile(".", "tree")
 		require.NoError(t, err)
 		defer os.Remove(f.Name())
@@ -55,7 +59,7 @@ func TestTreeBasic(t *testing.T) {
 		}
 		defer mf.Close(0)
 
-		bt := NewTree(mf, pageSize)
+		bt := NewTree(mf)
 
 		N := uint64(1 << 20)
 		mp := make(map[uint64]uint64)
@@ -68,8 +72,10 @@ func TestTreeBasic(t *testing.T) {
 			require.Equal(t, v, bt.Get(k))
 		}
 	}
-	setAndGet(os.Getpagesize())
-	setAndGet(16 << 2)
+	setAndGet()
+	defer setPageSize(os.Getpagesize())
+	setPageSize(16 << 5)
+	setAndGet()
 }
 
 func TestNode(t *testing.T) {
@@ -154,7 +160,7 @@ func BenchmarkWrite(b *testing.B) {
 		}
 		defer mf.Close(0)
 
-		bt := NewTree(mf, os.Getpagesize())
+		bt := NewTree(mf)
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			k := rand.Uint64()
@@ -190,7 +196,7 @@ func BenchmarkRead(b *testing.B) {
 	}
 	defer mf.Close(0)
 
-	bt := NewTree(mf, os.Getpagesize())
+	bt := NewTree(mf)
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1
 		bt.Set(k, k)
