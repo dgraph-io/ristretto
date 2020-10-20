@@ -1,11 +1,11 @@
 package z
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"unsafe"
 )
 
 // Tree represents the structure for mmaped B+ tree
@@ -30,7 +30,7 @@ func NewTree(mf *MmapFile, pageSize int) *Tree {
 func (t *Tree) NumPages() int {
 	return int(t.nextPage - 1)
 }
-func (t *Tree) newNode(bit uint64) node {
+func (t *Tree) newNode(bit byte) node {
 	offset := int(t.nextPage) * t.pageSize
 	t.nextPage++
 	n := node(t.mf.Data[offset : offset+t.pageSize])
@@ -209,7 +209,8 @@ func (t *Tree) split(n node) node {
 type node []byte
 
 func (n node) uint64(start int) uint64 {
-	return binary.BigEndian.Uint64(n[start : start+8])
+	return *(*uint64)(unsafe.Pointer(&n[start]))
+	// return binary.BigEndian.Uint64(n[start : start+8])
 }
 
 func keyOffset(i int) int                { return 16 * i }   // Last 16 bytes are kept off limits.
@@ -221,7 +222,9 @@ func (n node) id(maxKeys int) uint64     { return n.key(maxKeys) }
 func (n node) data(i int) []byte         { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
-	binary.BigEndian.PutUint64(n[start:start+8], k)
+	v := (*uint64)(unsafe.Pointer(&n[start]))
+	*v = k
+	// binary.BigEndian.PutUint64(n[start:start+8], k)
 }
 func (n node) moveRight(lo int, maxKeys int) {
 	hi := n.search(math.MaxUint64, maxKeys)
@@ -232,22 +235,21 @@ func (n node) moveRight(lo int, maxKeys int) {
 }
 
 const (
-	bitUsed = uint64(1)
-	bitLeaf = uint64(2)
+	bitUsed = byte(1)
+	bitLeaf = byte(2)
 )
 
-func (n node) setBit(b uint64, maxKeys int) {
+func (n node) setBit(b byte, maxKeys int) {
 	vo := valOffset(maxKeys)
-	v := n.uint64(vo)
-	n.setAt(vo, v|b)
+	n[vo] |= b
 }
-func (n node) bits(maxKeys int) uint64 {
+func (n node) bits(maxKeys int) byte {
 	vo := valOffset(maxKeys)
-	return n.uint64(vo)
+	return n[vo]
 }
-
 func (n node) isLeaf(maxKeys int) bool {
-	return n.uint64(valOffset(maxKeys))&bitLeaf > 0
+	return n.bits(maxKeys)&bitLeaf > 0
+	// return n.uint64(valOffset(maxKeys))&bitLeaf > 0
 }
 
 // isFull checks that the node is already full.
