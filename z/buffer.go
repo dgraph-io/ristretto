@@ -24,6 +24,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
 )
@@ -41,7 +42,7 @@ const padding = 8
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
 	buf           []byte
-	offset        int
+	offset        uint64
 	curSz         int
 	maxSz         int
 	fd            *os.File
@@ -94,7 +95,9 @@ func (b *Buffer) doMmap() error {
 		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), b.maxSz)
 	}
 	if len(curBuf) > 0 {
-		assert(b.offset == copy(buf, curBuf[:b.offset]))
+		off := atomic.LoadUint64(&b.offset)
+		//	assert(b.offset == copy(buf, curBuf[:b.offset]))
+		assert(int(off) == copy(buf, curBuf[:off]))
 		Free(curBuf)
 	}
 	b.buf = buf
@@ -137,24 +140,27 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 }
 
 func (b *Buffer) IsEmpty() bool {
-	return b.offset == b.StartOffset()
+	return int(b.offset) == b.StartOffset()
 }
 
 // LenWithPadding would return the number of bytes written to the buffer so far
 // plus the padding at the start of the buffer.
 func (b *Buffer) LenWithPadding() int {
-	return b.offset
+	l := atomic.LoadUint64(&b.offset)
+	return int(l)
 }
 
 // LenNoPadding would return the number of bytes written to the buffer so far
 // (without the padding).
 func (b *Buffer) LenNoPadding() int {
-	return b.offset - padding
+	l := atomic.LoadUint64(&b.offset)
+	return int(l - padding)
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	return b.buf[padding:b.offset]
+	off := atomic.LoadUint64(&b.offset)
+	return b.buf[padding:off]
 }
 
 func (b *Buffer) AutoMmapAfter(size int) {
@@ -167,14 +173,15 @@ func (b *Buffer) AutoMmapAfter(size int) {
 // expansion.
 func (b *Buffer) Grow(n int) {
 	// In this case, len and cap are the same.
+	off := atomic.LoadUint64(&b.offset)
 	if b.buf == nil {
 		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.maxSz-b.offset < n {
+	if b.maxSz-int(off) < n {
 		panic(fmt.Sprintf("Buffer max size exceeded: %d."+
 			" Offset: %d. Grow: %d", b.maxSz, b.offset, n))
 	}
-	if b.curSz-b.offset > n {
+	if b.curSz-int(off) > n {
 		return
 	}
 
@@ -196,7 +203,8 @@ func (b *Buffer) Grow(n int) {
 
 		} else {
 			newBuf := Calloc(b.curSz)
-			copy(newBuf, b.buf[:b.offset])
+			//copy(newBuf, b.buf[:b.offset])
+			copy(newBuf, b.buf[:off])
 			Free(b.buf)
 			b.buf = newBuf
 		}
@@ -212,18 +220,22 @@ func (b *Buffer) Grow(n int) {
 // written to. Warning: Allocate is not thread-safe. The byte slice returned MUST be used before
 // further calls to Buffer.
 func (b *Buffer) Allocate(n int) []byte {
+	// will also have to change b.Grow but leaving it for now because we dont need it
 	b.Grow(n)
-	off := b.offset
-	b.offset += n
-	return b.buf[off:b.offset]
+	off := atomic.LoadUint64(&b.offset)
+	offNew := atomic.AddUint64(&b.offset, uint64(n))
+	// b.offset += n
+	return b.buf[off:offNew]
 }
 
 // AllocateOffset works the same way as allocate, but instead of returning a byte slice, it returns
 // the offset of the allocation.
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
-	b.offset += n
-	return b.offset - n
+	offNew := atomic.AddUint64(&b.offset, uint64(n))
+	// b.offset += n
+	//return b.offset - n
+	return int(offNew) - n
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -242,6 +254,10 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 }
 
 func (b *Buffer) StartOffset() int { return padding }
+
+func (b *Buffer) CurrentOffset() int {
+	return int(atomic.LoadUint64(&b.offset))
+}
 
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
@@ -368,7 +384,8 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 
 // SortSlice is like SortSliceBetween but sorting over the entire buffer.
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
-	b.SortSliceBetween(b.StartOffset(), b.offset, less)
+	off := atomic.LoadUint64(&b.offset)
+	b.SortSliceBetween(b.StartOffset(), int(off), less)
 }
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
@@ -417,7 +434,7 @@ func rawSlice(buf []byte) []byte {
 
 // Slice would return the slice written at offset.
 func (b *Buffer) Slice(offset int) ([]byte, int) {
-	if offset >= b.offset {
+	if offset >= int(b.offset) {
 		return nil, 0
 	}
 
@@ -425,7 +442,7 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 	start := offset + 4
 	next := start + int(sz)
 	res := b.buf[start:next]
-	if next >= b.offset {
+	if next >= int(b.offset) {
 		next = 0
 	}
 	return res, next
@@ -453,13 +470,13 @@ func (b *Buffer) Data(offset int) []byte {
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.Grow(len(p))
 	n = copy(b.buf[b.offset:], p)
-	b.offset += n
+	b.offset += uint64(n)
 	return n, nil
 }
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = b.StartOffset()
+	b.offset = uint64(b.StartOffset())
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is

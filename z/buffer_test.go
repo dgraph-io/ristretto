@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dgraph-io/badger/y"
 	"github.com/stretchr/testify/require"
 )
 
@@ -246,5 +247,16 @@ func TestBufferSort(t *testing.T) {
 			}
 			test(0, N)
 		})
+	}
+}
+
+func TestConcurrentAllocate(t *testing.T) {
+	buf, err := NewBufferWith(10<<20, 0, UseCalloc)
+	y.Check(err)
+	for i := 0; i < 100; i++ {
+		go func() {
+			size := rand.Intn(1 << 30)
+			buf.Allocate(size)
+		}()
 	}
 }
