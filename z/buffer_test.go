@@ -104,7 +104,7 @@ func TestBufferAutoMmap(t *testing.T) {
 		b := buf.SliceAllocate(len(wb))
 		copy(b, wb[:])
 	}
-	t.Logf("Buffer size: %d\n", buf.Len())
+	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
 
 	buf.SortSlice(func(l, r []byte) bool {
 		return bytes.Compare(l, r) < 0
@@ -113,18 +113,18 @@ func TestBufferAutoMmap(t *testing.T) {
 
 	var count int
 	var last []byte
-	slice, next := []byte{}, 1
-	for next != 0 {
-		slice, next = buf.Slice(next)
+	buf.SliceIterate(func(slice []byte) error {
 		require.True(t, bytes.Compare(slice, last) >= 0)
 		last = append(last[:0], slice...)
 		count++
-	}
+		return nil
+	})
 	require.Equal(t, N, count)
 }
 
 func TestBufferSimpleSort(t *testing.T) {
 	buf := NewBuffer(1 << 20)
+	defer buf.Release()
 	for i := 0; i < 25600; i++ {
 		b := buf.SliceAllocate(4)
 		binary.BigEndian.PutUint32(b, uint32(rand.Int31n(256000)))
@@ -136,9 +136,7 @@ func TestBufferSimpleSort(t *testing.T) {
 	})
 	var last uint32
 	var i int
-	slice, next := []byte{}, 1
-	for next != 0 {
-		slice, next = buf.Slice(next)
+	buf.SliceIterate(func(slice []byte) error {
 		num := binary.BigEndian.Uint32(slice)
 		if num < last {
 			fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
@@ -147,7 +145,8 @@ func TestBufferSimpleSort(t *testing.T) {
 		require.GreaterOrEqual(t, num, last)
 		last = num
 		// fmt.Printf("Got number: %d\n", num)
-	}
+		return nil
+	})
 }
 
 func TestBufferSlice(t *testing.T) {
@@ -175,19 +174,18 @@ func TestBufferSlice(t *testing.T) {
 			}
 
 			compare := func() {
-				next, i := 1, 0
-				for next != 0 {
+				i := 0
+				buf.SliceIterate(func(slice []byte) error {
 					// All the slices returned by the buffer should be equal to what we
 					// inserted earlier.
-					var slice []byte
-					slice, next = buf.Slice(next)
 					if !bytes.Equal(exp[i], slice) {
 						fmt.Printf("exp: %s got: %s\n", hex.Dump(exp[i]), hex.Dump(slice))
 						t.Fail()
 					}
 					require.Equal(t, exp[i], slice)
 					i++
-				}
+					return nil
+				})
 				require.Equal(t, len(exp), i)
 			}
 			compare() // same order as inserted.
@@ -223,8 +221,8 @@ func TestBufferSort(t *testing.T) {
 			}
 
 			test := func(start, end int) {
-				start = 1 + 12*start
-				end = 1 + 12*end
+				start = padding + 12*start
+				end = padding + 12*end
 				buf.SortSliceBetween(start, end, func(ls, rs []byte) bool {
 					lhs := binary.BigEndian.Uint64(ls)
 					rhs := binary.BigEndian.Uint64(rs)

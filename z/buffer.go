@@ -28,6 +28,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const padding = 8
+
 // Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
 //
 // In UseCalloc mode, z.Calloc is used to allocate memory, which depending upon how the code is
@@ -113,7 +115,7 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	}
 
 	b := &Buffer{
-		offset:  1,
+		offset:  padding, // Use 8 bytes of padding so that the elements are aligned.
 		curSz:   sz,
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
@@ -135,17 +137,24 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 }
 
 func (b *Buffer) IsEmpty() bool {
-	return b.offset == 1
+	return b.offset == b.StartOffset()
 }
 
-// Len would return the number of bytes written to the buffer so far.
-func (b *Buffer) Len() int {
+// LenWithPadding would return the number of bytes written to the buffer so far
+// plus the padding at the start of the buffer.
+func (b *Buffer) LenWithPadding() int {
 	return b.offset
+}
+
+// LenNoPadding would return the number of bytes written to the buffer so far
+// (without the padding).
+func (b *Buffer) LenNoPadding() int {
+	return b.offset - padding
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	return b.buf[1:b.offset]
+	return b.buf[padding:b.offset]
 }
 
 func (b *Buffer) AutoMmapAfter(size int) {
@@ -232,13 +241,15 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+func (b *Buffer) StartOffset() int { return padding }
+
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
 	copy(dst, slice)
 }
 
 func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
-	slice, next := []byte{}, 1
+	slice, next := []byte{}, b.StartOffset()
 	for next != 0 {
 		slice, next = b.Slice(next)
 		if err := f(slice); err != nil {
@@ -357,7 +368,7 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 
 // SortSlice is like SortSliceBetween but sorting over the entire buffer.
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
-	b.SortSliceBetween(1, b.offset, less)
+	b.SortSliceBetween(b.StartOffset(), b.offset, less)
 }
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
@@ -422,7 +433,7 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 
 // SliceOffsets is an expensive function. Use sparingly.
 func (b *Buffer) SliceOffsets() []int {
-	next := 1
+	next := b.StartOffset()
 	var offsets []int
 	for next != 0 {
 		offsets = append(offsets, next)
@@ -448,7 +459,7 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = 1
+	b.offset = b.StartOffset()
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
