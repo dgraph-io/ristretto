@@ -26,6 +26,10 @@ func NewTree(mf *MmapFile) *Tree {
 		nextPage: 1,
 	}
 	t.newNode(0)
+	// This acts as the rightmost pointer (all the keys are <= this key).
+	// This is necessary for B+ tree property that, all leaf nodes should
+	// be at same level.
+	t.Set(math.MaxUint64-1, 0)
 	return t
 }
 
@@ -312,11 +316,13 @@ func (n node) compact() int {
 	assert(n.isLeaf())
 	var left, right int
 	for right < maxKeys {
-		if n.key(right) == 0 {
+		k, v := n.key(right), n.val(right)
+		if k == 0 {
 			break
 		}
 		// If the value is non-zero, move the kv to right.
-		if n.val(right) != 0 {
+		// TODO(naman): Add test for second condition.
+		if v != 0 || k == math.MaxUint64-1 {
 			if left != right {
 				copy(n.data(left), n.data(right))
 			}
