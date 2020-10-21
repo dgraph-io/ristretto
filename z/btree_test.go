@@ -8,6 +8,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 )
 
@@ -203,8 +204,8 @@ func BenchmarkRead(b *testing.B) {
 		bt.Set(k, k)
 	}
 	np := bt.NumPages()
-	fmt.Printf("Num pages: %d Size: %d\n", np, np*pageSize)
-	fmt.Println("Writes done")
+	fmt.Printf("Num pages: %d Size: %s\n", np, humanize.IBytes(uint64(np*pageSize)))
+	fmt.Println("Writes done.")
 
 	b.Run("btree", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {

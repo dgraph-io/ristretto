@@ -283,23 +283,35 @@ func (n node) isFull() bool {
 }
 func (n node) search(k uint64) int {
 	N := n.numKeys()
-	linear := func() int {
-		for i := 0; i < N; i++ {
-			if ki := n.key(i); ki >= k {
-				return i
-			}
+	lo, hi := 0, N
+	for hi-lo > 64 {
+		// 65/2 = 32
+		// lo = 33
+		// hi = 65
+		mid := (hi + lo) / 2
+		km := n.key(mid)
+		if k == km {
+			return mid
 		}
-		return N
+		if k > km {
+			// key is greater than the key at mid, so move right.
+			lo = mid + 1
+		} else {
+			// else move left.
+			hi = mid - 1
+		}
 	}
-	// binary := func() int {
+	// if N >= 256 {
 	// 	return sort.Search(N, func(i int) bool {
 	// 		return n.key(i) >= k
 	// 	})
 	// }
-	// if N >= 128 {
-	// 	return binary()
-	// }
-	return linear()
+	for i := lo; i <= hi; i++ {
+		if ki := n.key(i); ki >= k {
+			return i
+		}
+	}
+	return N
 }
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()
