@@ -41,8 +41,8 @@ const padding = 8
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
-	buf           []byte
 	offset        uint32
+	buf           []byte
 	curSz         int
 	maxSz         int
 	fd            *os.File
@@ -233,11 +233,11 @@ func (b *Buffer) AllocateOffset(n int) int {
 }
 
 // IncrementOffset returns the incremented offset
-func (b *Buffer) IncrementOffset(n int) (int, error) {
-	if int(atomic.LoadUint32(&b.offset))+n < b.curSz {
-		return int(atomic.AddUint32(&b.offset, uint32(n))), nil
+func (b *Buffer) IncrementOffset(n int) int {
+	if int(atomic.LoadUint32(&b.offset))+n > b.curSz {
+		panic("Buffer size limit hit")
 	}
-	return 0, errors.New("Buffer size limit hit")
+	return int(atomic.AddUint32(&b.offset, uint32(n)))
 }
 
 func (b *Buffer) writeLen(sz int) {
