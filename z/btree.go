@@ -124,7 +124,7 @@ func (t *Tree) get(n node, k uint64) uint64 {
 	}
 	// This is internal node
 	idx := n.search(k)
-	if idx == maxKeys || n.key(idx) == 0 {
+	if idx == n.numKeys() || n.key(idx) == 0 {
 		return 0
 	}
 	child := t.node(n.uint64(valOffset(idx)))
@@ -278,20 +278,21 @@ func (n node) isFull() bool {
 	return n.numKeys() == maxKeys
 }
 func (n node) search(k uint64) int {
+	N := n.numKeys()
 	linear := func() int {
-		for i := 0; i < maxKeys; i++ {
-			if ki := n.key(i); ki == 0 || ki >= k {
+		for i := 0; i < N; i++ {
+			if ki := n.key(i); ki >= k {
 				return i
 			}
 		}
-		return maxKeys
+		return N
 	}
 	// binary := func() int {
-	// 	return sort.Search(n.numKeys(), func(i int) bool {
+	// 	return sort.Search(N, func(i int) bool {
 	// 		return n.key(i) >= k
 	// 	})
 	// }
-	// if n.numKeys() >= 128 {
+	// if N >= 128 {
 	// 	return binary()
 	// }
 	return linear()
@@ -332,7 +333,7 @@ func (n node) compact() int {
 func (n node) get(k uint64) uint64 {
 	idx := n.search(k)
 	// key is not found
-	if idx == maxKeys {
+	if idx == n.numKeys() {
 		return 0
 	}
 	if ki := n.key(idx); ki == k {
