@@ -142,18 +142,10 @@ func (t *Tree) get(n node, k uint64) uint64 {
 	return t.get(child, k)
 }
 
-// DeleteBelow sets value 0, for all the keys which have value below ts
-// TODO(naman): Optimize this if needed.
+// DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
 	fn := func(n node) {
-		// Set the values to 0.
-		n.iterate(func(n node, idx int) {
-			if n.val(idx) < ts {
-				n.setAt(valOffset(idx), 0)
-			}
-		})
-		// remove the deleted entries from the node.
-		n.compact()
+		n.compact(ts)
 	}
 	t.Iterate(fn)
 }
@@ -319,25 +311,27 @@ func (n node) maxKey() uint64 {
 	return n.key(idx)
 }
 
-// compacts the node i.e., remove all the kvs with value 0. It returns the remaining number of keys.
-func (n node) compact() int {
+// compacts the node i.e., remove all the kvs with value <= lo. It returns the remaining number of
+// keys.
+func (n node) compact(lo uint64) int {
 	// compact should be called only on leaf nodes
 	assert(n.isLeaf())
 	var left, right int
-	for right < maxKeys {
+	for right = 0; right < maxKeys; right++ {
 		k, v := n.key(right), n.val(right)
 		if k == 0 {
 			break
 		}
-		// If the value is non-zero, move the kv to left.
 		// TODO(naman): Add test for second condition.
-		if v != 0 || k == math.MaxUint64-1 {
-			if left != right {
-				copy(n.data(left), n.data(right))
-			}
-			left++
+		if v <= lo && k < math.MaxUint64-1 {
+			// Skip over this key. Don't copy it.
+			continue
 		}
-		right++
+		// Valid data. Copy it from right to left. Advance left.
+		if left != right {
+			copy(n.data(left), n.data(right))
+		}
+		left++
 	}
 	// zero out rest of the kv pairs.
 	ZeroOut(n, keyOffset(left), keyOffset(right))
