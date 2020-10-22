@@ -284,7 +284,7 @@ func (n node) isFull() bool {
 func (n node) search(k uint64) int {
 	N := n.numKeys()
 	lo, hi := 0, N
-	for hi-lo > 64 {
+	for hi-lo > 32 {
 		// 65/2 = 32
 		// lo = 33
 		// hi = 65
@@ -298,7 +298,7 @@ func (n node) search(k uint64) int {
 			lo = mid + 1
 		} else {
 			// else move left.
-			hi = mid - 1
+			hi = mid
 		}
 	}
 	// if N >= 256 {
