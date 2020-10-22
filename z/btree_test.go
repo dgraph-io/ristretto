@@ -18,16 +18,24 @@ func setPageSize(sz int) {
 	pageSize = sz
 	maxKeys = (pageSize / 16) - 1
 }
-func TestTree(t *testing.T) {
+
+func createMmapFile(t require.TestingT, sz int) (*MmapFile, *os.File) {
 	f, err := ioutil.TempFile(".", "tree")
 	require.NoError(t, err)
-	defer os.Remove(f.Name())
-
 	mf, err := OpenMmapFileUsing(f, 1<<30, true)
 	if err != NewFile {
 		require.NoError(t, err)
 	}
-	defer mf.Close(0)
+	return mf, f
+}
+
+func cleanup(mf *MmapFile, f *os.File) {
+	mf.Close(0)
+	os.Remove(f.Name())
+}
+func TestTree(t *testing.T) {
+	mf, f := createMmapFile(t, 1<<30)
+	defer cleanup(mf, f)
 
 	bt := NewTree(mf)
 	bt.Print()
@@ -53,15 +61,8 @@ func TestTree(t *testing.T) {
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		f, err := ioutil.TempFile(".", "tree")
-		require.NoError(t, err)
-		defer os.Remove(f.Name())
-
-		mf, err := OpenMmapFileUsing(f, 1<<30, true)
-		if err != NewFile {
-			require.NoError(t, err)
-		}
-		defer mf.Close(0)
+		mf, f := createMmapFile(t, 1<<30)
+		defer cleanup(mf, f)
 
 		bt := NewTree(mf)
 
@@ -154,15 +155,8 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		f, err := ioutil.TempFile(".", "tree")
-		require.NoError(b, err)
-		defer os.Remove(f.Name())
-
-		mf, err := OpenMmapFileUsing(f, 1<<30, true)
-		if err != NewFile {
-			require.NoError(b, err)
-		}
-		defer mf.Close(0)
+		mf, f := createMmapFile(b, 1<<30)
+		defer cleanup(mf, f)
 
 		bt := NewTree(mf)
 		b.ResetTimer()
@@ -188,15 +182,8 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	f, err := ioutil.TempFile(".", "tree")
-	require.NoError(b, err)
-	defer os.Remove(f.Name())
-
-	mf, err := OpenMmapFileUsing(f, 1<<30, true)
-	if err != NewFile {
-		require.NoError(b, err)
-	}
-	defer mf.Close(0)
+	mf, f := createMmapFile(b, 1<<30)
+	defer cleanup(mf, f)
 
 	bt := NewTree(mf)
 	for i := 0; i < N; i++ {
