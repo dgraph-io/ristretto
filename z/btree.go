@@ -22,11 +22,14 @@ type Tree struct {
 
 // NewTree returns a memory mapped B+ tree.
 func NewTree(mf *MmapFile) *Tree {
+	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
+	check(Madvise(mf.Data, false))
 	t := &Tree{
 		mf:       mf,
 		nextPage: 1,
 	}
 	t.newNode(0)
+
 	// This acts as the rightmost pointer (all the keys are <= this key).
 	// This is necessary for B+ tree property that, all leaf nodes should
 	// be at same level.
