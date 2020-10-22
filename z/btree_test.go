@@ -167,6 +167,15 @@ func BenchmarkWrite(b *testing.B) {
 	})
 }
 
+// goos: linux
+// goarch: amd64
+// pkg: github.com/dgraph-io/ristretto/z
+// BenchmarkRead/map-4         	10845322	       109 ns/op
+// BenchmarkRead/btree-4       	 2744283	       430 ns/op
+// Cumulative for 10 runs.
+// name          time/op
+// Read/map-4    105ns ± 1%
+// Read/btree-4  422ns ± 1%
 func BenchmarkRead(b *testing.B) {
 	N := 10 << 20
 	mp := make(map[uint64]uint64)
