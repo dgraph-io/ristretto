@@ -13,13 +13,14 @@ var (
 	maxKeys  = (pageSize / 16) - 1
 )
 
-// Tree represents the structure for mmaped B+ tree
+// Tree represents the structure for custom mmaped B+ tree.
+// It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
 	mf       *MmapFile
 	nextPage uint64
 }
 
-// NewTree returns a memory mapped B+ tree
+// NewTree returns a memory mapped B+ tree.
 func NewTree(mf *MmapFile) *Tree {
 	t := &Tree{
 		mf:       mf,
@@ -47,7 +48,9 @@ func (t *Tree) newNode(bit byte) node {
 	n.setAt(keyOffset(maxKeys), t.nextPage-1)
 	return n
 }
+
 func (t *Tree) node(pid uint64) node {
+	// page does not exist
 	if pid == 0 {
 		return nil
 	}
@@ -55,7 +58,7 @@ func (t *Tree) node(pid uint64) node {
 	return node(t.mf.Data[start : start+pageSize])
 }
 
-// Set sets the key-value pair in the tree
+// Set sets the key-value pair in the tree.
 func (t *Tree) Set(k, v uint64) {
 	if k == math.MaxUint64 || k == 0 {
 		panic("Does not support setting MaxUint64/Zero")
@@ -68,10 +71,12 @@ func (t *Tree) Set(k, v uint64) {
 		copy(left[:keyOffset(maxKeys)], root)
 		left.setNumKeys(root.numKeys())
 
+		// reset the root node.
 		part := root[:keyOffset(maxKeys)]
 		ZeroOut(part, 0, len(part))
 		root.setNumKeys(0)
 
+		// set the pointers for left and right child in the root node.
 		root.set(left.maxKey(), left.pageID())
 		root.set(right.maxKey(), right.pageID())
 	}
@@ -103,10 +108,11 @@ func (t *Tree) set(n node, k, v uint64) {
 	t.set(child, k, v)
 
 	if child.isFull() {
-		// Split child.
 		nn := t.split(child)
 
-		// Set children.
+		// Set child pointers in the node n.
+		// Note that key for right node (nn) already exist in node n, but the
+		// pointer is updated.
 		n.set(child.maxKey(), child.pageID())
 		n.set(nn.maxKey(), nn.pageID())
 	}
@@ -196,6 +202,8 @@ func (t *Tree) Print() {
 	t.print(root, 0)
 }
 
+// Splits the node into two. It moves right half of the keys from the original node to a newly
+// created right node. It returns the right node.
 func (t *Tree) split(n node) node {
 	if !n.isFull() {
 		panic("This should be called only when n is full")
@@ -214,7 +222,8 @@ func (t *Tree) split(n node) node {
 }
 
 // Each node in the node is of size pageSize. Two kinds of nodes. Leaf nodes and internal nodes.
-// Leaf nodes only contain the data. Internal nodes would contain the key and the offset to the child node.
+// Leaf nodes only contain the data. Internal nodes would contain the key and the offset to the
+// child node.
 // Internal node would have first entry as
 // <0 offset to child>, <1000 offset>, <5000 offset>, and so on...
 // Leaf nodes would just have: <key, value>, <key, value>, and so on...
@@ -222,14 +231,8 @@ func (t *Tree) split(n node) node {
 // | pageID (8 bytes) | metaBits (1 byte) | 3 free bytes | numKeys (4 bytes) |
 type node []byte
 
-func (n node) uint64(start int) uint64 {
-	return *(*uint64)(unsafe.Pointer(&n[start]))
-	// return binary.BigEndian.Uint64(n[start : start+8])
-}
-
-func (n node) uint32(start int) uint32 {
-	return *(*uint32)(unsafe.Pointer(&n[start]))
-}
+func (n node) uint64(start int) uint64 { return *(*uint64)(unsafe.Pointer(&n[start])) }
+func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
 
 func keyOffset(i int) int        { return 16 * i }   // Last 16 bytes are kept off limits.
 func valOffset(i int) int        { return 16*i + 8 } // Last 16 bytes are kept off limits.
@@ -243,7 +246,6 @@ func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
 func (n node) setAt(start int, k uint64) {
 	v := (*uint64)(unsafe.Pointer(&n[start]))
 	*v = k
-	// binary.BigEndian.PutUint64(n[start:start+8], k)
 }
 
 func (n node) setNumKeys(num int) {
@@ -255,7 +257,7 @@ func (n node) setNumKeys(num int) {
 func (n node) moveRight(lo int) {
 	hi := n.numKeys()
 	assert(hi != maxKeys)
-	// copy works inspite of overlap in src and dst.
+	// copy works despite of overlap in src and dst.
 	// See https://golang.org/pkg/builtin/#copy
 	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])
 }
@@ -281,13 +283,13 @@ func (n node) isLeaf() bool {
 func (n node) isFull() bool {
 	return n.numKeys() == maxKeys
 }
+
+// Search returns the index of a smallest key >= k in a node.
 func (n node) search(k uint64) int {
 	N := n.numKeys()
 	lo, hi := 0, N
+	// Reduce the search space using binary seach and then do linear search.
 	for hi-lo > 32 {
-		// 65/2 = 32
-		// lo = 33
-		// hi = 65
 		mid := (hi + lo) / 2
 		km := n.key(mid)
 		if k == km {
@@ -301,11 +303,6 @@ func (n node) search(k uint64) int {
 			hi = mid
 		}
 	}
-	// if N >= 256 {
-	// 	return sort.Search(N, func(i int) bool {
-	// 		return n.key(i) >= k
-	// 	})
-	// }
 	for i := lo; i <= hi; i++ {
 		if ki := n.key(i); ki >= k {
 			return i
@@ -332,7 +329,7 @@ func (n node) compact() int {
 		if k == 0 {
 			break
 		}
-		// If the value is non-zero, move the kv to right.
+		// If the value is non-zero, move the kv to left.
 		// TODO(naman): Add test for second condition.
 		if v != 0 || k == math.MaxUint64-1 {
 			if left != right {
@@ -342,7 +339,7 @@ func (n node) compact() int {
 		}
 		right++
 	}
-	// zero out rest of the kv pairs
+	// zero out rest of the kv pairs.
 	ZeroOut(n, keyOffset(left), keyOffset(right))
 	n.setNumKeys(left)
 	return left
@@ -364,7 +361,8 @@ func (n node) set(k, v uint64) {
 	idx := n.search(k)
 	ki := n.key(idx)
 	if n.numKeys() == maxKeys {
-		// This happens during key split, when we are inserting the same key.
+		// This happens during split of non-root node, when we are updating the child pointer of
+		// right node. Hence, the key should already exist.
 		assert(ki == k)
 	}
 	if ki > k {
