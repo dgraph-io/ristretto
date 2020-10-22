@@ -41,7 +41,7 @@ const padding = 8
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
-	offset        uint32
+	offset        uint64
 	buf           []byte
 	curSz         int
 	maxSz         int
@@ -144,20 +144,18 @@ func (b *Buffer) IsEmpty() bool {
 // LenWithPadding would return the number of bytes written to the buffer so far
 // plus the padding at the start of the buffer.
 func (b *Buffer) LenWithPadding() int {
-	l := atomic.LoadUint32(&b.offset)
-	return int(l)
+	return int(atomic.LoadUint64(&b.offset))
 }
 
 // LenNoPadding would return the number of bytes written to the buffer so far
 // (without the padding).
 func (b *Buffer) LenNoPadding() int {
-	l := atomic.LoadUint32(&b.offset)
-	return int(l - padding)
+	return int(atomic.LoadUint64(&b.offset) - padding)
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	off := atomic.LoadUint32(&b.offset)
+	off := atomic.LoadUint64(&b.offset)
 	return b.buf[padding:off]
 }
 
@@ -200,7 +198,6 @@ func (b *Buffer) Grow(n int) {
 
 		} else {
 			newBuf := Calloc(b.curSz)
-			//copy(newBuf, b.buf[:b.offset])
 			copy(newBuf, b.buf[:b.offset])
 			Free(b.buf)
 			b.buf = newBuf
@@ -217,10 +214,9 @@ func (b *Buffer) Grow(n int) {
 // written to. Warning: Allocate is not thread-safe. The byte slice returned MUST be used before
 // further calls to Buffer.
 func (b *Buffer) Allocate(n int) []byte {
-	// will also have to change b.Grow but leaving it for now because we dont need it
 	b.Grow(n)
 	off := b.offset
-	b.offset += uint32(n)
+	b.offset += uint64(n)
 	return b.buf[off:int(b.offset)]
 }
 
@@ -228,16 +224,17 @@ func (b *Buffer) Allocate(n int) []byte {
 // the offset of the allocation.
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
-	b.offset += uint32(n)
+	b.offset += uint64(n)
 	return int(b.offset) - n
 }
 
-// IncrementOffset returns the incremented offset
+// IncrementOffset returns the incremented offset. This operation is thread-safe.
+// Note: Only this API is thread-safe, the other APIs should not be used concurrently.
 func (b *Buffer) IncrementOffset(n int) int {
-	if int(atomic.LoadUint32(&b.offset))+n > b.curSz {
+	if int(atomic.LoadUint64(&b.offset))+n > b.curSz {
 		panic("Buffer size limit hit")
 	}
-	return int(atomic.AddUint32(&b.offset, uint32(n)))
+	return int(atomic.AddUint64(&b.offset, uint64(n)))
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -467,13 +464,13 @@ func (b *Buffer) Data(offset int) []byte {
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.Grow(len(p))
 	n = copy(b.buf[b.offset:], p)
-	b.offset += uint32(n)
+	b.offset += uint64(n)
 	return n, nil
 }
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = uint32(b.StartOffset())
+	b.offset = uint64(b.StartOffset())
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is

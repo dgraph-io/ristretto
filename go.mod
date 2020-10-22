@@ -4,7 +4,6 @@ go 1.12
 
 require (
 	github.com/cespare/xxhash v1.1.0
-	github.com/dgraph-io/badger v1.6.2
 	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2
 	github.com/dustin/go-humanize v1.0.0
 	github.com/pkg/errors v0.9.1
