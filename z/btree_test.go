@@ -3,6 +3,7 @@ package z
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -49,10 +50,10 @@ func TestTree(t *testing.T) {
 	}
 
 	bt.DeleteBelow(100)
-	for i := uint64(1); i < 100; i++ {
+	for i := uint64(1); i <= 100; i++ {
 		require.Equal(t, uint64(0), bt.Get(i))
 	}
-	for i := uint64(100); i < N; i++ {
+	for i := uint64(101); i < N; i++ {
 		require.Equal(t, i, bt.Get(i))
 	}
 
@@ -129,18 +130,23 @@ func TestNode_MoveRight(t *testing.T) {
 func TestNodeCompact(t *testing.T) {
 	n := node(make([]byte, pageSize))
 	n.setBit(bitLeaf)
-	N := uint64(256)
+	N := uint64(128)
 	mp := make(map[uint64]uint64)
-	for i := uint64(1); i < N; i++ {
+	for i := uint64(1); i <= N; i++ {
 		key := uint64(rand.Int63n(1<<60) + 1)
-		val := uint64(0)
+		val := uint64(10)
 		if i%2 == 0 {
-			val = key / 2
-			mp[key] = val
+			val = 20
+			mp[key] = 20
 		}
 		n.set(key, val)
 	}
-	require.Equal(t, 255/2, n.compact())
+
+	// MaxUint64-1 should not be removed though it has value less than delete below.
+	mkey := uint64(math.MaxUint64 - 1)
+	n.set(mkey, 0)
+	mp[mkey] = 0
+	require.Equal(t, int(N/2+1), n.compact(10))
 	for k, v := range mp {
 		require.Equal(t, v, n.get(k))
 	}

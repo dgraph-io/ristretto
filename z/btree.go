@@ -31,8 +31,6 @@ func NewTree(mf *MmapFile) *Tree {
 	t.newNode(0)
 
 	// This acts as the rightmost pointer (all the keys are <= this key).
-	// This is necessary for B+ tree property that, all leaf nodes should
-	// be at same level.
 	t.Set(math.MaxUint64-1, 0)
 	return t
 }
@@ -64,7 +62,7 @@ func (t *Tree) node(pid uint64) node {
 // Set sets the key-value pair in the tree.
 func (t *Tree) Set(k, v uint64) {
 	if k == math.MaxUint64 || k == 0 {
-		panic("Does not support setting MaxUint64/Zero")
+		panic("Error setting zero or MaxUint64")
 	}
 	root := t.node(1)
 	t.set(root, k, v)
@@ -96,7 +94,7 @@ func (t *Tree) set(n node, k, v uint64) {
 	// This is an internal node.
 	idx := n.search(k)
 	if idx >= maxKeys {
-		panic("this shouldn't happen")
+		panic("search returned index >= maxKeys")
 	}
 	// If no key at idx.
 	if n.key(idx) == 0 {
@@ -229,8 +227,8 @@ type node []byte
 func (n node) uint64(start int) uint64 { return *(*uint64)(unsafe.Pointer(&n[start])) }
 func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
 
-func keyOffset(i int) int        { return 16 * i }   // Last 16 bytes are kept off limits.
-func valOffset(i int) int        { return 16*i + 8 } // Last 16 bytes are kept off limits.
+func keyOffset(i int) int        { return 16 * i }
+func valOffset(i int) int        { return 16*i + 8 }
 func (n node) numKeys() int      { return int(n.uint32(valOffset(maxKeys) + 4)) }
 func (n node) pageID() uint64    { return n.uint64(keyOffset(maxKeys)) }
 func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
@@ -325,7 +323,6 @@ func (n node) compact(lo uint64) int {
 		if k == 0 {
 			break
 		}
-		// TODO(naman): Add test for second condition.
 		if v <= lo && k < math.MaxUint64-1 {
 			// Skip over this key. Don't copy it.
 			continue
