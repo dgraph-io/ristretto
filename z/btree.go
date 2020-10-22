@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	pageSize = os.Getpagesize()
-	maxKeys  = (pageSize / 16) - 1
+	pageSize   = os.Getpagesize()
+	maxKeys    = (pageSize / 16) - 1
+	kvBoundary = 8 * (maxKeys + 1)
 )
 
 // Tree represents the structure for mmaped B+ tree
@@ -65,10 +66,13 @@ func (t *Tree) Set(k, v uint64) {
 	if root.isFull() {
 		right := t.split(root)
 		left := t.newNode(root.bits())
-		copy(left[:keyOffset(maxKeys)], root)
+		copy(left[:keyOffset(maxKeys)], root[:keyOffset(maxKeys)])
+		copy(left[kvBoundary:valOffset(maxKeys)], root[kvBoundary:valOffset(maxKeys)])
 		left.setNumKeys(root.numKeys())
 
 		part := root[:keyOffset(maxKeys)]
+		ZeroOut(part, 0, len(part))
+		part = root[kvBoundary:valOffset(maxKeys)]
 		ZeroOut(part, 0, len(part))
 		root.setNumKeys(0)
 
@@ -205,10 +209,15 @@ func (t *Tree) split(n node) node {
 	// Create a new node nn, copy over half the keys from n, and set the parent to n's parent.
 	nn := t.newNode(n.bits())
 	copy(nn, rightHalf)
+	ZeroOut(rightHalf, 0, len(rightHalf))
+
+	rightHalf = n[valOffset(maxKeys/2):valOffset(maxKeys)]
+	copy(nn[kvBoundary:], rightHalf)
+	ZeroOut(rightHalf, 0, len(rightHalf))
 	nn.setNumKeys(maxKeys - maxKeys/2)
 
 	// Remove entries from node n.
-	ZeroOut(rightHalf, 0, len(rightHalf))
+	// ZeroOut(rightHalf, 0, len(rightHalf))
 	n.setNumKeys(maxKeys / 2)
 	return nn
 }
@@ -231,14 +240,15 @@ func (n node) uint32(start int) uint32 {
 	return *(*uint32)(unsafe.Pointer(&n[start]))
 }
 
-func keyOffset(i int) int        { return 16 * i }   // Last 16 bytes are kept off limits.
-func valOffset(i int) int        { return 16*i + 8 } // Last 16 bytes are kept off limits.
-func (n node) numKeys() int      { return int(n.uint32(valOffset(maxKeys) + 4)) }
-func (n node) pageID() uint64    { return n.uint64(keyOffset(maxKeys)) }
-func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
-func (n node) val(i int) uint64  { return n.uint64(valOffset(i)) }
-func (n node) id() uint64        { return n.key(maxKeys) }
-func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
+func keyOffset(i int) int         { return 8 * i }            // Last 16 bytes are kept off limits.
+func valOffset(i int) int         { return kvBoundary + 8*i } // Last 16 bytes are kept off limits.
+func (n node) numKeys() int       { return int(n.uint32(valOffset(maxKeys) + 4)) }
+func (n node) pageID() uint64     { return n.uint64(keyOffset(maxKeys)) }
+func (n node) key(i int) uint64   { return n.uint64(keyOffset(i)) }
+func (n node) val(i int) uint64   { return n.uint64(valOffset(i)) }
+func (n node) id() uint64         { return n.key(maxKeys) }
+func (n node) datak(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
+func (n node) datav(i int) []byte { return n[valOffset(i):valOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
 	v := (*uint64)(unsafe.Pointer(&n[start]))
@@ -258,6 +268,7 @@ func (n node) moveRight(lo int) {
 	// copy works inspite of overlap in src and dst.
 	// See https://golang.org/pkg/builtin/#copy
 	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])
+	copy(n[valOffset(lo+1):valOffset(hi+1)], n[valOffset(lo):valOffset(hi)])
 }
 
 const (
@@ -336,7 +347,8 @@ func (n node) compact() int {
 		// TODO(naman): Add test for second condition.
 		if v != 0 || k == math.MaxUint64-1 {
 			if left != right {
-				copy(n.data(left), n.data(right))
+				copy(n.datak(left), n.datak(right))
+				copy(n.datav(left), n.datav(right))
 			}
 			left++
 		}
@@ -344,6 +356,7 @@ func (n node) compact() int {
 	}
 	// zero out rest of the kv pairs
 	ZeroOut(n, keyOffset(left), keyOffset(right))
+	ZeroOut(n, valOffset(left), valOffset(right))
 	n.setNumKeys(left)
 	return left
 }

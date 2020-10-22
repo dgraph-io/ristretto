@@ -17,6 +17,7 @@ var tmp int
 func setPageSize(sz int) {
 	pageSize = sz
 	maxKeys = (pageSize / 16) - 1
+	kvBoundary = 8 * (maxKeys + 1)
 }
 func TestTree(t *testing.T) {
 	f, err := ioutil.TempFile(".", "tree")
