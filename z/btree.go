@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020 Dgraph Labs, Inc. and Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package z
 
 import (
@@ -317,13 +333,14 @@ func (n node) maxKey() uint64 {
 func (n node) compact(lo uint64) int {
 	// compact should be called only on leaf nodes
 	assert(n.isLeaf())
+	mk := n.maxKey()
 	var left, right int
 	for right = 0; right < maxKeys; right++ {
 		k, v := n.key(right), n.val(right)
 		if k == 0 {
 			break
 		}
-		if v <= lo && k < math.MaxUint64-1 {
+		if v <= lo && k < mk {
 			// Skip over this key. Don't copy it.
 			continue
 		}
