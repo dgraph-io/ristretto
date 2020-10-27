@@ -39,7 +39,7 @@ type Tree struct {
 // Release the memory allocated to tree.
 func (t *Tree) Release() {
 	if t != nil && t.mf != nil {
-		t.mf.Delete()
+		check(t.mf.Delete())
 	}
 }
 
@@ -126,7 +126,7 @@ func (t *Tree) Set(k, v uint64) {
 
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
-func (t *Tree) set(offset uint64, k, v uint64) node {
+func (t *Tree) set(offset, k, v uint64) node {
 	n := t.node(offset)
 	if n.isLeaf() {
 		return n.set(k, v)
