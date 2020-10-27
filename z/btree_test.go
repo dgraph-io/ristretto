@@ -19,7 +19,6 @@ package z
 import (
 	"fmt"
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -99,6 +98,33 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestOccupancyRatio(t *testing.T) {
+	// atmax 4 keys per node
+	setPageSize(16 * 5)
+	defer setPageSize(os.Getpagesize())
+	require.Equal(t, 4, maxKeys)
+	mf, f := createMmapFile(t, 1<<30)
+	defer cleanup(mf, f)
+
+	bt := NewTree(mf)
+	expectedRatio := float64(1) / float64(maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	for i := uint64(1); i <= 3; i++ {
+		bt.Set(i, i)
+	}
+	// Tree structure will be:
+	//    [2,Max,_,_]
+	//  [1,2,_,_]  [3,Max,_,_]
+	expectedRatio = float64(6) / float64(3*maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	bt.DeleteBelow(2)
+	// Tree structure will be:
+	//    [2,Max,_]
+	//  [2,_,_,_]  [3,Max,_,_]
+	expectedRatio = float64(5) / float64(3*maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+}
+
 func TestNode(t *testing.T) {
 	n := node(make([]byte, pageSize))
 	for i := uint64(1); i < 16; i *= 2 {
@@ -147,8 +173,8 @@ func TestNodeCompact(t *testing.T) {
 	n.setBit(bitLeaf)
 	N := uint64(128)
 	mp := make(map[uint64]uint64)
-	for i := uint64(1); i <= N; i++ {
-		key := uint64(rand.Int63n(1<<60) + 1)
+	for i := uint64(1); i < N; i++ {
+		key := i
 		val := uint64(10)
 		if i%2 == 0 {
 			val = 20
@@ -157,14 +183,13 @@ func TestNodeCompact(t *testing.T) {
 		n.set(key, val)
 	}
 
-	// MaxUint64-1 should not be removed though it has value less than delete below.
-	mkey := uint64(math.MaxUint64 - 1)
-	n.set(mkey, 0)
-	mp[mkey] = 0
-	require.Equal(t, int(N/2+1), n.compact(10))
+	require.Equal(t, int(N/2), n.compact(10))
 	for k, v := range mp {
 		require.Equal(t, v, n.get(k))
 	}
+	// Max key N-1, i.e., 127 should not be removed. Only its value should be set to zero.
+	require.Equal(t, uint64(0), n.get(N-1))
+	require.Equal(t, uint64(127), n.maxKey())
 }
 
 func BenchmarkWrite(b *testing.B) {
@@ -274,5 +299,63 @@ func BenchmarkSearch(b *testing.B) {
 		})
 		mf.Close(0)
 		os.Remove(f.Name())
+	}
+}
+
+// This benchmark when run on dgus-delta, performed marginally better with threshold=32.
+// CustomSearch/sz-64_th-1-4     49.9ns ± 1% (fully binary)
+// CustomSearch/sz-64_th-16-4    63.3ns ± 0%
+// CustomSearch/sz-64_th-32-4    58.7ns ± 7%
+// CustomSearch/sz-64_th-64-4    63.9ns ± 7% (fully linear)
+
+// CustomSearch/sz-128_th-32-4   70.2ns ± 1%
+
+// CustomSearch/sz-255_th-1-4    77.3ns ± 0% (fully binary)
+// CustomSearch/sz-255_th-16-4   68.2ns ± 1%
+// CustomSearch/sz-255_th-32-4   67.0ns ± 7%
+// CustomSearch/sz-255_th-64-4   85.5ns ±19%
+// CustomSearch/sz-255_th-256-4   129ns ± 6% (fully linear)
+
+func BenchmarkCustomSearch(b *testing.B) {
+	mixed := func(n node, k uint64, N int, threshold int) int {
+		lo, hi := 0, N
+		// Reduce the search space using binary seach and then do linear search.
+		for hi-lo > threshold {
+			mid := (hi + lo) / 2
+			km := n.key(mid)
+			if k == km {
+				return mid
+			}
+			if k > km {
+				// key is greater than the key at mid, so move right.
+				lo = mid + 1
+			} else {
+				// else move left.
+				hi = mid
+			}
+		}
+		for i := lo; i <= hi; i++ {
+			if ki := n.key(i); ki >= k {
+				return i
+			}
+		}
+		return N
+	}
+
+	for _, sz := range []int{64, 128, 255} {
+		n := node(make([]byte, pageSize))
+		for i := 1; i <= sz; i++ {
+			n.set(uint64(i), uint64(i))
+		}
+
+		mk := sz + 1
+		for th := 1; th <= sz+1; th *= 2 {
+			b.Run(fmt.Sprintf("sz-%d th-%d", sz, th), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					k := uint64(rand.Intn(mk))
+					tmp = mixed(n, k, sz, th)
+				}
+			})
+		}
 	}
 }

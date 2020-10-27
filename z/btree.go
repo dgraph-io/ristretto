@@ -44,6 +44,7 @@ func NewTree(mf *MmapFile) *Tree {
 		mf:       mf,
 		nextPage: 1,
 	}
+	// This is the root node.
 	t.newNode(0)
 
 	// This acts as the rightmost pointer (all the keys are <= this key).
@@ -54,6 +55,17 @@ func NewTree(mf *MmapFile) *Tree {
 // NumPages returns the number of pages in a B+ tree.
 func (t *Tree) NumPages() int {
 	return int(t.nextPage - 1)
+}
+
+// OccupancyRatio gives the the fraction of memory used for storing data.
+func (t *Tree) OccupancyRatio() float64 {
+	var totalKeys, maxPossible uint64
+	fn := func(n node) {
+		totalKeys += uint64(n.numKeys())
+		maxPossible += uint64(maxKeys)
+	}
+	t.Iterate(fn)
+	return float64(totalKeys) / float64(maxPossible)
 }
 
 func (t *Tree) newNode(bit byte) node {
@@ -162,16 +174,21 @@ func (t *Tree) get(n node, k uint64) uint64 {
 // DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
 	fn := func(n node) {
+		// We want to compact only the leaf nodes. The internal nodes aren't compacted.
+		if !n.isLeaf() {
+			return
+		}
 		n.compact(ts)
 	}
 	t.Iterate(fn)
 }
 
 func (t *Tree) iterate(n node, fn func(node)) {
+	fn(n)
 	if n.isLeaf() {
-		fn(n)
 		return
 	}
+	// Explore children.
 	for i := 0; i < maxKeys; i++ {
 		if n.key(i) == 0 {
 			return
@@ -182,8 +199,7 @@ func (t *Tree) iterate(n node, fn func(node)) {
 	}
 }
 
-// Iterate iterates over the tree and executes the fn on each leaf node. It is
-// the responsibility of caller to iterate over all the kvs in a leaf node.
+// Iterate iterates over the tree and executes the fn on each node.
 func (t *Tree) Iterate(fn func(node)) {
 	root := t.node(1)
 	t.iterate(root, fn)
@@ -249,7 +265,6 @@ func (n node) numKeys() int      { return int(n.uint32(valOffset(maxKeys) + 4)) 
 func (n node) pageID() uint64    { return n.uint64(keyOffset(maxKeys)) }
 func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
 func (n node) val(i int) uint64  { return n.uint64(valOffset(i)) }
-func (n node) id() uint64        { return n.key(maxKeys) }
 func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
@@ -333,14 +348,15 @@ func (n node) maxKey() uint64 {
 func (n node) compact(lo uint64) int {
 	// compact should be called only on leaf nodes
 	assert(n.isLeaf())
+	N := n.numKeys()
 	mk := n.maxKey()
+	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
+	if N > 0 && n.val(N-1) <= lo {
+		n.setAt(valOffset(N-1), 0)
+	}
 	var left, right int
-	for right = 0; right < maxKeys; right++ {
-		k, v := n.key(right), n.val(right)
-		if k == 0 {
-			break
-		}
-		if v <= lo && k < mk {
+	for right = 0; right < N; right++ {
+		if n.val(right) <= lo && n.key(right) < mk {
 			// Skip over this key. Don't copy it.
 			continue
 		}
