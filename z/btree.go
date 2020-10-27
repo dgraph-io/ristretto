@@ -104,8 +104,7 @@ func (t *Tree) Set(k, v uint64) {
 	if k == math.MaxUint64 || k == 0 {
 		panic("Error setting zero or MaxUint64")
 	}
-	root := t.node(1)
-	root = t.set(1, k, v)
+	root := t.set(1, k, v)
 	if root.isFull() {
 		right := t.split(1)
 		left := t.newNode(root.bits())
@@ -130,8 +129,7 @@ func (t *Tree) Set(k, v uint64) {
 func (t *Tree) set(offset uint64, k, v uint64) node {
 	n := t.node(offset)
 	if n.isLeaf() {
-		n.set(k, v)
-		return n
+		return n.set(k, v)
 	}
 
 	// This is an internal node.
@@ -155,6 +153,7 @@ func (t *Tree) set(offset uint64, k, v uint64) node {
 	n = t.node(offset)
 	if child.isFull() {
 		nn := t.split(child.pageID())
+		// Re-read n and child as the underlying buffer for tree might have changed during split.
 		n = t.node(offset)
 		child = t.node(n.uint64(valOffset(idx)))
 		// Set child pointers in the node n.
@@ -406,7 +405,7 @@ func (n node) get(k uint64) uint64 {
 	return 0
 }
 
-func (n node) set(k, v uint64) {
+func (n node) set(k, v uint64) node {
 	idx := n.search(k)
 	ki := n.key(idx)
 	if n.numKeys() == maxKeys {
@@ -427,7 +426,7 @@ func (n node) set(k, v uint64) {
 	if ki == 0 || ki >= k {
 		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
-		return
+		return n
 	}
 	panic("shouldn't reach here")
 }
