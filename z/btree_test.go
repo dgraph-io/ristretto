@@ -98,6 +98,32 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestOccupancyRatio(t *testing.T) {
+	// atmax 4 keys per node
+	setPageSize(16 * 5)
+	require.Equal(t, 4, maxKeys)
+	mf, f := createMmapFile(t, 1<<30)
+	defer cleanup(mf, f)
+
+	bt := NewTree(mf)
+	expectedRatio := float64(1) / float64(maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	for i := uint64(1); i <= 3; i++ {
+		bt.Set(i, i)
+	}
+	// Tree structure will be:
+	//    [2,Max,_,_]
+	//  [1,2,_,_]  [3,Max,_,_]
+	expectedRatio = float64(6) / float64(3*maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	bt.DeleteBelow(2)
+	// Tree structure will be:
+	//    [2,Max,_]
+	//  [2,_,_,_]  [3,Max,_,_]
+	expectedRatio = float64(5) / float64(3*maxKeys)
+	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+}
+
 func TestNode(t *testing.T) {
 	n := node(make([]byte, pageSize))
 	for i := uint64(1); i < 16; i *= 2 {
