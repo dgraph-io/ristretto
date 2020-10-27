@@ -48,10 +48,10 @@ func TestTree(t *testing.T) {
 	}
 
 	bt.DeleteBelow(100)
-	for i := uint64(1); i <= 100; i++ {
+	for i := uint64(1); i < 100; i++ {
 		require.Equal(t, uint64(0), bt.Get(i))
 	}
-	for i := uint64(101); i < N; i++ {
+	for i := uint64(100); i < N; i++ {
 		require.Equal(t, i, bt.Get(i))
 	}
 	// bt.Print()
@@ -170,7 +170,7 @@ func TestNodeCompact(t *testing.T) {
 		n.set(key, val)
 	}
 
-	require.Equal(t, int(N/2), n.compact(10))
+	require.Equal(t, int(N/2), n.compact(11))
 	for k, v := range mp {
 		require.Equal(t, v, n.get(k))
 	}

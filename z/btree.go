@@ -380,7 +380,7 @@ func (n node) maxKey() uint64 {
 	return n.key(idx)
 }
 
-// compacts the node i.e., remove all the kvs with value <= lo. It returns the remaining number of
+// compacts the node i.e., remove all the kvs with value < lo. It returns the remaining number of
 // keys.
 func (n node) compact(lo uint64) int {
 	// compact should be called only on leaf nodes
@@ -388,12 +388,12 @@ func (n node) compact(lo uint64) int {
 	N := n.numKeys()
 	mk := n.maxKey()
 	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
-	if N > 0 && n.val(N-1) <= lo {
+	if N > 0 && n.val(N-1) < lo {
 		n.setAt(valOffset(N-1), 0)
 	}
 	var left, right int
 	for right = 0; right < N; right++ {
-		if n.val(right) <= lo && n.key(right) < mk {
+		if n.val(right) < lo && n.key(right) < mk {
 			// Skip over this key. Don't copy it.
 			continue
 		}
