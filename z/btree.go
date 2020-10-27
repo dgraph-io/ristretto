@@ -36,6 +36,13 @@ type Tree struct {
 	nextPage uint64
 }
 
+// Release the memory allocated to tree.
+func (t *Tree) Release() {
+	if t != nil && t.mf != nil {
+		t.mf.Delete()
+	}
+}
+
 // NewTree returns a memory mapped B+ tree.
 func NewTree(mf *MmapFile) *Tree {
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
@@ -71,6 +78,11 @@ func (t *Tree) OccupancyRatio() float64 {
 func (t *Tree) newNode(bit byte) node {
 	offset := int(t.nextPage) * pageSize
 	t.nextPage++
+	sz := len(t.mf.Data)
+	// Double the size of file if current buffer is insufficient.
+	if offset+pageSize > sz {
+		check(t.mf.Truncate(int64(2 * sz)))
+	}
 	n := node(t.mf.Data[offset : offset+pageSize])
 	ZeroOut(n, 0, len(n))
 	n.setBit(bitUsed | bit)
@@ -92,11 +104,12 @@ func (t *Tree) Set(k, v uint64) {
 	if k == math.MaxUint64 || k == 0 {
 		panic("Error setting zero or MaxUint64")
 	}
-	root := t.node(1)
-	t.set(root, k, v)
+	root := t.set(1, k, v)
 	if root.isFull() {
-		right := t.split(root)
+		right := t.split(1)
 		left := t.newNode(root.bits())
+		// Re-read the root as the underlying buffer for tree might have changed during split.
+		root = t.node(1)
 		copy(left[:keyOffset(maxKeys)], root)
 		left.setNumKeys(root.numKeys())
 
@@ -113,10 +126,10 @@ func (t *Tree) Set(k, v uint64) {
 
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
-func (t *Tree) set(n node, k, v uint64) {
+func (t *Tree) set(offset uint64, k, v uint64) node {
+	n := t.node(offset)
 	if n.isLeaf() {
-		n.set(k, v)
-		return
+		return n.set(k, v)
 	}
 
 	// This is an internal node.
@@ -132,19 +145,24 @@ func (t *Tree) set(n node, k, v uint64) {
 	child := t.node(n.uint64(valOffset(idx)))
 	if child == nil {
 		child = t.newNode(bitLeaf)
+		n = t.node(offset)
 		n.setAt(valOffset(idx), child.pageID())
 	}
-	t.set(child, k, v)
-
+	child = t.set(child.pageID(), k, v)
+	// Re-read n as the underlying buffer for tree might have changed during set.
+	n = t.node(offset)
 	if child.isFull() {
-		nn := t.split(child)
-
+		nn := t.split(child.pageID())
+		// Re-read n and child as the underlying buffer for tree might have changed during split.
+		n = t.node(offset)
+		child = t.node(n.uint64(valOffset(idx)))
 		// Set child pointers in the node n.
 		// Note that key for right node (nn) already exist in node n, but the
 		// pointer is updated.
 		n.set(child.maxKey(), child.pageID())
 		n.set(nn.maxKey(), nn.pageID())
 	}
+	return n
 }
 
 // Get looks for key and returns the corresponding value.
@@ -229,14 +247,17 @@ func (t *Tree) Print() {
 
 // Splits the node into two. It moves right half of the keys from the original node to a newly
 // created right node. It returns the right node.
-func (t *Tree) split(n node) node {
+func (t *Tree) split(offset uint64) node {
+	n := t.node(offset)
 	if !n.isFull() {
 		panic("This should be called only when n is full")
 	}
-	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys)]
 
 	// Create a new node nn, copy over half the keys from n, and set the parent to n's parent.
 	nn := t.newNode(n.bits())
+	// Re-read n as the underlying buffer for tree might have changed during newNode.
+	n = t.node(offset)
+	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys)]
 	copy(nn, rightHalf)
 	nn.setNumKeys(maxKeys - maxKeys/2)
 
@@ -384,7 +405,7 @@ func (n node) get(k uint64) uint64 {
 	return 0
 }
 
-func (n node) set(k, v uint64) {
+func (n node) set(k, v uint64) node {
 	idx := n.search(k)
 	ki := n.key(idx)
 	if n.numKeys() == maxKeys {
@@ -405,7 +426,7 @@ func (n node) set(k, v uint64) {
 	if ki == 0 || ki >= k {
 		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
-		return
+		return n
 	}
 	panic("shouldn't reach here")
 }
