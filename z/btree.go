@@ -18,6 +18,7 @@ package z
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math"
 	"os"
 	"strings"
@@ -44,9 +45,17 @@ func (t *Tree) Release() {
 }
 
 // NewTree returns a memory mapped B+ tree.
-func NewTree(mf *MmapFile) *Tree {
+func NewTree(maxSz int) *Tree {
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
+	fd, err := ioutil.TempFile("", "btree")
+	check(err)
+
+	mf, err := OpenMmapFileUsing(fd, maxSz, true)
+	if err != NewFile {
+		check(err)
+	}
 	check(Madvise(mf.Data, false))
+
 	t := &Tree{
 		mf:       mf,
 		nextPage: 1,
@@ -59,20 +68,27 @@ func NewTree(mf *MmapFile) *Tree {
 	return t
 }
 
-// NumPages returns the number of pages in a B+ tree.
-func (t *Tree) NumPages() int {
-	return int(t.nextPage - 1)
+type TreeStats struct {
+	NumPages  int
+	Bytes     int
+	Occupancy float64
 }
 
-// OccupancyRatio gives the the fraction of memory used for storing data.
-func (t *Tree) OccupancyRatio() float64 {
-	var totalKeys, maxPossible uint64
+// Stats returns stats about the tree.
+func (t *Tree) Stats() TreeStats {
+	var totalKeys, maxPossible int
 	fn := func(n node) {
-		totalKeys += uint64(n.numKeys())
-		maxPossible += uint64(maxKeys)
+		totalKeys += n.numKeys()
+		maxPossible += maxKeys
 	}
 	t.Iterate(fn)
-	return float64(totalKeys) / float64(maxPossible)
+	occ := float64(totalKeys) / float64(maxPossible)
+
+	return TreeStats{
+		NumPages:  int(t.nextPage - 1),
+		Bytes:     int(t.nextPage-1) * pageSize,
+		Occupancy: occ,
+	}
 }
 
 func (t *Tree) newNode(bit byte) node {

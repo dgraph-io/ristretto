@@ -35,24 +35,8 @@ func setPageSize(sz int) {
 	maxKeys = (pageSize / 16) - 1
 }
 
-func createMmapFile(t require.TestingT, sz int) (*MmapFile, *os.File) {
-	f, err := ioutil.TempFile(".", "tree")
-	require.NoError(t, err)
-	mf, err := OpenMmapFileUsing(f, 1<<30, true)
-	if err != NewFile {
-		require.NoError(t, err)
-	}
-	return mf, f
-}
-
-func cleanup(mf *MmapFile, f *os.File) {
-	mf.Delete()
-}
 func TestTree(t *testing.T) {
-	mf, f := createMmapFile(t, 1<<30)
-	defer cleanup(mf, f)
-
-	bt := NewTree(mf)
+	bt := NewTree(1 << 20)
 	// bt.Print()
 
 	N := uint64(256 * 256)
@@ -75,10 +59,8 @@ func TestTree(t *testing.T) {
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		mf, f := createMmapFile(t, 1<<30)
-		defer cleanup(mf, f)
-
-		bt := NewTree(mf)
+		bt := NewTree(1 << 20)
+		defer bt.Release()
 
 		N := uint64(1 << 20)
 		mp := make(map[uint64]uint64)
@@ -90,6 +72,9 @@ func TestTreeBasic(t *testing.T) {
 		for k, v := range mp {
 			require.Equal(t, v, bt.Get(k))
 		}
+
+		stats := bt.Stats()
+		t.Logf("final stats: %+v\n", stats)
 	}
 	setAndGet()
 	defer setPageSize(os.Getpagesize())
@@ -102,12 +87,13 @@ func TestOccupancyRatio(t *testing.T) {
 	setPageSize(16 * 5)
 	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
-	mf, f := createMmapFile(t, 1<<30)
-	defer cleanup(mf, f)
 
-	bt := NewTree(mf)
+	bt := NewTree(1 << 20)
+	defer bt.Release()
+
 	expectedRatio := float64(1) / float64(maxKeys)
-	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	stats := bt.Stats()
+	require.Equal(t, expectedRatio, stats.Occupancy)
 	for i := uint64(1); i <= 3; i++ {
 		bt.Set(i, i)
 	}
@@ -115,13 +101,15 @@ func TestOccupancyRatio(t *testing.T) {
 	//    [2,Max,_,_]
 	//  [1,2,_,_]  [3,Max,_,_]
 	expectedRatio = float64(6) / float64(3*maxKeys)
-	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	stats = bt.Stats()
+	require.Equal(t, expectedRatio, stats.Occupancy)
 	bt.DeleteBelow(2)
 	// Tree structure will be:
 	//    [2,Max,_]
 	//  [2,_,_,_]  [3,Max,_,_]
 	expectedRatio = float64(5) / float64(3*maxKeys)
-	require.Equal(t, expectedRatio, bt.OccupancyRatio())
+	stats = bt.Stats()
+	require.Equal(t, expectedRatio, stats.Occupancy)
 }
 
 func TestNode(t *testing.T) {
@@ -200,10 +188,8 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		mf, f := createMmapFile(b, 1<<30)
-		defer cleanup(mf, f)
-
-		bt := NewTree(mf)
+		bt := NewTree(1 << 30)
+		defer bt.Release()
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			k := rand.Uint64()
@@ -236,16 +222,15 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	mf, f := createMmapFile(b, 1<<30)
-	defer cleanup(mf, f)
-
-	bt := NewTree(mf)
+	bt := NewTree(1 << 30)
+	defer bt.Release()
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1
 		bt.Set(k, k)
 	}
-	np := bt.NumPages()
-	fmt.Printf("Num pages: %d Size: %s\n", np, humanize.IBytes(uint64(np*pageSize)))
+	stats := bt.Stats()
+	fmt.Printf("Num pages: %d Size: %s\n", stats.NumPages,
+		humanize.IBytes(uint64(stats.Bytes)))
 	fmt.Println("Writes done.")
 
 	b.Run("btree", func(b *testing.B) {
