@@ -46,8 +46,7 @@ func createMmapFile(t require.TestingT, sz int) (*MmapFile, *os.File) {
 }
 
 func cleanup(mf *MmapFile, f *os.File) {
-	mf.Close(0)
-	os.Remove(f.Name())
+	mf.Delete()
 }
 func TestTree(t *testing.T) {
 	mf, f := createMmapFile(t, 1<<30)
