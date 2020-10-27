@@ -101,6 +101,7 @@ func TestTreeBasic(t *testing.T) {
 func TestOccupancyRatio(t *testing.T) {
 	// atmax 4 keys per node
 	setPageSize(16 * 5)
+	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
 	mf, f := createMmapFile(t, 1<<30)
 	defer cleanup(mf, f)
