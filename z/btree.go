@@ -64,7 +64,7 @@ func (t *Tree) OccupancyRatio() float64 {
 		totalKeys += uint64(n.numKeys())
 		maxPossible += uint64(maxKeys)
 	}
-	t.Iterate(fn, false)
+	t.Iterate(fn)
 	return float64(totalKeys) / float64(maxPossible)
 }
 
@@ -174,35 +174,35 @@ func (t *Tree) get(n node, k uint64) uint64 {
 // DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
 	fn := func(n node) {
+		// We want to compact only the leaf nodes. The internal nodes aren't compacted.
+		if !n.isLeaf() {
+			return
+		}
 		n.compact(ts)
 	}
-	t.Iterate(fn, true)
+	t.Iterate(fn)
 }
 
-func (t *Tree) iterate(n node, fn func(node), leafOnly bool) {
+func (t *Tree) iterate(n node, fn func(node)) {
+	fn(n)
 	if n.isLeaf() {
-		fn(n)
 		return
 	}
-	if !leafOnly {
-		fn(n)
-	}
+	// Explore children.
 	for i := 0; i < maxKeys; i++ {
 		if n.key(i) == 0 {
 			return
 		}
 		childID := n.uint64(valOffset(i))
 		child := t.node(childID)
-		t.iterate(child, fn, leafOnly)
+		t.iterate(child, fn)
 	}
 }
 
-// Iterate iterates over the tree and executes the fn on each node. If leafOnly
-// is set, the function is executed only on leaf nodes. It is the responsibility
-// of caller to iterate over all the kvs in a node.
-func (t *Tree) Iterate(fn func(node), leafOnly bool) {
+// Iterate iterates over the tree and executes the fn on each node.
+func (t *Tree) Iterate(fn func(node)) {
 	root := t.node(1)
-	t.iterate(root, fn, leafOnly)
+	t.iterate(root, fn)
 }
 
 func (t *Tree) print(n node, parentID uint64) {
