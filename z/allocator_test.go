@@ -33,6 +33,42 @@ func TestAllocate(t *testing.T) {
 	require.Panics(t, func() { a.Allocate(1 << 30) })
 }
 
+func TestAllocateFreeList(t *testing.T) {
+	a := NewAllocator(1024)
+	defer a.Release()
+
+	for i := 1; i <= 100; i++ {
+		b := a.Allocate(i)
+		a.Return(b)
+	}
+	a.Allocate(65)
+	a.Allocate(65)
+	a.Allocate(65)
+	a.Allocate(33)
+	a.Allocate(33)
+	a.Allocate(33)
+	a.Allocate(17)
+	a.Allocate(17)
+	a.Allocate(17)
+
+	for i := 0; i < 100; i++ {
+		a.Allocate(16)
+	}
+}
+
+func TestPowTwo(t *testing.T) {
+	require.Equal(t, 2, log2(4))
+	require.Equal(t, 2, log2(7))
+	require.Equal(t, 3, log2(8))
+	require.Equal(t, 3, log2(15))
+	require.Equal(t, 4, log2(16))
+	require.Equal(t, 4, log2(31))
+	require.Equal(t, 10, log2(1024))
+	require.Equal(t, 10, log2(1025))
+	require.Equal(t, 10, log2(2047))
+	require.Equal(t, 11, log2(2048))
+}
+
 func TestAllocateAligned(t *testing.T) {
 	a := NewAllocator(1024)
 	defer a.Release()

@@ -18,6 +18,7 @@ package z
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,7 @@ import (
 // Internally it uses z.Calloc to allocate memory. Once allocated, the memory is not moved,
 // so it is safe to use the allocated bytes to unsafe cast them to Go struct pointers.
 type Allocator struct {
+	sync.Mutex
 	pageSize int
 	curBuf   int
 	curIdx   int
@@ -38,12 +40,16 @@ type Allocator struct {
 	size     uint64
 	Ref      uint64
 	Tag      string
+	reused   int
+
+	freelist map[int]uint64 // Key is the size. Value is the first node of that size.
 }
 
 // allocs keeps references to all Allocators, so we can safely discard them later.
 var allocsMu *sync.Mutex
 var allocRef uint64
 var allocs map[uint64]*Allocator
+var calculatedLog2 []int
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -52,6 +58,11 @@ func init() {
 	// Set up a unique Ref per process.
 	rand.Seed(time.Now().UnixNano())
 	allocRef = uint64(rand.Int63n(1<<16)) << 48
+
+	calculatedLog2 = make([]int, 1025)
+	for i := 1; i <= 1024; i++ {
+		calculatedLog2[i] = int(math.Log2(float64(i)))
+	}
 	fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
 }
 
@@ -61,6 +72,7 @@ func NewAllocator(sz int) *Allocator {
 	a := &Allocator{
 		pageSize: sz,
 		Ref:      ref,
+		freelist: make(map[int]uint64),
 	}
 
 	allocsMu.Lock()
@@ -95,10 +107,85 @@ func AllocatorFrom(ref uint64) *Allocator {
 
 // Size returns the size of the allocations so far.
 func (a *Allocator) Size() uint64 {
+	a.Lock()
+	defer a.Unlock()
+
 	return a.size
 }
 
+func log2(sz int) int {
+	if sz < len(calculatedLog2) {
+		return calculatedLog2[sz]
+	}
+	pow := 10
+	sz >>= 10
+	for sz > 1 {
+		sz >>= 1
+		pow++
+	}
+	return pow
+}
+
+func (a *Allocator) addToFreelist(b []byte) {
+	if len(b) < 32 {
+		// Don't do anything.
+		return
+	}
+
+	l2 := log2(len(b))
+	root := a.freelist[l2]
+	n := node(b)
+	// Length would be the first 8 bytes.
+	n.setAt(0, uint64(len(b)))
+	// Followed by the pointer to the next byte array.
+	n.setAt(8, root)
+	a.freelist[l2] = uint64(uintptr(unsafe.Pointer(&b[0])))
+}
+
+func (a *Allocator) Return(b []byte) {
+	a.Lock()
+	defer a.Unlock()
+	a.addToFreelist(b)
+}
+
+func getBuf(p uint64, sz int) []byte {
+	return (*[MaxArrayLen]byte)(unsafe.Pointer(uintptr(p)))[:sz:sz]
+}
+
+func (a *Allocator) fromFreeList(need int) []byte {
+	var last uint64
+	span := log2(need)
+	n := a.freelist[span]
+	for n != 0 {
+		curBuf := getBuf(n, 16)
+		curNode := node(curBuf)
+		sz := int(curNode.uint64(0))
+		if sz < need {
+			last, n = n, curNode.uint64(8)
+			continue
+		}
+		curBuf = getBuf(n, sz)
+		use := curBuf[:need]
+		left := curBuf[need:]
+
+		next := node(curBuf).uint64(8)
+		if last == 0 {
+			a.freelist[span] = next
+		} else if last > 0 {
+			lastBuf := getBuf(last, 16)
+			node(lastBuf).setAt(8, next)
+		}
+
+		a.addToFreelist(left)
+		ZeroOut(use, 0, 16) // just zero out the initial 16 bytes.
+		return use
+	}
+	return nil
+}
+
 func (a *Allocator) Allocated() uint64 {
+	a.Lock()
+	defer a.Unlock()
 	var alloc int
 	for _, b := range a.buffers {
 		alloc += cap(b)
@@ -111,9 +198,19 @@ func (a *Allocator) Release() {
 	if a == nil {
 		return
 	}
+	a.Lock()
+	defer a.Unlock()
+
+	var alloc int
 	for _, b := range a.buffers {
+		alloc += len(b)
 		Free(b)
 	}
+	// ratio := float64(a.reused) / float64(alloc)
+	// if ratio == 0.0 || ratio > 0.5 {
+	// 	fmt.Printf("Allocator Size: %d Reused: %d Ratio: %.2f\n",
+	// 		alloc, a.reused, ratio)
+	// }
 
 	allocsMu.Lock()
 	delete(allocs, a.Ref)
@@ -131,6 +228,7 @@ const nodeAlign = int(unsafe.Sizeof(uint64(0))) - 1
 func (a *Allocator) AllocateAligned(sz int) []byte {
 	tsz := sz + nodeAlign
 	out := a.Allocate(tsz)
+	// TODO: We should align based on out's address.
 	aligned := (a.curIdx - tsz + nodeAlign) & ^nodeAlign
 
 	start := tsz - (a.curIdx - aligned)
@@ -152,14 +250,20 @@ func (a *Allocator) Allocate(sz int) []byte {
 	if a == nil {
 		return make([]byte, sz)
 	}
+	a.Lock()
+	defer a.Unlock()
+
 	if len(a.buffers) == 0 {
 		buf := Calloc(a.pageSize)
 		a.buffers = append(a.buffers, buf)
 	}
-
 	if sz >= maxAlloc {
 		panic(fmt.Sprintf("Allocate call exceeds max allocation possible."+
 			" Requested: %d. Max Allowed: %d\n", sz, maxAlloc))
+	}
+	if out := a.fromFreeList(sz); out != nil {
+		a.reused += len(out)
+		return out
 	}
 	cb := a.buffers[a.curBuf]
 	if len(cb) < a.curIdx+sz {
