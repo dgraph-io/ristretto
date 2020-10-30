@@ -51,6 +51,7 @@ var allocRef uint64
 var allocs map[uint64]*Allocator
 var calculatedLog2 []int
 var allocatorPool chan *Allocator
+var numGets int64
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -66,14 +67,21 @@ func init() {
 	}
 	allocatorPool = make(chan *Allocator, 8)
 	go freeupAllocators()
-	fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
+	// fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
 }
 
 func freeupAllocators() {
-	// For a channel of capacity 8, in just over a minute, this would free up all the allocators.
-	ticker := time.NewTicker(8 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
+	var last int64
 	for range ticker.C {
+		gets := atomic.LoadInt64(&numGets)
+		if gets != last {
+			// Some retrievals were made since the last time. So, let's avoid doing a release.
+			last = gets
+			continue
+		}
 		select {
 		case alloc := <-allocatorPool:
 			alloc.Release()
@@ -83,6 +91,7 @@ func freeupAllocators() {
 }
 
 func GetAllocatorFromPool(sz int) *Allocator {
+	atomic.AddInt64(&numGets, 1)
 	select {
 	case alloc := <-allocatorPool:
 		alloc.Reset()
@@ -92,10 +101,8 @@ func GetAllocatorFromPool(sz int) *Allocator {
 	}
 }
 func ReturnAllocator(a *Allocator) {
-	if a.Allocated() > maxAlloc {
-		a.Release()
-		return
-	}
+	a.TrimTo(400 << 20)
+
 	select {
 	case allocatorPool <- a:
 		return
@@ -237,6 +244,34 @@ func (a *Allocator) Allocated() uint64 {
 	return uint64(alloc)
 }
 
+func (a *Allocator) TrimTo(max int) {
+	a.Lock()
+	defer a.Unlock()
+
+	var alloc int
+	idx := -1
+	for i, b := range a.buffers {
+		alloc += len(b)
+		if alloc >= max {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return
+	}
+	for _, b := range a.buffers[idx:] {
+		fmt.Printf("Trim: Removing buffer of size: %d\n", len(b))
+		Free(b)
+	}
+	a.buffers = a.buffers[:idx]
+	alloc = 0
+	for _, b := range a.buffers {
+		alloc += len(b)
+	}
+	fmt.Printf("Trim: Final size: %d\n", alloc)
+}
+
 // Release would release the memory back. Remember to make this call to avoid memory leaks.
 func (a *Allocator) Release() {
 	if a == nil {
@@ -253,8 +288,8 @@ func (a *Allocator) Release() {
 	}
 	// ratio := float64(a.reused) / float64(alloc)
 	// if ratio == 0.0 || ratio > 0.5 {
-	// fmt.Printf("Allocator Size: %d Reused: %d Ratio: %.2f\n",
-	// 	alloc, a.reused, ratio)
+	fmt.Printf("Releasing Allocator Size: %s\n",
+		humanize.IBytes(uint64(alloc)))
 	// }
 
 	allocsMu.Lock()
