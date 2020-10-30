@@ -50,6 +50,7 @@ var allocsMu *sync.Mutex
 var allocRef uint64
 var allocs map[uint64]*Allocator
 var calculatedLog2 []int
+var allocatorPool chan *Allocator
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -63,7 +64,44 @@ func init() {
 	for i := 1; i <= 1024; i++ {
 		calculatedLog2[i] = int(math.Log2(float64(i)))
 	}
+	allocatorPool = make(chan *Allocator, 8)
+	go freeupAllocators()
 	fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
+}
+
+func freeupAllocators() {
+	// For a channel of capacity 8, in just over a minute, this would free up all the allocators.
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		select {
+		case alloc := <-allocatorPool:
+			alloc.Release()
+		default:
+		}
+	}
+}
+
+func GetAllocatorFromPool(sz int) *Allocator {
+	select {
+	case alloc := <-allocatorPool:
+		alloc.Reset()
+		return alloc
+	default:
+		return NewAllocator(sz)
+	}
+}
+func ReturnAllocator(a *Allocator) {
+	if a.Allocated() > maxAlloc {
+		a.Release()
+		return
+	}
+	select {
+	case allocatorPool <- a:
+		return
+	default:
+		a.Release()
+	}
 }
 
 // NewAllocator creates an allocator starting with the given size.
@@ -79,6 +117,11 @@ func NewAllocator(sz int) *Allocator {
 	allocs[ref] = a
 	allocsMu.Unlock()
 	return a
+}
+
+func (a *Allocator) Reset() {
+	a.curBuf, a.curIdx = 0, 0
+	a.freelist = make(map[int]uint64)
 }
 
 func PrintAllocators() {
@@ -143,9 +186,10 @@ func (a *Allocator) addToFreelist(b []byte) {
 }
 
 func (a *Allocator) Return(b []byte) {
-	a.Lock()
-	defer a.Unlock()
-	a.addToFreelist(b)
+	// Turning this off for now.
+	// a.Lock()
+	// defer a.Unlock()
+	// a.addToFreelist(b)
 }
 
 func getBuf(p uint64, sz int) []byte {
@@ -198,6 +242,7 @@ func (a *Allocator) Release() {
 	if a == nil {
 		return
 	}
+
 	a.Lock()
 	defer a.Unlock()
 
@@ -208,8 +253,8 @@ func (a *Allocator) Release() {
 	}
 	// ratio := float64(a.reused) / float64(alloc)
 	// if ratio == 0.0 || ratio > 0.5 {
-	// 	fmt.Printf("Allocator Size: %d Reused: %d Ratio: %.2f\n",
-	// 		alloc, a.reused, ratio)
+	// fmt.Printf("Allocator Size: %d Reused: %d Ratio: %.2f\n",
+	// 	alloc, a.reused, ratio)
 	// }
 
 	allocsMu.Lock()
@@ -244,6 +289,21 @@ func (a *Allocator) Copy(buf []byte) []byte {
 	return out
 }
 
+func (a *Allocator) addBufferWithMinSize(sz int) {
+	for {
+		a.pageSize *= 2 // Do multiply by 2 here.
+		if a.pageSize >= sz {
+			break
+		}
+	}
+	if a.pageSize > maxAlloc {
+		a.pageSize = maxAlloc
+	}
+
+	buf := Calloc(a.pageSize)
+	a.buffers = append(a.buffers, buf)
+}
+
 // Allocate would allocate a byte slice of length sz. It is safe to use this memory to unsafe cast
 // to Go structs.
 func (a *Allocator) Allocate(sz int) []byte {
@@ -261,26 +321,21 @@ func (a *Allocator) Allocate(sz int) []byte {
 		panic(fmt.Sprintf("Allocate call exceeds max allocation possible."+
 			" Requested: %d. Max Allowed: %d\n", sz, maxAlloc))
 	}
-	if out := a.fromFreeList(sz); out != nil {
-		a.reused += len(out)
-		return out
-	}
+	// Turning this off for now. This slows down allocations somewhat. Even though it shows a 50%
+	// reuse ratio, we get a better bang for the buck by just reusing an entire Allocator for the
+	// next cycle.
+	//
+	// if out := a.fromFreeList(sz); out != nil {
+	// 	a.reused += len(out)
+	// 	return out
+	// }
 	cb := a.buffers[a.curBuf]
-	if len(cb) < a.curIdx+sz {
-		for {
-			a.pageSize *= 2 // Do multiply by 2 here.
-			if a.pageSize >= sz {
-				break
-			}
-		}
-		if a.pageSize > maxAlloc {
-			a.pageSize = maxAlloc
-		}
-
-		buf := Calloc(a.pageSize)
-		a.buffers = append(a.buffers, buf)
+	for len(cb) < a.curIdx+sz {
 		a.curBuf++
 		a.curIdx = 0
+		if a.curBuf == len(a.buffers) {
+			a.addBufferWithMinSize(sz)
+		}
 		cb = a.buffers[a.curBuf]
 	}
 

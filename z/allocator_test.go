@@ -17,6 +17,7 @@
 package z
 
 import (
+	"math/rand"
 	"testing"
 	"unsafe"
 
@@ -26,11 +27,42 @@ import (
 func TestAllocate(t *testing.T) {
 	a := NewAllocator(1024)
 	defer a.Release()
-	require.Equal(t, 0, len(a.Allocate(0)))
-	require.Equal(t, 1, len(a.Allocate(1)))
-	require.Equal(t, 1<<20, len(a.Allocate(1<<20)))
-	require.Equal(t, 256<<20, len(a.Allocate(256<<20)))
-	require.Panics(t, func() { a.Allocate(1 << 30) })
+
+	check := func() {
+		require.Equal(t, 0, len(a.Allocate(0)))
+		require.Equal(t, 1, len(a.Allocate(1)))
+		require.Equal(t, 1<<20, len(a.Allocate(1<<20)))
+		require.Equal(t, 256<<20, len(a.Allocate(256<<20)))
+		require.Panics(t, func() { a.Allocate(1 << 30) })
+	}
+
+	check()
+	prev := a.Allocated()
+	a.Reset()
+	check()
+	require.Equal(t, prev, a.Allocated())
+	t.Logf("Allocated: %d\n", prev)
+}
+
+func TestAllocateReset(t *testing.T) {
+	a := NewAllocator(16)
+	defer a.Release()
+
+	buf := make([]byte, 128)
+	rand.Read(buf)
+	for i := 0; i < 1000; i++ {
+		a.Copy(buf)
+	}
+
+	prev := a.Allocated()
+	a.Reset()
+	for i := 0; i < 100; i++ {
+		a.Copy(buf)
+	}
+	for i, buf := range a.buffers {
+		t.Logf("Allocated %d: %d\n", i, len(buf))
+	}
+	require.Equal(t, prev, a.Allocated())
 }
 
 func TestAllocateFreeList(t *testing.T) {
