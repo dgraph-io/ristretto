@@ -71,7 +71,19 @@ const (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-// Newbuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
+var bufferDir string
+
+// SetBufferDir sets the parent directory for the mmaped buffers.
+func SetBufferDir(dir string) {
+	bufferDir = dir
+}
+
+// ResetBufferDir resets the parent directory for mmaped buffers.
+func ResetBufferDir() {
+	bufferDir = ""
+}
+
+// NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
 func NewBuffer(sz int) *Buffer {
 	buf, err := NewBufferWith(sz, 256<<30, UseCalloc)
 	if err != nil {
@@ -82,7 +94,7 @@ func NewBuffer(sz int) *Buffer {
 
 func (b *Buffer) doMmap() error {
 	curBuf := b.buf
-	fd, err := ioutil.TempFile("", "buffer")
+	fd, err := ioutil.TempFile(bufferDir, "buffer")
 	if err != nil {
 		return err
 	}
