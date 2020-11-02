@@ -16,6 +16,8 @@
 
 package main
 
+// #include <stdlib.h>
+import "C"
 import (
 	"fmt"
 	"log"
@@ -47,16 +49,21 @@ var (
 	stop     int32
 	fill     []byte
 	maxMB    = 32
+
+	cycles int64 = 16
 )
+var numbytes int64
+var counter int64
 
 func newS(sz int) *S {
 	var s *S
-	if b := z.CallocNoRef(ssz); len(b) > 0 {
+	if b := Calloc(ssz); len(b) > 0 {
 		s = (*S)(unsafe.Pointer(&b[0]))
 	} else {
 		s = &S{inGo: true}
 	}
-	s.val = z.Calloc(sz)
+
+	s.val = Calloc(sz)
 	copy(s.val, fill)
 	if s.next != nil {
 		log.Fatalf("news.next must be nil: %p", s.next)
@@ -65,10 +72,10 @@ func newS(sz int) *S {
 }
 
 func freeS(s *S) {
-	z.Free(s.val)
+	Free(s.val)
 	if !s.inGo {
 		buf := (*[z.MaxArrayLen]byte)(unsafe.Pointer(s))[:ssz:ssz]
-		z.Free(buf)
+		Free(buf)
 	}
 }
 
@@ -88,7 +95,7 @@ func (s *S) deallocNext() {
 
 func memory() {
 	// In normal mode, z.NumAllocBytes would always be zero. So, this program would misbehave.
-	curMem := z.NumAllocBytes()
+	curMem := NumAllocBytes()
 	if increase {
 		if curMem > hi {
 			increase = false
@@ -98,6 +105,8 @@ func memory() {
 			increase = true
 			runtime.GC()
 			time.Sleep(3 * time.Second)
+
+			atomic.AddInt64(&counter, 1)
 		}
 	}
 	fmt.Printf("Current Memory: %05.2f G. Increase? %v\n", float64(curMem)/float64(1<<30), increase)
@@ -109,6 +118,9 @@ func viaLL() {
 
 	root := newS(1)
 	for range ticker.C {
+		if atomic.LoadInt64(&counter) >= cycles {
+			break
+		}
 		if atomic.LoadInt32(&stop) == 1 {
 			break
 		}
@@ -126,6 +138,7 @@ func viaLL() {
 	freeS(root)
 }
 
+/*
 func viaMap() {
 	m := make(map[int][]byte)
 	N := 1000000
@@ -196,15 +209,9 @@ func viaList() {
 	}
 	slices = nil
 }
-
+*/
 func main() {
-	if buf := z.CallocNoRef(1); len(buf) == 0 {
-		log.Fatalf("Not using manual memory management. Compile with jemalloc.")
-	} else {
-		z.Free(buf)
-	}
-	z.StatsPrint()
-
+	check()
 	fill = make([]byte, maxMB<<20)
 	rand.Read(fill)
 
@@ -224,7 +231,7 @@ func main() {
 	viaLL()
 	// viaMap()
 	// viaList()
-	if left := z.NumAllocBytes(); left != 0 {
+	if left := NumAllocBytes(); left != 0 {
 		log.Fatalf("Unable to deallocate all memory: %v\n", left)
 	}
 	runtime.GC()
