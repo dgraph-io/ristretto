@@ -115,9 +115,9 @@ func ReturnAllocator(a *Allocator) {
 func NewAllocator(sz int) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
 	// We should not allow a zero sized page because addBufferWithMinSize
-	// will run into an infinite loop tyring to double the pagesize.
+	// will run into an infinite loop trying to double the pagesize.
 	if sz == 0 {
-		sz = 1
+		sz = smallBufferSize
 	}
 	a := &Allocator{
 		pageSize: sz,
@@ -378,6 +378,7 @@ func (a *Allocator) Allocate(sz int) []byte {
 		}
 		cb = a.buffers[a.curBuf]
 	}
+
 	slice := cb[a.curIdx : a.curIdx+sz]
 	a.curIdx += sz
 	a.size += uint64(sz)
