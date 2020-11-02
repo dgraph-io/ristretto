@@ -114,6 +114,11 @@ func ReturnAllocator(a *Allocator) {
 // NewAllocator creates an allocator starting with the given size.
 func NewAllocator(sz int) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
+	// We should not allow a zero sized page because addBufferWithMinSize
+	// will run into an infinite loop trying to double the pagesize.
+	if sz == 0 {
+		sz = smallBufferSize
+	}
 	a := &Allocator{
 		pageSize: sz,
 		Ref:      ref,
