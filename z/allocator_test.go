@@ -29,18 +29,22 @@ func TestAllocate(t *testing.T) {
 	defer a.Release()
 
 	check := func() {
+		t.Logf("Running checks\n")
 		require.Equal(t, 0, len(a.Allocate(0)))
 		require.Equal(t, 1, len(a.Allocate(1)))
-		require.Equal(t, 1<<20, len(a.Allocate(1<<20)))
+		require.Equal(t, 1<<20+1, len(a.Allocate(1<<20+1)))
 		require.Equal(t, 256<<20, len(a.Allocate(256<<20)))
-		require.Panics(t, func() { a.Allocate(1 << 30) })
+		require.Panics(t, func() { a.Allocate(maxAlloc + 1) })
 	}
 
 	check()
+	t.Logf("%s", a)
 	prev := a.Allocated()
+	t.Logf("Resetting\n")
 	a.Reset()
 	check()
-	require.Equal(t, prev, a.Allocated())
+	t.Logf("%s", a)
+	require.Equal(t, int(prev), int(a.Allocated()))
 	t.Logf("Allocated: %d\n", prev)
 }
 
@@ -59,9 +63,7 @@ func TestAllocateReset(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		a.Copy(buf)
 	}
-	for i, buf := range a.buffers {
-		t.Logf("Allocated %d: %d\n", i, len(buf))
-	}
+	t.Logf("%s", a)
 	require.Equal(t, prev, a.Allocated())
 }
 
@@ -78,29 +80,6 @@ func TestAllocateTrim(t *testing.T) {
 	N := 2048
 	a.TrimTo(N)
 	require.LessOrEqual(t, int(a.Allocated()), N)
-}
-
-func TestAllocateFreeList(t *testing.T) {
-	a := NewAllocator(1024)
-	defer a.Release()
-
-	for i := 1; i <= 100; i++ {
-		b := a.Allocate(i)
-		a.Return(b)
-	}
-	a.Allocate(65)
-	a.Allocate(65)
-	a.Allocate(65)
-	a.Allocate(33)
-	a.Allocate(33)
-	a.Allocate(33)
-	a.Allocate(17)
-	a.Allocate(17)
-	a.Allocate(17)
-
-	for i := 0; i < 100; i++ {
-		a.Allocate(16)
-	}
 }
 
 func TestPowTwo(t *testing.T) {
@@ -132,4 +111,18 @@ func TestAllocateAligned(t *testing.T) {
 	out = a.AllocateAligned(3)
 	ptr = uintptr(unsafe.Pointer(&out[0]))
 	require.True(t, ptr%8 == 0)
+}
+
+func BenchmarkAllocate(b *testing.B) {
+	a := NewAllocator(15)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			buf := a.Allocate(1)
+			if len(buf) != 1 {
+				b.FailNow()
+			}
+		}
+	})
+	b.StopTimer()
+	b.Logf("%s", a)
 }

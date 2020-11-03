@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,21 +29,18 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-// Allocator amortizes the cost of small allocations by allocating memory in bigger chunks.
-// Internally it uses z.Calloc to allocate memory. Once allocated, the memory is not moved,
-// so it is safe to use the allocated bytes to unsafe cast them to Go struct pointers.
+// Allocator amortizes the cost of small allocations by allocating memory in
+// bigger chunks.  Internally it uses z.Calloc to allocate memory. Once
+// allocated, the memory is not moved, so it is safe to use the allocated bytes
+// to unsafe cast them to Go struct pointers. Maintaining a freelist is slow.
+// Instead, Allocator only allocates memory, with the idea that finally we
+// would just release the entire Allocator.
 type Allocator struct {
 	sync.Mutex
-	pageSize int
-	curBuf   int
-	curIdx   int
-	buffers  [][]byte
-	size     uint64
-	Ref      uint64
-	Tag      string
-	reused   int
-
-	freelist map[int]uint64 // Key is the size. Value is the first node of that size.
+	compIdx uint64 // Stores bufIdx in 32 MSBs and posIdx in 32 LSBs.
+	buffers [][]byte
+	Ref     uint64
+	Tag     string
 }
 
 // allocs keeps references to all Allocators, so we can safely discard them later.
@@ -52,6 +50,7 @@ var allocs map[uint64]*Allocator
 var calculatedLog2 []int
 var allocatorPool chan *Allocator
 var numGets int64
+var zCloser *Closer
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -66,26 +65,49 @@ func init() {
 		calculatedLog2[i] = int(math.Log2(float64(i)))
 	}
 	allocatorPool = make(chan *Allocator, 8)
-	go freeupAllocators()
-	// fmt.Printf("Using z.Allocator with starting ref: %x\n", allocRef)
+
+	zCloser = NewCloser(1)
+	go freeupAllocators(zCloser)
 }
 
-func freeupAllocators() {
+func Done() {
+	zCloser.SignalAndWait()
+}
+
+func freeupAllocators(closer *Closer) {
+	defer closer.Done()
+
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	var last int64
-	for range ticker.C {
-		gets := atomic.LoadInt64(&numGets)
-		if gets != last {
-			// Some retrievals were made since the last time. So, let's avoid doing a release.
-			last = gets
-			continue
-		}
+	releaseOne := func() bool {
 		select {
 		case alloc := <-allocatorPool:
 			alloc.Release()
+			return true
 		default:
+			return false
+		}
+	}
+
+	var last int64
+	for {
+		select {
+		case <-closer.HasBeenClosed():
+			close(allocatorPool)
+			for alloc := range allocatorPool {
+				alloc.Release()
+			}
+			return
+
+		case <-ticker.C:
+			gets := atomic.LoadInt64(&numGets)
+			if gets != last {
+				// Some retrievals were made since the last time. So, let's avoid doing a release.
+				last = gets
+				continue
+			}
+			releaseOne()
 		}
 	}
 }
@@ -120,10 +142,11 @@ func NewAllocator(sz int) *Allocator {
 		sz = smallBufferSize
 	}
 	a := &Allocator{
-		pageSize: sz,
-		Ref:      ref,
-		freelist: make(map[int]uint64),
+		Ref:     ref,
+		buffers: make([][]byte, 32),
 	}
+	l2 := uint64(log2(sz))
+	a.buffers[0] = Calloc(1 << (l2 + 1))
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -132,8 +155,7 @@ func NewAllocator(sz int) *Allocator {
 }
 
 func (a *Allocator) Reset() {
-	a.curBuf, a.curIdx = 0, 0
-	a.freelist = make(map[int]uint64)
+	atomic.StoreUint64(&a.compIdx, 0)
 }
 
 func PrintAllocators() {
@@ -152,6 +174,18 @@ func PrintAllocators() {
 	allocsMu.Unlock()
 }
 
+func (a *Allocator) String() string {
+	var s strings.Builder
+	s.WriteString(fmt.Sprintf("Allocator: %x\n", a.Ref))
+	for i, b := range a.buffers {
+		s.WriteString(fmt.Sprintf("idx: %d len: %d\n", i, len(b)))
+		if len(b) == 0 {
+			break
+		}
+	}
+	return s.String()
+}
+
 // AllocatorFrom would return the allocator corresponding to the ref.
 func AllocatorFrom(ref uint64) *Allocator {
 	allocsMu.Lock()
@@ -160,12 +194,23 @@ func AllocatorFrom(ref uint64) *Allocator {
 	return a
 }
 
-// Size returns the size of the allocations so far.
-func (a *Allocator) Size() uint64 {
-	a.Lock()
-	defer a.Unlock()
+func parse(pos uint64) (bufIdx, posIdx int) {
+	return int(pos >> 32), int(pos & 0xFFFFFFFF)
+}
 
-	return a.size
+// Size returns the size of the allocations so far.
+func (a *Allocator) Size() int {
+	pos := atomic.LoadUint64(&a.compIdx)
+	bi, pi := parse(pos)
+	var sz int
+	for i, b := range a.buffers {
+		if i < bi {
+			sz += len(b)
+		}
+		sz += pi
+		return sz
+	}
+	panic("Size should not reach here")
 }
 
 func log2(sz int) int {
@@ -181,67 +226,7 @@ func log2(sz int) int {
 	return pow
 }
 
-func (a *Allocator) addToFreelist(b []byte) {
-	if len(b) < 32 {
-		// Don't do anything.
-		return
-	}
-
-	l2 := log2(len(b))
-	root := a.freelist[l2]
-	n := node(b)
-	// Length would be the first 8 bytes.
-	n.setAt(0, uint64(len(b)))
-	// Followed by the pointer to the next byte array.
-	n.setAt(8, root)
-	a.freelist[l2] = uint64(uintptr(unsafe.Pointer(&b[0])))
-}
-
-func (a *Allocator) Return(b []byte) {
-	// Turning this off for now.
-	// a.Lock()
-	// defer a.Unlock()
-	// a.addToFreelist(b)
-}
-
-func getBuf(p uint64, sz int) []byte {
-	return (*[MaxArrayLen]byte)(unsafe.Pointer(uintptr(p)))[:sz:sz]
-}
-
-func (a *Allocator) fromFreeList(need int) []byte {
-	var last uint64
-	span := log2(need)
-	n := a.freelist[span]
-	for n != 0 {
-		curBuf := getBuf(n, 16)
-		curNode := node(curBuf)
-		sz := int(curNode.uint64(0))
-		if sz < need {
-			last, n = n, curNode.uint64(8)
-			continue
-		}
-		curBuf = getBuf(n, sz)
-		use := curBuf[:need]
-		left := curBuf[need:]
-
-		next := node(curBuf).uint64(8)
-		if last == 0 {
-			a.freelist[span] = next
-		} else if last > 0 {
-			lastBuf := getBuf(last, 16)
-			node(lastBuf).setAt(8, next)
-		}
-
-		a.addToFreelist(left)
-		ZeroOut(use, 0, 16) // just zero out the initial 16 bytes.
-		return use
-	}
-	return nil
-}
-
 func (a *Allocator) Allocated() uint64 {
-	a.Lock()
-	defer a.Unlock()
 	var alloc int
 	for _, b := range a.buffers {
 		alloc += cap(b)
@@ -250,31 +235,18 @@ func (a *Allocator) Allocated() uint64 {
 }
 
 func (a *Allocator) TrimTo(max int) {
-	a.Lock()
-	defer a.Unlock()
-
 	var alloc int
-	idx := -1
 	for i, b := range a.buffers {
-		alloc += len(b)
-		if alloc >= max {
-			idx = i
+		if len(b) == 0 {
 			break
 		}
-	}
-	if idx == -1 {
-		return
-	}
-	for _, b := range a.buffers[idx:] {
-		fmt.Printf("Trim: Removing buffer of size: %d\n", len(b))
-		Free(b)
-	}
-	a.buffers = a.buffers[:idx]
-	alloc = 0
-	for _, b := range a.buffers {
 		alloc += len(b)
+		if alloc < max {
+			continue
+		}
+		Free(b)
+		a.buffers[i] = nil
 	}
-	fmt.Printf("Trim: Final size: %d\n", alloc)
 }
 
 // Release would release the memory back. Remember to make this call to avoid memory leaks.
@@ -283,19 +255,14 @@ func (a *Allocator) Release() {
 		return
 	}
 
-	a.Lock()
-	defer a.Unlock()
-
 	var alloc int
 	for _, b := range a.buffers {
+		if len(b) == 0 {
+			break
+		}
 		alloc += len(b)
 		Free(b)
 	}
-	// ratio := float64(a.reused) / float64(alloc)
-	// if ratio == 0.0 || ratio > 0.5 {
-	fmt.Printf("Releasing Allocator Size: %s\n",
-		humanize.IBytes(uint64(alloc)))
-	// }
 
 	allocsMu.Lock()
 	delete(allocs, a.Ref)
@@ -308,15 +275,16 @@ func (a *Allocator) MaxAlloc() int {
 	return maxAlloc
 }
 
-const nodeAlign = int(unsafe.Sizeof(uint64(0))) - 1
+const nodeAlign = unsafe.Sizeof(uint64(0)) - 1
 
 func (a *Allocator) AllocateAligned(sz int) []byte {
-	tsz := sz + nodeAlign
+	tsz := sz + int(nodeAlign)
 	out := a.Allocate(tsz)
-	// TODO: We should align based on out's address.
-	aligned := (a.curIdx - tsz + nodeAlign) & ^nodeAlign
 
-	start := tsz - (a.curIdx - aligned)
+	addr := uintptr(unsafe.Pointer(&out[0]))
+	aligned := (addr + nodeAlign) & ^nodeAlign
+	start := int(aligned - addr)
+
 	return out[start : start+sz]
 }
 
@@ -329,58 +297,63 @@ func (a *Allocator) Copy(buf []byte) []byte {
 	return out
 }
 
-func (a *Allocator) addBufferWithMinSize(sz int) {
+func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 	for {
-		a.pageSize *= 2 // Do multiply by 2 here.
-		if a.pageSize >= sz {
+		if bufIdx >= len(a.buffers) {
+			panic(fmt.Sprintf("Allocator can not allocate more than %d buffers", len(a.buffers)))
+		}
+		if len(a.buffers[bufIdx]) == 0 {
 			break
 		}
+		if minSz <= len(a.buffers[bufIdx]) {
+			// No need to do anything. We already have a buffer which can satisfy minSz.
+			return
+		}
+		bufIdx++
 	}
-	if a.pageSize > maxAlloc {
-		a.pageSize = maxAlloc
+	assert(bufIdx > 0)
+	// We need to allocate a new buffer.
+	// Make pageSize double of the last allocation.
+	pageSize := 2 * len(a.buffers[bufIdx-1])
+	// Ensure pageSize is bigger than sz.
+	for pageSize < minSz {
+		pageSize *= 2
+	}
+	// If bigger than maxAlloc, trim to maxAlloc.
+	if pageSize > maxAlloc {
+		pageSize = maxAlloc
 	}
 
-	buf := Calloc(a.pageSize)
-	a.buffers = append(a.buffers, buf)
+	buf := Calloc(pageSize)
+	assert(len(a.buffers[bufIdx]) == 0)
+	a.buffers[bufIdx] = buf
 }
 
-// Allocate would allocate a byte slice of length sz. It is safe to use this memory to unsafe cast
-// to Go structs.
 func (a *Allocator) Allocate(sz int) []byte {
-	if a == nil {
-		return make([]byte, sz)
+	if sz > maxAlloc {
+		panic(fmt.Sprintf("Unable to allocate more than %d\n", maxAlloc))
 	}
-	a.Lock()
-	defer a.Unlock()
-
-	if len(a.buffers) == 0 {
-		buf := Calloc(a.pageSize)
-		a.buffers = append(a.buffers, buf)
+	if sz == 0 {
+		return nil
 	}
-	if sz >= maxAlloc {
-		panic(fmt.Sprintf("Allocate call exceeds max allocation possible."+
-			" Requested: %d. Max Allowed: %d\n", sz, maxAlloc))
-	}
-	// Turning this off for now. This slows down allocations somewhat. Even though it shows a 50%
-	// reuse ratio, we get a better bang for the buck by just reusing an entire Allocator for the
-	// next cycle.
-	//
-	// if out := a.fromFreeList(sz); out != nil {
-	// 	a.reused += len(out)
-	// 	return out
-	// }
-	cb := a.buffers[a.curBuf]
-	for len(cb) < a.curIdx+sz {
-		a.curBuf++
-		a.curIdx = 0
-		if a.curBuf == len(a.buffers) {
-			a.addBufferWithMinSize(sz)
+	for {
+		pos := atomic.AddUint64(&a.compIdx, uint64(sz))
+		bufIdx, posIdx := parse(pos)
+		buf := a.buffers[bufIdx]
+		if posIdx > len(buf) {
+			a.Lock()
+			newPos := atomic.LoadUint64(&a.compIdx)
+			newBufIdx, _ := parse(newPos)
+			if newBufIdx != bufIdx {
+				a.Unlock()
+				continue
+			}
+			a.addBufferAt(bufIdx+1, sz)
+			atomic.StoreUint64(&a.compIdx, uint64((bufIdx+1)<<32))
+			a.Unlock()
+			// We added a new buffer. Let's acquire slice the right way by going back to the top.
+			continue
 		}
-		cb = a.buffers[a.curBuf]
+		return buf[posIdx-sz : posIdx]
 	}
-
-	slice := cb[a.curIdx : a.curIdx+sz]
-	a.curIdx += sz
-	a.size += uint64(sz)
-	return slice
 }
