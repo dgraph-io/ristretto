@@ -225,7 +225,8 @@ func (b *Buffer) Allocate(n int) []byte {
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
 	b.offset += uint64(n)
-	return int(b.offset) - n
+	// Remove padding from the offset because the padding should be invisible to the API caller.
+	return int(b.offset) - n - b.StartOffset()
 }
 
 // IncrementOffset returns the incremented offset. This operation is thread-safe. This API should be
@@ -236,7 +237,8 @@ func (b *Buffer) IncrementOffset(n int) int {
 	if out > b.curSz {
 		panic("Buffer size limit hit")
 	}
-	return out
+	// Remove padding from the offset because the padding should be invisible to the API caller.
+	return out - b.StartOffset()
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -459,7 +461,7 @@ func (b *Buffer) Data(offset int) []byte {
 	if offset > b.curSz {
 		panic("offset beyond current size")
 	}
-	return b.buf[offset:b.curSz]
+	return b.buf[b.StartOffset()+offset : b.curSz]
 }
 
 // Write would write p bytes to the buffer.
