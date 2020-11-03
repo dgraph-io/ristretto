@@ -48,6 +48,7 @@ type Buffer struct {
 	fd            *os.File
 	bufType       BufferType
 	autoMmapAfter int
+	dir           string
 }
 
 type BufferType int
@@ -71,18 +72,26 @@ const (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-// Newbuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
+// NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
 func NewBuffer(sz int) *Buffer {
-	buf, err := NewBufferWith(sz, 256<<30, UseCalloc)
+	buf, err := NewBufferWithDir(sz, 256<<30, UseCalloc, "")
 	if err != nil {
 		log.Fatalf("while creating buffer: %v", err)
 	}
 	return buf
 }
 
+// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
+// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
+// used. Buffer can't be used without initialization via NewBuffer.
+func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+	buf, err := NewBufferWithDir(sz, maxSz, bufType, "")
+	return buf, err
+}
+
 func (b *Buffer) doMmap() error {
 	curBuf := b.buf
-	fd, err := ioutil.TempFile("", "buffer")
+	fd, err := ioutil.TempFile(b.dir, "buffer")
 	if err != nil {
 		return err
 	}
@@ -104,10 +113,11 @@ func (b *Buffer) doMmap() error {
 	return nil
 }
 
-// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
-// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
-// used. Buffer can't be used without initialization via NewBuffer.
-func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+// NewBufferWithDir would allocate a buffer of size sz upfront, with the total size of the buffer
+// not exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults
+// would be used. Buffer can't be used without initialization via NewBuffer. The buffer is created
+// inside dir. The caller should take care of existence of dir.
+func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir string) (*Buffer, error) {
 	if sz == 0 {
 		sz = smallBufferSize
 	}
@@ -120,6 +130,7 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 		curSz:   sz,
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
+		dir:     dir,
 	}
 
 	switch bufType {
