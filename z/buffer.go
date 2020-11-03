@@ -48,6 +48,7 @@ type Buffer struct {
 	fd            *os.File
 	bufType       BufferType
 	autoMmapAfter int
+	dir           string
 }
 
 type BufferType int
@@ -71,21 +72,9 @@ const (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-var bufferDir string
-
-// SetBufferDir sets the parent directory for the mmaped buffers.
-func SetBufferDir(dir string) {
-	bufferDir = dir
-}
-
-// ResetBufferDir resets the parent directory for mmaped buffers.
-func ResetBufferDir() {
-	bufferDir = ""
-}
-
 // NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
 func NewBuffer(sz int) *Buffer {
-	buf, err := NewBufferWith(sz, 256<<30, UseCalloc)
+	buf, err := NewBufferWith(sz, 256<<30, UseCalloc, "")
 	if err != nil {
 		log.Fatalf("while creating buffer: %v", err)
 	}
@@ -94,7 +83,7 @@ func NewBuffer(sz int) *Buffer {
 
 func (b *Buffer) doMmap() error {
 	curBuf := b.buf
-	fd, err := ioutil.TempFile(bufferDir, "buffer")
+	fd, err := ioutil.TempFile(b.dir, "buffer")
 	if err != nil {
 		return err
 	}
@@ -119,7 +108,7 @@ func (b *Buffer) doMmap() error {
 // NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
 // exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
 // used. Buffer can't be used without initialization via NewBuffer.
-func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+func NewBufferWith(sz, maxSz int, bufType BufferType, dir string) (*Buffer, error) {
 	if sz == 0 {
 		sz = smallBufferSize
 	}
@@ -132,6 +121,7 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 		curSz:   sz,
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
+		dir:     dir,
 	}
 
 	switch bufType {
