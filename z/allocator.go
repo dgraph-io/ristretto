@@ -330,6 +330,9 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 }
 
 func (a *Allocator) Allocate(sz int) []byte {
+	if a == nil {
+		return make([]byte, sz)
+	}
 	if sz > maxAlloc {
 		panic(fmt.Sprintf("Unable to allocate more than %d\n", maxAlloc))
 	}
