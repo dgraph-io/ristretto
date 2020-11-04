@@ -106,10 +106,11 @@ func memory() {
 			runtime.GC()
 			time.Sleep(3 * time.Second)
 
-			atomic.AddInt64(&counter, 1)
+			counter++
 		}
 	}
-	fmt.Printf("Current Memory: %05.2f G. Increase? %v\n", float64(curMem)/float64(1<<30), increase)
+	fmt.Printf("[%d] Current Memory: %05.2f G. Increase? %v\n",
+		counter, float64(curMem)/float64(1<<30), increase)
 }
 
 func viaLL() {
@@ -118,7 +119,8 @@ func viaLL() {
 
 	root := newS(1)
 	for range ticker.C {
-		if atomic.LoadInt64(&counter) >= cycles {
+		if counter >= cycles {
+			fmt.Printf("Finished %d cycles. Deallocating...\n", counter)
 			break
 		}
 		if atomic.LoadInt32(&stop) == 1 {
@@ -138,78 +140,6 @@ func viaLL() {
 	freeS(root)
 }
 
-/*
-func viaMap() {
-	m := make(map[int][]byte)
-	N := 1000000
-	for i := 0; i < N; i++ {
-		m[i] = nil
-	}
-
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if atomic.LoadInt32(&stop) == 1 {
-			break
-		}
-		if increase {
-			k := rand.Intn(1000000)
-			sz := rand.Intn(maxMB) << 20
-
-			prev := m[k]
-			z.Free(prev)
-
-			buf := z.Calloc(sz)
-			copy(buf, fill)
-			m[k] = buf
-		} else {
-			for k, val := range m {
-				if val != nil {
-					z.Free(val)
-					m[k] = nil
-					break
-				}
-			}
-		}
-		memory()
-	}
-	for k, val := range m {
-		delete(m, k)
-		z.Free(val)
-		memory()
-	}
-}
-
-func viaList() {
-	var slices [][]byte
-
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if atomic.LoadInt32(&stop) == 1 {
-			break
-		}
-		if increase {
-			sz := rand.Intn(maxMB) << 20
-			buf := z.Calloc(sz)
-			copy(buf, fill)
-			slices = append(slices, buf)
-		} else {
-			idx := len(slices) - 1
-			z.Free(slices[idx])
-			slices = slices[:idx]
-		}
-		memory()
-	}
-	for _, val := range slices {
-		z.Free(val)
-		memory()
-	}
-	slices = nil
-}
-*/
 func main() {
 	check()
 	fill = make([]byte, maxMB<<20)
@@ -229,8 +159,6 @@ func main() {
 	}()
 
 	viaLL()
-	// viaMap()
-	// viaList()
 	if left := NumAllocBytes(); left != 0 {
 		log.Fatalf("Unable to deallocate all memory: %v\n", left)
 	}
