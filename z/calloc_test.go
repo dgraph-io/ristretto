@@ -94,13 +94,12 @@ func TestCalloc(t *testing.T) {
 	Free(buf1)
 	require.Equal(t, int64(128), NumAllocBytes())
 
-	_ = buf2
-	// Free(buf2)
-	// require.Equal(t, int64(0), NumAllocBytes())
+	// _ = buf2
+	Free(buf2)
+	require.Equal(t, int64(0), NumAllocBytes())
 	PrintLeaks()
 
-	// Double free would panic when debug mode is enabled in jemalloc.  Set
-	// JE_MALLOC_CONF="tcache:false" to ensure debug mode can work as expected.
+	// Double free would panic when debug mode is enabled in jemalloc.
 	// Free(buf2)
 	// require.Equal(t, int64(0), NumAllocBytes())
 }
