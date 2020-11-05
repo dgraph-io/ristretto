@@ -32,8 +32,7 @@ func main() {
 	root := newNode(-1)
 	n := root
 	for i := 0; i < N; i++ {
-		// nn := newNode(i)
-		nn := &node{val: i}
+		nn := newNode(i)
 		n.next = nn
 		n = nn
 	}
