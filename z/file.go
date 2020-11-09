@@ -128,6 +128,11 @@ func (m *MmapFile) AllocateSlice(sz, offset int) ([]byte, int) {
 	return m.Data[offset+4 : offset+4+sz], offset + 4 + sz
 }
 
+// CanAllocate determines whether a slice of the given size can be allocated at the given offset.
+func (m *MmapFile) CanAllocate(sz, offset int) bool {
+	return len(m.Data) <= offset+4+sz
+}
+
 func (m *MmapFile) Sync() error {
 	if m == nil {
 		return nil
