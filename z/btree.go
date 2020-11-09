@@ -456,10 +456,6 @@ func (n node) maxKey() uint64 {
 func (n node) compact(lo uint64) int {
 	N := n.numKeys()
 	mk := n.maxKey()
-	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
-	// if N > 0 && n.val(N-1) < lo {
-	// 	n.setAt(valOffset(N-1), 0)
-	// }
 	var left, right int
 	for right = 0; right < N; right++ {
 		k := n.key(right)
