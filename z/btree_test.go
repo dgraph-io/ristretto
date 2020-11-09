@@ -113,7 +113,7 @@ func TestOccupancyRatio(t *testing.T) {
 }
 
 func TestNode(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	for i := uint64(1); i < 16; i *= 2 {
 		n.set(i, i)
 	}
@@ -121,10 +121,15 @@ func TestNode(t *testing.T) {
 	require.True(t, 0 == n.get(5))
 	n.set(5, 5)
 	n.print(0)
+
+	n.setBit(0)
+	require.False(t, n.isLeaf())
+	n.setBit(bitLeaf)
+	require.True(t, n.isLeaf())
 }
 
 func TestNodeBasic(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	N := uint64(256)
 	mp := make(map[uint64]uint64)
 	for i := uint64(1); i < N; i++ {
@@ -138,7 +143,7 @@ func TestNodeBasic(t *testing.T) {
 }
 
 func TestNode_MoveRight(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	N := uint64(10)
 	for i := uint64(1); i < N; i++ {
 		n.set(i, i)
@@ -156,7 +161,7 @@ func TestNode_MoveRight(t *testing.T) {
 }
 
 func TestNodeCompact(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	n.setBit(bitLeaf)
 	N := uint64(128)
 	mp := make(map[uint64]uint64)
@@ -266,7 +271,7 @@ func BenchmarkSearch(b *testing.B) {
 			require.NoError(b, err)
 		}
 
-		n := node(mf.Data)
+		n := getNode(mf.Data)
 		for i := 1; i <= sz; i++ {
 			n.set(uint64(i), uint64(i))
 		}
@@ -327,7 +332,7 @@ func BenchmarkCustomSearch(b *testing.B) {
 	}
 
 	for _, sz := range []int{64, 128, 255} {
-		n := node(make([]byte, pageSize))
+		n := getNode(make([]byte, pageSize))
 		for i := 1; i <= sz; i++ {
 			n.set(uint64(i), uint64(i))
 		}

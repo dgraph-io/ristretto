@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"reflect"
 	"strings"
 	"unsafe"
 )
@@ -91,7 +92,20 @@ func (t *Tree) Stats() TreeStats {
 	}
 }
 
-func (t *Tree) newNode(bit byte) node {
+// BytesToU32Slice converts the given byte slice to uint32 slice
+func BytesToUint64Slice(b []byte) []uint64 {
+	if len(b) == 0 {
+		return nil
+	}
+	var u64s []uint64
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
+	hdr.Len = len(b) / 8
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u64s
+}
+
+func (t *Tree) newNode(bit uint64) node {
 	offset := int(t.nextPage) * pageSize
 	t.nextPage++
 	sz := len(t.mf.Data)
@@ -99,11 +113,21 @@ func (t *Tree) newNode(bit byte) node {
 	if offset+pageSize > sz {
 		check(t.mf.Truncate(int64(2 * sz)))
 	}
-	n := node(t.mf.Data[offset : offset+pageSize])
-	ZeroOut(n, 0, len(n))
-	n.setBit(bitUsed | bit)
+	n := getNode(t.mf.Data[offset : offset+pageSize])
+	zeroOut(n)
+	n.setBit(bit)
 	n.setAt(keyOffset(maxKeys), t.nextPage-1)
 	return n
+}
+
+func getNode(data []byte) node {
+	return node(BytesToUint64Slice(data))
+}
+
+func zeroOut(data []uint64) {
+	for i := 0; i < len(data); i++ {
+		data[i] = 0
+	}
 }
 
 func (t *Tree) node(pid uint64) node {
@@ -112,7 +136,7 @@ func (t *Tree) node(pid uint64) node {
 		return nil
 	}
 	start := pageSize * int(pid)
-	return node(t.mf.Data[start : start+pageSize])
+	return getNode(t.mf.Data[start : start+pageSize])
 }
 
 // Set sets the key-value pair in the tree.
@@ -130,8 +154,7 @@ func (t *Tree) Set(k, v uint64) {
 		left.setNumKeys(root.numKeys())
 
 		// reset the root node.
-		part := root[:keyOffset(maxKeys)]
-		ZeroOut(part, 0, len(part))
+		zeroOut(root[:keyOffset(maxKeys)])
 		root.setNumKeys(0)
 
 		// set the pointers for left and right child in the root node.
@@ -278,7 +301,7 @@ func (t *Tree) split(offset uint64) node {
 	nn.setNumKeys(maxKeys - maxKeys/2)
 
 	// Remove entries from node n.
-	ZeroOut(rightHalf, 0, len(rightHalf))
+	zeroOut(rightHalf)
 	n.setNumKeys(maxKeys / 2)
 	return nn
 }
@@ -291,28 +314,30 @@ func (t *Tree) split(offset uint64) node {
 // Leaf nodes would just have: <key, value>, <key, value>, and so on...
 // Last 16 bytes of the node are off limits.
 // | pageID (8 bytes) | metaBits (1 byte) | 3 free bytes | numKeys (4 bytes) |
-type node []byte
+type node []uint64
 
-func (n node) uint64(start int) uint64 { return *(*uint64)(unsafe.Pointer(&n[start])) }
-func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
+func (n node) uint64(start int) uint64 { return n[start] }
 
-func keyOffset(i int) int        { return 16 * i }
-func valOffset(i int) int        { return 16*i + 8 }
-func (n node) numKeys() int      { return int(n.uint32(valOffset(maxKeys) + 4)) }
-func (n node) pageID() uint64    { return n.uint64(keyOffset(maxKeys)) }
-func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
-func (n node) val(i int) uint64  { return n.uint64(valOffset(i)) }
-func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
+// func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
+
+func keyOffset(i int) int          { return 2 * i }
+func valOffset(i int) int          { return 2*i + 1 }
+func (n node) numKeys() int        { return int(n.uint64(valOffset(maxKeys)) & 0xFFFFFFFF) }
+func (n node) pageID() uint64      { return n.uint64(keyOffset(maxKeys)) }
+func (n node) key(i int) uint64    { return n.uint64(keyOffset(i)) }
+func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
+func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
-	v := (*uint64)(unsafe.Pointer(&n[start]))
-	*v = k
+	n[start] = k
 }
 
 func (n node) setNumKeys(num int) {
-	start := valOffset(maxKeys) + 4
-	v := (*uint32)(unsafe.Pointer(&n[start]))
-	*v = uint32(num)
+	idx := valOffset(maxKeys)
+	val := n[idx]
+	val &= 0xFFFFFFFF00000000
+	val |= uint64(num)
+	n[idx] = val
 }
 
 func (n node) moveRight(lo int) {
@@ -324,15 +349,17 @@ func (n node) moveRight(lo int) {
 }
 
 const (
-	bitUsed = byte(1)
-	bitLeaf = byte(2)
+	bitLeaf = uint64(1 << 63)
 )
 
-func (n node) setBit(b byte) {
+func (n node) setBit(b uint64) {
 	vo := valOffset(maxKeys)
-	n[vo] |= b
+	val := n[vo]
+	val &= 0xFFFFFFFF
+	val |= b
+	n[vo] = val
 }
-func (n node) bits() byte {
+func (n node) bits() uint64 {
 	vo := valOffset(maxKeys)
 	return n[vo]
 }
@@ -404,7 +431,7 @@ func (n node) compact(lo uint64) int {
 		left++
 	}
 	// zero out rest of the kv pairs.
-	ZeroOut(n, keyOffset(left), keyOffset(right))
+	zeroOut(n[keyOffset(left):keyOffset(right)])
 	n.setNumKeys(left)
 	return left
 }
