@@ -82,6 +82,21 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestTreeCycle(t *testing.T) {
+	bt := NewTree(1 << 20)
+	val := uint64(0)
+	for i := 0; i < 16; i++ {
+		for j := 0; j < 1e6; j++ {
+			val += 1
+			bt.Set(rand.Uint64(), val)
+		}
+		before := bt.Stats().Occupancy
+		bt.DeleteBelow(val - 1e4)
+		stats := bt.Stats()
+		t.Logf("Cycle %d Done. Occupancy: %.2f -> %.2f [%+v]\n", i, before, stats.Occupancy, stats)
+	}
+}
+
 func TestOccupancyRatio(t *testing.T) {
 	// atmax 4 keys per node
 	setPageSize(16 * 5)
@@ -91,25 +106,25 @@ func TestOccupancyRatio(t *testing.T) {
 	bt := NewTree(1 << 20)
 	defer bt.Release()
 
-	expectedRatio := float64(1) / float64(maxKeys)
+	expectedRatio := float64(1) * 100 / float64(maxKeys)
 	stats := bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	for i := uint64(1); i <= 3; i++ {
 		bt.Set(i, i)
 	}
 	// Tree structure will be:
 	//    [2,Max,_,_]
 	//  [1,2,_,_]  [3,Max,_,_]
-	expectedRatio = float64(6) / float64(3*maxKeys)
+	expectedRatio = float64(6) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	bt.DeleteBelow(2)
 	// Tree structure will be:
 	//    [2,Max,_]
 	//  [2,_,_,_]  [3,Max,_,_]
-	expectedRatio = float64(5) / float64(3*maxKeys)
+	expectedRatio = float64(5) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 }
 
 func TestNode(t *testing.T) {

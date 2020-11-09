@@ -27,15 +27,17 @@ import (
 )
 
 var (
-	pageSize = os.Getpagesize()
-	maxKeys  = (pageSize / 16) - 1
+	pageSize    = os.Getpagesize()
+	maxKeys     = (pageSize / 16) - 1
+	absoluteMax = uint64(math.MaxUint64 - 1)
 )
 
 // Tree represents the structure for custom mmaped B+ tree.
 // It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
-	mf       *MmapFile
-	nextPage uint64
+	mf        *MmapFile
+	nextPage  uint64
+	freePages []uint64
 }
 
 // Release the memory allocated to tree.
@@ -65,7 +67,7 @@ func NewTree(maxSz int) *Tree {
 	t.newNode(0)
 
 	// This acts as the rightmost pointer (all the keys are <= this key).
-	t.Set(math.MaxUint64-1, 0)
+	t.Set(absoluteMax, 0)
 	return t
 }
 
@@ -73,6 +75,7 @@ type TreeStats struct {
 	NumPages  int
 	Bytes     int
 	Occupancy float64
+	FreePages int
 }
 
 // Stats returns stats about the tree.
@@ -88,7 +91,8 @@ func (t *Tree) Stats() TreeStats {
 	return TreeStats{
 		NumPages:  int(t.nextPage - 1),
 		Bytes:     int(t.nextPage-1) * pageSize,
-		Occupancy: occ,
+		Occupancy: occ * 100,
+		FreePages: len(t.freePages),
 	}
 }
 
@@ -106,8 +110,16 @@ func BytesToUint64Slice(b []byte) []uint64 {
 }
 
 func (t *Tree) newNode(bit uint64) node {
-	offset := int(t.nextPage) * pageSize
-	t.nextPage++
+	var pageId uint64
+	if sz := len(t.freePages); sz > 0 {
+		pageId = t.freePages[sz-1]
+		fmt.Printf("Reusing page: %d\n", pageId)
+		t.freePages = t.freePages[:sz-1]
+	} else {
+		pageId = t.nextPage
+		t.nextPage++
+	}
+	offset := int(pageId) * pageSize
 	sz := len(t.mf.Data)
 	// Double the size of file if current buffer is insufficient.
 	if offset+pageSize > sz {
@@ -116,7 +128,7 @@ func (t *Tree) newNode(bit uint64) node {
 	n := getNode(t.mf.Data[offset : offset+pageSize])
 	zeroOut(n)
 	n.setBit(bit)
-	n.setAt(keyOffset(maxKeys), t.nextPage-1)
+	n.setAt(keyOffset(maxKeys), pageId)
 	return n
 }
 
@@ -230,14 +242,39 @@ func (t *Tree) get(n node, k uint64) uint64 {
 
 // DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
-	fn := func(n node) {
-		// We want to compact only the leaf nodes. The internal nodes aren't compacted.
-		if !n.isLeaf() {
-			return
-		}
-		n.compact(ts)
+	// fn := func(n node) {
+	// 	// We want to compact only the leaf nodes. The internal nodes aren't compacted.
+	// 	if !n.isLeaf() {
+	// 		return
+	// 	}
+	// 	n.compact(ts)
+	// }
+	// t.Iterate(fn)
+	root := t.node(1)
+	t.compact(root, ts)
+	assert(root.numKeys() >= 1)
+}
+
+func (t *Tree) compact(n node, ts uint64) int {
+	if n.isLeaf() {
+		return n.compact(ts)
 	}
-	t.Iterate(fn)
+	// Not leaf.
+	for i := 0; i < maxKeys; i++ {
+		if n.key(i) == 0 {
+			break
+		}
+		childID := n.uint64(valOffset(i))
+		child := t.node(childID)
+		if rem := t.compact(child, ts); rem == 0 {
+			fmt.Printf("Freeing up page: %d\n", childID)
+			t.freePages = append(t.freePages, childID)
+			n.setAt(valOffset(i), 0)
+		}
+	}
+	// We use ts=1 here because we want to delete all the keys whose value is 0, which means they no
+	// longer have a valid page for that key.
+	return n.compact(1)
 }
 
 func (t *Tree) iterate(n node, fn func(node)) {
@@ -251,6 +288,13 @@ func (t *Tree) iterate(n node, fn func(node)) {
 			return
 		}
 		childID := n.uint64(valOffset(i))
+		if childID <= 0 {
+			fmt.Printf("n: %d key: %d max: %d\n", n.pageID(), n.key(i), absoluteMax)
+			fmt.Println()
+			os.Exit(1)
+		}
+		// assert(childID > 0)
+
 		child := t.node(childID)
 		t.iterate(child, fn)
 	}
@@ -410,8 +454,6 @@ func (n node) maxKey() uint64 {
 // compacts the node i.e., remove all the kvs with value < lo. It returns the remaining number of
 // keys.
 func (n node) compact(lo uint64) int {
-	// compact should be called only on leaf nodes
-	assert(n.isLeaf())
 	N := n.numKeys()
 	mk := n.maxKey()
 	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
@@ -420,10 +462,25 @@ func (n node) compact(lo uint64) int {
 	}
 	var left, right int
 	for right = 0; right < N; right++ {
-		if n.val(right) < lo && n.key(right) < mk {
-			// Skip over this key. Don't copy it.
-			continue
+		k := n.key(right)
+		v := n.val(right)
+		if v < lo {
+			if left == 0 && k == mk && mk < absoluteMax {
+				// We typically want to keep the max key, if there are other keys remaining in the
+				// node. But, if this is the only key left, then we should just delete it too.
+				// However, if this max key happens to be the absoluteMax key, then we again need to
+				// keep it.
+				return 0
+			}
+			if k == mk {
+				// Keep it.
+			} else {
+				// Don't copy this key if value is less than lo.
+				// But, do keep the max key irrespective of the value.
+				continue
+			}
 		}
+
 		// Valid data. Copy it from right to left. Advance left.
 		if left != right {
 			copy(n.data(left), n.data(right))
@@ -494,6 +551,6 @@ func (n node) print(parentID uint64) {
 		keys[3] = "..."
 		keys = keys[:8]
 	}
-	fmt.Printf("%d Child of: %d bits: %04b num keys: %d keys: %s\n",
-		n.pageID(), parentID, n.bits(), n.numKeys(), strings.Join(keys, " "))
+	fmt.Printf("%d Child of: %d num keys: %d keys: %s\n",
+		n.pageID(), parentID, n.numKeys(), strings.Join(keys, " "))
 }
