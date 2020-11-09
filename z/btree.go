@@ -113,7 +113,6 @@ func (t *Tree) newNode(bit uint64) node {
 	var pageId uint64
 	if sz := len(t.freePages); sz > 0 {
 		pageId = t.freePages[sz-1]
-		fmt.Printf("Reusing page: %d\n", pageId)
 		t.freePages = t.freePages[:sz-1]
 	} else {
 		pageId = t.nextPage
@@ -260,14 +259,14 @@ func (t *Tree) compact(n node, ts uint64) int {
 		return n.compact(ts)
 	}
 	// Not leaf.
-	for i := 0; i < maxKeys; i++ {
-		if n.key(i) == 0 {
-			break
-		}
+	N := n.numKeys()
+	for i := 0; i < N; i++ {
+		assert(n.key(i) > 0)
 		childID := n.uint64(valOffset(i))
 		child := t.node(childID)
-		if rem := t.compact(child, ts); rem == 0 {
-			fmt.Printf("Freeing up page: %d\n", childID)
+		if rem := t.compact(child, ts); rem == 0 && i < N-1 {
+			// If no valid key is remaining we can drop this child. However, don't do that if this
+			// is the max key.
 			t.freePages = append(t.freePages, childID)
 			n.setAt(valOffset(i), 0)
 		}
@@ -289,7 +288,8 @@ func (t *Tree) iterate(n node, fn func(node)) {
 		}
 		childID := n.uint64(valOffset(i))
 		if childID <= 0 {
-			fmt.Printf("n: %d key: %d max: %d\n", n.pageID(), n.key(i), absoluteMax)
+			n.print(0)
+			fmt.Printf("n: %d key: %d num keys: %d\n", n.pageID(), n.key(i), absoluteMax)
 			fmt.Println()
 			os.Exit(1)
 		}
@@ -457,21 +457,14 @@ func (n node) compact(lo uint64) int {
 	N := n.numKeys()
 	mk := n.maxKey()
 	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
-	if N > 0 && n.val(N-1) < lo {
-		n.setAt(valOffset(N-1), 0)
-	}
+	// if N > 0 && n.val(N-1) < lo {
+	// 	n.setAt(valOffset(N-1), 0)
+	// }
 	var left, right int
 	for right = 0; right < N; right++ {
 		k := n.key(right)
 		v := n.val(right)
 		if v < lo {
-			if left == 0 && k == mk && mk < absoluteMax {
-				// We typically want to keep the max key, if there are other keys remaining in the
-				// node. But, if this is the only key left, then we should just delete it too.
-				// However, if this max key happens to be the absoluteMax key, then we again need to
-				// keep it.
-				return 0
-			}
 			if k == mk {
 				// Keep it.
 			} else {
@@ -490,6 +483,12 @@ func (n node) compact(lo uint64) int {
 	// zero out rest of the kv pairs.
 	zeroOut(n[keyOffset(left):keyOffset(right)])
 	n.setNumKeys(left)
+
+	// If the only key we have is the max key, and its value is less than lo, then we can indicate
+	// to the caller by returning a zero that it's OK to drop the node.
+	if left == 1 && n.key(0) == mk && n.val(0) < lo {
+		return 0
+	}
 	return left
 }
 

@@ -93,7 +93,9 @@ func TestTreeCycle(t *testing.T) {
 		before := bt.Stats().Occupancy
 		bt.DeleteBelow(val - 1e4)
 		stats := bt.Stats()
-		t.Logf("Cycle %d Done. Occupancy: %.2f -> %.2f [%+v]\n", i, before, stats.Occupancy, stats)
+		after := stats.Occupancy
+		stats.Occupancy = 0
+		t.Logf("Cycle %d Done. Occupancy: %.2f -> %.2f [%+v]\n", i, before, after, stats)
 	}
 }
 
