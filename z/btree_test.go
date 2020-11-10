@@ -83,7 +83,7 @@ func TestTreeBasic(t *testing.T) {
 }
 
 func TestTreeReset(t *testing.T) {
-	bt := NewTreeWithFile(1<<20, "/home/algod/btree")
+	bt := NewTree(1 << 20)
 	N := 1 << 10
 	val := rand.Uint64()
 	for i := 0; i < N; i++ {
