@@ -141,8 +141,19 @@ func (m *MmapFile) Slice(offset int) []byte {
 // AllocateSlice allocates a slice of the given size at the given offset.
 func (m *MmapFile) AllocateSlice(sz, offset int) ([]byte, int, error) {
 	newOffset := offset + 4 + sz
+
+	// If the file is too small, double its size or increase it by 1GB, whichever is smaller.
 	if newOffset > len(m.Data) {
-		if err := m.Truncate(int64(newOffset)); err != nil {
+		const oneGB = 1 << 30
+		oldSize := len(m.Data)
+		newSize := oldSize * 2
+		if newSizeLimit := oldSize + oneGB; newSizeLimit < newSize {
+			newSize = newSizeLimit
+		}
+		if newSize < newOffset {
+			newSize = newOffset
+		}
+		if err := m.Truncate(int64(newSize)); err != nil {
 			return nil, 0, err
 		}
 	}
