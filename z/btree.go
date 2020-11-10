@@ -269,14 +269,6 @@ func (t *Tree) get(n node, k uint64) uint64 {
 
 // DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
-	// fn := func(n node) {
-	// 	// We want to compact only the leaf nodes. The internal nodes aren't compacted.
-	// 	if !n.isLeaf() {
-	// 		return
-	// 	}
-	// 	n.compact(ts)
-	// }
-	// t.Iterate(fn)
 	root := t.node(1)
 	t.compact(root, ts)
 	assert(root.numKeys() >= 1)
@@ -316,13 +308,7 @@ func (t *Tree) iterate(n node, fn func(node)) {
 			return
 		}
 		childID := n.uint64(valOffset(i))
-		if childID <= 0 {
-			n.print(0)
-			fmt.Printf("n: %d key: %d num keys: %d\n", n.pageID(), n.key(i), absoluteMax)
-			fmt.Println()
-			os.Exit(1)
-		}
-		// assert(childID > 0)
+		assert(childID > 0)
 
 		child := t.node(childID)
 		t.iterate(child, fn)
@@ -516,18 +502,10 @@ func (n node) compact(lo uint64) int {
 	mk := n.maxKey()
 	var left, right int
 	for right = 0; right < N; right++ {
-		k := n.key(right)
-		v := n.val(right)
-		if v < lo {
-			if k == mk {
-				// Keep it.
-			} else {
-				// Don't copy this key if value is less than lo.
-				// But, do keep the max key irrespective of the value.
-				continue
-			}
+		if n.val(right) < lo && n.key(right) < mk {
+			// Skip over this key. Don't copy it.
+			continue
 		}
-
 		// Valid data. Copy it from right to left. Advance left.
 		if left != right {
 			copy(n.data(left), n.data(right))
