@@ -1,5 +1,3 @@
-// +build !windows,!darwin,!plan9,!linux
-
 /*
  * Copyright 2019 Dgraph Labs, Inc. and Contributors
  *
@@ -19,13 +17,14 @@
 package z
 
 import (
+	"fmt"
 	"os"
+	"reflect"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
-// Mmap uses the mmap system call to memory-map a file. If writable is true,
-// memory protection of the pages is set so that they may be written to as well.
 func mmap(fd *os.File, writable bool, size int64) ([]byte, error) {
 	mtype := unix.PROT_READ
 	if writable {
@@ -34,14 +33,49 @@ func mmap(fd *os.File, writable bool, size int64) ([]byte, error) {
 	return unix.Mmap(int(fd.Fd()), 0, int(size), mtype, unix.MAP_SHARED)
 }
 
-// Munmap unmaps a previously mapped slice.
-func munmap(b []byte) error {
-	return unix.Munmap(b)
+func mremap(data []byte, size int) ([]byte, error) {
+	// taken from <https://github.com/torvalds/linux/blob/f8394f232b1eab649ce2df5c5f15b0e528c92091/include/uapi/linux/mman.h#L8>
+	const MREMAP_MAYMOVE = 0x1
+
+	header := (*reflect.SliceHeader)(unsafe.Pointer(&data))
+	mmapAddr, mmapSize, errno := unix.Syscall6(
+		unix.SYS_MREMAP,
+		header.Data,
+		uintptr(header.Len),
+		uintptr(size),
+		uintptr(MREMAP_MAYMOVE),
+		0,
+		0,
+	)
+	if errno != 0 {
+		return nil, errno
+	}
+	if mmapSize != uintptr(size) {
+		return nil, fmt.Errorf("mremap size mismatch: requested: %d got: %d", size, mmapSize)
+	}
+
+	header.Data = mmapAddr
+	header.Cap = size
+	header.Len = size
+	return data, nil
 }
 
-// Madvise uses the madvise system call to give advise about the use of memory
-// when using a slice that is memory-mapped to a file. Set the readahead flag to
-// false if page references are expected in random order.
+func munmap(data []byte) error {
+	if len(data) == 0 || len(data) != cap(data) {
+		return unix.EINVAL
+	}
+	_, _, errno := unix.Syscall(
+		unix.SYS_MUNMAP,
+		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(len(data)),
+		0,
+	)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 func madvise(b []byte, readahead bool) error {
 	flags := unix.MADV_NORMAL
 	if !readahead {
