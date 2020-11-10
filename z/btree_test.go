@@ -99,7 +99,8 @@ func TestTreeCycle(t *testing.T) {
 	bt.DeleteBelow(val)
 	stats := bt.Stats()
 	t.Logf("stats: %+v\n", stats)
-	bt.Print()
+	require.LessOrEqual(t, stats.Occupancy, 1.0)
+	require.GreaterOrEqual(t, stats.FreePages, int(float64(stats.NextPage)*0.95))
 }
 
 func TestOccupancyRatio(t *testing.T) {
@@ -252,7 +253,7 @@ func BenchmarkRead(b *testing.B) {
 		bt.Set(k, k)
 	}
 	stats := bt.Stats()
-	fmt.Printf("Num pages: %d Size: %s\n", stats.NumPages,
+	fmt.Printf("Num pages: %d Size: %s\n", stats.NumNodes,
 		humanize.IBytes(uint64(stats.Bytes)))
 	fmt.Println("Writes done.")
 

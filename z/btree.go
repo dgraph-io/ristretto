@@ -73,24 +73,26 @@ func NewTree(maxSz int) *Tree {
 }
 
 type TreeStats struct {
-	NextPage    int
-	NumPages    int
-	NumLeafKeys int
-	Bytes       int
-	Occupancy   float64
-	FreePages   int
+	NextPage     int
+	NumNodes     int
+	NumLeafNodes int
+	NumLeafKeys  int
+	Bytes        int
+	Occupancy    float64
+	FreePages    int
 }
 
 // Stats returns stats about the tree.
 func (t *Tree) Stats() TreeStats {
-	var totalKeys, maxPossible, numPages, numKeys int
+	var totalKeys, maxPossible, numNodes, numKeys, numLeaf int
 	fn := func(n node) {
-		numPages++
+		numNodes++
 		nk := n.numKeys()
 		totalKeys += nk
 		maxPossible += maxKeys
 		if n.isLeaf() {
 			numKeys += nk
+			numLeaf++
 		}
 	}
 	t.Iterate(fn)
@@ -102,15 +104,16 @@ func (t *Tree) Stats() TreeStats {
 		n := t.node(freePage)
 		freePage = n.uint64(0)
 	}
-	assert(int(t.nextPage-1) == numFree+numPages)
+	assert(int(t.nextPage-1) == numFree+numNodes)
 
 	return TreeStats{
-		NextPage:    int(t.nextPage),
-		NumPages:    numPages,
-		NumLeafKeys: numKeys,
-		Bytes:       int(t.nextPage-1) * pageSize,
-		Occupancy:   occ * 100,
-		FreePages:   numFree,
+		NextPage:     int(t.nextPage),
+		NumNodes:     numNodes,
+		NumLeafNodes: numLeaf,
+		NumLeafKeys:  numKeys,
+		Bytes:        int(t.nextPage-1) * pageSize,
+		Occupancy:    occ * 100,
+		FreePages:    numFree,
 	}
 }
 
