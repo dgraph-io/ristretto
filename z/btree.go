@@ -21,13 +21,16 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"reflect"
 	"strings"
 	"unsafe"
 )
 
 var (
-	pageSize = os.Getpagesize()
-	maxKeys  = (pageSize / 16) - 1
+	pageSize    = os.Getpagesize()
+	maxKeys     = (pageSize / 16) - 1
+	oneThird    = int(float64(maxKeys) / 3)
+	absoluteMax = uint64(math.MaxUint64 - 1)
 )
 
 // Tree represents the structure for custom mmaped B+ tree.
@@ -35,6 +38,7 @@ var (
 type Tree struct {
 	mf       *MmapFile
 	nextPage uint64
+	freePage uint64
 }
 
 // Release the memory allocated to tree.
@@ -64,46 +68,100 @@ func NewTree(maxSz int) *Tree {
 	t.newNode(0)
 
 	// This acts as the rightmost pointer (all the keys are <= this key).
-	t.Set(math.MaxUint64-1, 0)
+	t.Set(absoluteMax, 0)
 	return t
 }
 
 type TreeStats struct {
-	NumPages  int
-	Bytes     int
-	Occupancy float64
+	NextPage     int
+	NumNodes     int
+	NumLeafNodes int
+	NumLeafKeys  int
+	Bytes        int
+	Occupancy    float64
+	FreePages    int
 }
 
 // Stats returns stats about the tree.
 func (t *Tree) Stats() TreeStats {
-	var totalKeys, maxPossible int
+	var totalKeys, maxPossible, numNodes, numKeys, numLeaf int
 	fn := func(n node) {
-		totalKeys += n.numKeys()
+		numNodes++
+		nk := n.numKeys()
+		totalKeys += nk
 		maxPossible += maxKeys
+		if n.isLeaf() {
+			numKeys += nk
+			numLeaf++
+		}
 	}
 	t.Iterate(fn)
 	occ := float64(totalKeys) / float64(maxPossible)
 
+	freePage, numFree := t.freePage, 0
+	for freePage > 0 {
+		numFree++
+		n := t.node(freePage)
+		freePage = n.uint64(0)
+	}
+	assert(int(t.nextPage-1) == numFree+numNodes)
+
 	return TreeStats{
-		NumPages:  int(t.nextPage - 1),
-		Bytes:     int(t.nextPage-1) * pageSize,
-		Occupancy: occ,
+		NextPage:     int(t.nextPage),
+		NumNodes:     numNodes,
+		NumLeafNodes: numLeaf,
+		NumLeafKeys:  numKeys,
+		Bytes:        int(t.nextPage-1) * pageSize,
+		Occupancy:    occ * 100,
+		FreePages:    numFree,
 	}
 }
 
-func (t *Tree) newNode(bit byte) node {
-	offset := int(t.nextPage) * pageSize
-	t.nextPage++
-	sz := len(t.mf.Data)
-	// Double the size of file if current buffer is insufficient.
-	if offset+pageSize > sz {
-		check(t.mf.Truncate(int64(2 * sz)))
+// BytesToU32Slice converts the given byte slice to uint32 slice
+func BytesToUint64Slice(b []byte) []uint64 {
+	if len(b) == 0 {
+		return nil
 	}
-	n := node(t.mf.Data[offset : offset+pageSize])
-	ZeroOut(n, 0, len(n))
-	n.setBit(bitUsed | bit)
-	n.setAt(keyOffset(maxKeys), t.nextPage-1)
+	var u64s []uint64
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
+	hdr.Len = len(b) / 8
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u64s
+}
+
+func (t *Tree) newNode(bit uint64) node {
+	var pageId uint64
+	if t.freePage > 0 {
+		pageId = t.freePage
+	} else {
+		pageId = t.nextPage
+		t.nextPage++
+		offset := int(pageId) * pageSize
+		sz := len(t.mf.Data)
+		// Double the size of file if current buffer is insufficient.
+		if offset+pageSize > sz {
+			check(t.mf.Truncate(int64(2 * sz)))
+		}
+	}
+	n := t.node(pageId)
+	if t.freePage > 0 {
+		t.freePage = n.uint64(0)
+	}
+	zeroOut(n)
+	n.setBit(bit)
+	n.setAt(keyOffset(maxKeys), pageId)
 	return n
+}
+
+func getNode(data []byte) node {
+	return node(BytesToUint64Slice(data))
+}
+
+func zeroOut(data []uint64) {
+	for i := 0; i < len(data); i++ {
+		data[i] = 0
+	}
 }
 
 func (t *Tree) node(pid uint64) node {
@@ -112,7 +170,7 @@ func (t *Tree) node(pid uint64) node {
 		return nil
 	}
 	start := pageSize * int(pid)
-	return node(t.mf.Data[start : start+pageSize])
+	return getNode(t.mf.Data[start : start+pageSize])
 }
 
 // Set sets the key-value pair in the tree.
@@ -130,8 +188,7 @@ func (t *Tree) Set(k, v uint64) {
 		left.setNumKeys(root.numKeys())
 
 		// reset the root node.
-		part := root[:keyOffset(maxKeys)]
-		ZeroOut(part, 0, len(part))
+		zeroOut(root[:keyOffset(maxKeys)])
 		root.setNumKeys(0)
 
 		// set the pointers for left and right child in the root node.
@@ -142,8 +199,8 @@ func (t *Tree) Set(k, v uint64) {
 
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
-func (t *Tree) set(offset, k, v uint64) node {
-	n := t.node(offset)
+func (t *Tree) set(pid, k, v uint64) node {
+	n := t.node(pid)
 	if n.isLeaf() {
 		return n.set(k, v)
 	}
@@ -158,19 +215,24 @@ func (t *Tree) set(offset, k, v uint64) node {
 		n.setAt(keyOffset(idx), k)
 		n.setNumKeys(n.numKeys() + 1)
 	}
-	child := t.node(n.uint64(valOffset(idx)))
+	child := t.node(n.val(idx))
 	if child == nil {
 		child = t.newNode(bitLeaf)
-		n = t.node(offset)
+		n = t.node(pid)
 		n.setAt(valOffset(idx), child.pageID())
 	}
 	child = t.set(child.pageID(), k, v)
 	// Re-read n as the underlying buffer for tree might have changed during set.
-	n = t.node(offset)
+	n = t.node(pid)
 	if child.isFull() {
+		// Just consider the left sibling for simplicity.
+		// if t.shareWithSibling(n, idx) {
+		// 	return n
+		// }
+
 		nn := t.split(child.pageID())
 		// Re-read n and child as the underlying buffer for tree might have changed during split.
-		n = t.node(offset)
+		n = t.node(pid)
 		child = t.node(n.uint64(valOffset(idx)))
 		// Set child pointers in the node n.
 		// Note that key for right node (nn) already exist in node n, but the
@@ -207,14 +269,32 @@ func (t *Tree) get(n node, k uint64) uint64 {
 
 // DeleteBelow deletes all keys with value under ts.
 func (t *Tree) DeleteBelow(ts uint64) {
-	fn := func(n node) {
-		// We want to compact only the leaf nodes. The internal nodes aren't compacted.
-		if !n.isLeaf() {
-			return
-		}
-		n.compact(ts)
+	root := t.node(1)
+	t.compact(root, ts)
+	assert(root.numKeys() >= 1)
+}
+
+func (t *Tree) compact(n node, ts uint64) int {
+	if n.isLeaf() {
+		return n.compact(ts)
 	}
-	t.Iterate(fn)
+	// Not leaf.
+	N := n.numKeys()
+	for i := 0; i < N; i++ {
+		assert(n.key(i) > 0)
+		childID := n.uint64(valOffset(i))
+		child := t.node(childID)
+		if rem := t.compact(child, ts); rem == 0 && i < N-1 {
+			// If no valid key is remaining we can drop this child. However, don't do that if this
+			// is the max key.
+			child.setAt(0, t.freePage)
+			t.freePage = childID
+			n.setAt(valOffset(i), 0)
+		}
+	}
+	// We use ts=1 here because we want to delete all the keys whose value is 0, which means they no
+	// longer have a valid page for that key.
+	return n.compact(1)
 }
 
 func (t *Tree) iterate(n node, fn func(node)) {
@@ -228,6 +308,8 @@ func (t *Tree) iterate(n node, fn func(node)) {
 			return
 		}
 		childID := n.uint64(valOffset(i))
+		assert(childID > 0)
+
 		child := t.node(childID)
 		t.iterate(child, fn)
 	}
@@ -263,8 +345,8 @@ func (t *Tree) Print() {
 
 // Splits the node into two. It moves right half of the keys from the original node to a newly
 // created right node. It returns the right node.
-func (t *Tree) split(offset uint64) node {
-	n := t.node(offset)
+func (t *Tree) split(pid uint64) node {
+	n := t.node(pid)
 	if !n.isFull() {
 		panic("This should be called only when n is full")
 	}
@@ -272,15 +354,45 @@ func (t *Tree) split(offset uint64) node {
 	// Create a new node nn, copy over half the keys from n, and set the parent to n's parent.
 	nn := t.newNode(n.bits())
 	// Re-read n as the underlying buffer for tree might have changed during newNode.
-	n = t.node(offset)
+	n = t.node(pid)
 	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys)]
 	copy(nn, rightHalf)
 	nn.setNumKeys(maxKeys - maxKeys/2)
 
 	// Remove entries from node n.
-	ZeroOut(rightHalf, 0, len(rightHalf))
+	zeroOut(rightHalf)
 	n.setNumKeys(maxKeys / 2)
 	return nn
+}
+
+// shareWithSiblingXXX is unused for now. The idea is to move some keys to
+// sibling when a node is full. But, I don't see any special benefits in our
+// access pattern. It doesn't result in better occupancy ratios.
+func (t *Tree) shareWithSiblingXXX(n node, idx int) bool {
+	if idx == 0 {
+		return false
+	}
+	left := t.node(n.val(idx - 1))
+	ns := left.numKeys()
+	if ns >= maxKeys/2 {
+		// Sibling is already getting full.
+		return false
+	}
+
+	right := t.node(n.val(idx))
+	// Copy over keys from right child to left child.
+	copied := copy(left[keyOffset(ns):], right[:keyOffset(oneThird)])
+	copied /= 2 // Considering that key-val constitute one key.
+	left.setNumKeys(ns + copied)
+
+	// Update the max key in parent node n for the left sibling.
+	n.setAt(keyOffset(idx-1), left.maxKey())
+
+	// Now move keys to left for the right sibling.
+	until := copy(right, right[keyOffset(oneThird):keyOffset(maxKeys)])
+	right.setNumKeys(until / 2)
+	zeroOut(right[until:keyOffset(maxKeys)])
+	return true
 }
 
 // Each node in the node is of size pageSize. Two kinds of nodes. Leaf nodes and internal nodes.
@@ -291,28 +403,30 @@ func (t *Tree) split(offset uint64) node {
 // Leaf nodes would just have: <key, value>, <key, value>, and so on...
 // Last 16 bytes of the node are off limits.
 // | pageID (8 bytes) | metaBits (1 byte) | 3 free bytes | numKeys (4 bytes) |
-type node []byte
+type node []uint64
 
-func (n node) uint64(start int) uint64 { return *(*uint64)(unsafe.Pointer(&n[start])) }
-func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
+func (n node) uint64(start int) uint64 { return n[start] }
 
-func keyOffset(i int) int        { return 16 * i }
-func valOffset(i int) int        { return 16*i + 8 }
-func (n node) numKeys() int      { return int(n.uint32(valOffset(maxKeys) + 4)) }
-func (n node) pageID() uint64    { return n.uint64(keyOffset(maxKeys)) }
-func (n node) key(i int) uint64  { return n.uint64(keyOffset(i)) }
-func (n node) val(i int) uint64  { return n.uint64(valOffset(i)) }
-func (n node) data(i int) []byte { return n[keyOffset(i):keyOffset(i+1)] }
+// func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
+
+func keyOffset(i int) int          { return 2 * i }
+func valOffset(i int) int          { return 2*i + 1 }
+func (n node) numKeys() int        { return int(n.uint64(valOffset(maxKeys)) & 0xFFFFFFFF) }
+func (n node) pageID() uint64      { return n.uint64(keyOffset(maxKeys)) }
+func (n node) key(i int) uint64    { return n.uint64(keyOffset(i)) }
+func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
+func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
-	v := (*uint64)(unsafe.Pointer(&n[start]))
-	*v = k
+	n[start] = k
 }
 
 func (n node) setNumKeys(num int) {
-	start := valOffset(maxKeys) + 4
-	v := (*uint32)(unsafe.Pointer(&n[start]))
-	*v = uint32(num)
+	idx := valOffset(maxKeys)
+	val := n[idx]
+	val &= 0xFFFFFFFF00000000
+	val |= uint64(num)
+	n[idx] = val
 }
 
 func (n node) moveRight(lo int) {
@@ -324,17 +438,18 @@ func (n node) moveRight(lo int) {
 }
 
 const (
-	bitUsed = byte(1)
-	bitLeaf = byte(2)
+	bitLeaf = uint64(1 << 63)
 )
 
-func (n node) setBit(b byte) {
+func (n node) setBit(b uint64) {
 	vo := valOffset(maxKeys)
-	n[vo] |= b
+	val := n[vo]
+	val &= 0xFFFFFFFF
+	val |= b
+	n[vo] = val
 }
-func (n node) bits() byte {
-	vo := valOffset(maxKeys)
-	return n[vo]
+func (n node) bits() uint64 {
+	return n.val(maxKeys) & 0xFF00000000000000
 }
 func (n node) isLeaf() bool {
 	return n.bits()&bitLeaf > 0
@@ -383,14 +498,8 @@ func (n node) maxKey() uint64 {
 // compacts the node i.e., remove all the kvs with value < lo. It returns the remaining number of
 // keys.
 func (n node) compact(lo uint64) int {
-	// compact should be called only on leaf nodes
-	assert(n.isLeaf())
 	N := n.numKeys()
 	mk := n.maxKey()
-	// Just zero-out the value of maxKey if value <= lo. Don't remove the key.
-	if N > 0 && n.val(N-1) < lo {
-		n.setAt(valOffset(N-1), 0)
-	}
 	var left, right int
 	for right = 0; right < N; right++ {
 		if n.val(right) < lo && n.key(right) < mk {
@@ -404,8 +513,14 @@ func (n node) compact(lo uint64) int {
 		left++
 	}
 	// zero out rest of the kv pairs.
-	ZeroOut(n, keyOffset(left), keyOffset(right))
+	zeroOut(n[keyOffset(left):keyOffset(right)])
 	n.setNumKeys(left)
+
+	// If the only key we have is the max key, and its value is less than lo, then we can indicate
+	// to the caller by returning a zero that it's OK to drop the node.
+	if left == 1 && n.key(0) == mk && n.val(0) < lo {
+		return 0
+	}
 	return left
 }
 
@@ -467,6 +582,6 @@ func (n node) print(parentID uint64) {
 		keys[3] = "..."
 		keys = keys[:8]
 	}
-	fmt.Printf("%d Child of: %d bits: %04b num keys: %d keys: %s\n",
-		n.pageID(), parentID, n.bits(), n.numKeys(), strings.Join(keys, " "))
+	fmt.Printf("%d Child of: %d num keys: %d keys: %s\n",
+		n.pageID(), parentID, n.numKeys(), strings.Join(keys, " "))
 }

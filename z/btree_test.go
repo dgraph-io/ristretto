@@ -82,6 +82,27 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestTreeCycle(t *testing.T) {
+	bt := NewTree(1 << 20)
+	val := uint64(0)
+	for i := 0; i < 16; i++ {
+		for j := 0; j < 1e6+i*1e4; j++ {
+			val += 1
+			bt.Set(rand.Uint64(), val)
+		}
+		before := bt.Stats()
+		bt.DeleteBelow(val - 1e4)
+		after := bt.Stats()
+		t.Logf("Cycle %d Done. Before: %+v -> After: %+v\n", i, before, after)
+	}
+
+	bt.DeleteBelow(val)
+	stats := bt.Stats()
+	t.Logf("stats: %+v\n", stats)
+	require.LessOrEqual(t, stats.Occupancy, 1.0)
+	require.GreaterOrEqual(t, stats.FreePages, int(float64(stats.NextPage)*0.95))
+}
+
 func TestOccupancyRatio(t *testing.T) {
 	// atmax 4 keys per node
 	setPageSize(16 * 5)
@@ -91,29 +112,29 @@ func TestOccupancyRatio(t *testing.T) {
 	bt := NewTree(1 << 20)
 	defer bt.Release()
 
-	expectedRatio := float64(1) / float64(maxKeys)
+	expectedRatio := float64(1) * 100 / float64(maxKeys)
 	stats := bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	for i := uint64(1); i <= 3; i++ {
 		bt.Set(i, i)
 	}
 	// Tree structure will be:
 	//    [2,Max,_,_]
 	//  [1,2,_,_]  [3,Max,_,_]
-	expectedRatio = float64(6) / float64(3*maxKeys)
+	expectedRatio = float64(6) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	bt.DeleteBelow(2)
 	// Tree structure will be:
 	//    [2,Max,_]
 	//  [2,_,_,_]  [3,Max,_,_]
-	expectedRatio = float64(5) / float64(3*maxKeys)
+	expectedRatio = float64(5) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
-	require.Equal(t, expectedRatio, stats.Occupancy)
+	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 }
 
 func TestNode(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	for i := uint64(1); i < 16; i *= 2 {
 		n.set(i, i)
 	}
@@ -121,10 +142,15 @@ func TestNode(t *testing.T) {
 	require.True(t, 0 == n.get(5))
 	n.set(5, 5)
 	n.print(0)
+
+	n.setBit(0)
+	require.False(t, n.isLeaf())
+	n.setBit(bitLeaf)
+	require.True(t, n.isLeaf())
 }
 
 func TestNodeBasic(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	N := uint64(256)
 	mp := make(map[uint64]uint64)
 	for i := uint64(1); i < N; i++ {
@@ -138,7 +164,7 @@ func TestNodeBasic(t *testing.T) {
 }
 
 func TestNode_MoveRight(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	N := uint64(10)
 	for i := uint64(1); i < N; i++ {
 		n.set(i, i)
@@ -156,7 +182,7 @@ func TestNode_MoveRight(t *testing.T) {
 }
 
 func TestNodeCompact(t *testing.T) {
-	n := node(make([]byte, pageSize))
+	n := getNode(make([]byte, pageSize))
 	n.setBit(bitLeaf)
 	N := uint64(128)
 	mp := make(map[uint64]uint64)
@@ -174,8 +200,6 @@ func TestNodeCompact(t *testing.T) {
 	for k, v := range mp {
 		require.Equal(t, v, n.get(k))
 	}
-	// Max key N-1, i.e., 127 should not be removed. Only its value should be set to zero.
-	require.Equal(t, uint64(0), n.get(N-1))
 	require.Equal(t, uint64(127), n.maxKey())
 }
 
@@ -229,7 +253,7 @@ func BenchmarkRead(b *testing.B) {
 		bt.Set(k, k)
 	}
 	stats := bt.Stats()
-	fmt.Printf("Num pages: %d Size: %s\n", stats.NumPages,
+	fmt.Printf("Num pages: %d Size: %s\n", stats.NumNodes,
 		humanize.IBytes(uint64(stats.Bytes)))
 	fmt.Println("Writes done.")
 
@@ -266,7 +290,7 @@ func BenchmarkSearch(b *testing.B) {
 			require.NoError(b, err)
 		}
 
-		n := node(mf.Data)
+		n := getNode(mf.Data)
 		for i := 1; i <= sz; i++ {
 			n.set(uint64(i), uint64(i))
 		}
@@ -327,7 +351,7 @@ func BenchmarkCustomSearch(b *testing.B) {
 	}
 
 	for _, sz := range []int{64, 128, 255} {
-		n := node(make([]byte, pageSize))
+		n := getNode(make([]byte, pageSize))
 		for i := 1; i <= sz; i++ {
 			n.set(uint64(i), uint64(i))
 		}
