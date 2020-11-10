@@ -57,6 +57,13 @@ func createFile(maxSz int, fname string) (*MmapFile, error) {
 	return OpenMmapFile(fname, os.O_RDWR|os.O_CREATE, maxSz)
 }
 
+func (t *Tree) initRootNode() {
+	// This is the root node.
+	t.newNode(0)
+	// This acts as the rightmost pointer (all the keys are <= this key).
+	t.Set(absoluteMax, 0)
+}
+
 // NewTree returns a memory mapped B+ tree with given filename.
 func NewTree(maxSz int, fname string) *Tree {
 	mf, err := createFile(maxSz, fname)
@@ -70,11 +77,7 @@ func NewTree(maxSz int, fname string) *Tree {
 		mf:       mf,
 		nextPage: 1,
 	}
-	// This is the root node.
-	t.newNode(0)
-
-	// This acts as the rightmost pointer (all the keys are <= this key).
-	t.Set(absoluteMax, 0)
+	t.initRootNode()
 	return t
 }
 
@@ -86,9 +89,7 @@ func (t *Tree) Reset(maxSz int) {
 		maxSz = pageSize
 	}
 	check(t.mf.Truncate(int64(maxSz)))
-	// Set the root.
-	t.newNode(0)
-	t.Set(absoluteMax, 0)
+	t.initRootNode()
 }
 
 type TreeStats struct {
