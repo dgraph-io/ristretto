@@ -86,7 +86,7 @@ func TestTreeCycle(t *testing.T) {
 	bt := NewTree(1 << 20)
 	val := uint64(0)
 	for i := 0; i < 16; i++ {
-		for j := 0; j < 1e6; j++ {
+		for j := 0; j < 1e6+i*1e4; j++ {
 			val += 1
 			bt.Set(rand.Uint64(), val)
 		}
@@ -95,6 +95,11 @@ func TestTreeCycle(t *testing.T) {
 		after := bt.Stats()
 		t.Logf("Cycle %d Done. Before: %+v -> After: %+v\n", i, before, after)
 	}
+
+	bt.DeleteBelow(val)
+	stats := bt.Stats()
+	t.Logf("stats: %+v\n", stats)
+	bt.Print()
 }
 
 func TestOccupancyRatio(t *testing.T) {
@@ -194,8 +199,6 @@ func TestNodeCompact(t *testing.T) {
 	for k, v := range mp {
 		require.Equal(t, v, n.get(k))
 	}
-	// Max key N-1, i.e., 127 should not be removed. Only its value should be set to zero.
-	require.Equal(t, uint64(0), n.get(N-1))
 	require.Equal(t, uint64(127), n.maxKey())
 }
 
