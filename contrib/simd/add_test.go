@@ -16,7 +16,7 @@ func TestSearch(t *testing.T) {
 
 	for i := 0; i < len(keys); i++ {
 		idx := int(Search(keys, uint64(i)))
-		require.Equal(t, (i+1)/2, idx)
+		require.Equalf(t, (i+1)/2, idx, "key: %d", i)
 	}
 	require.Equal(t, 256, int(Search(keys, math.MaxUint64>>1)))
 	require.Equal(t, 256, int(Search(keys, math.MaxUint64)))
