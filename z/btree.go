@@ -64,6 +64,13 @@ func (t *Tree) initRootNode() {
 	t.Set(absoluteMax, 0)
 }
 
+// LoadTree loads a tree from the existing file.
+func LoadTree(fname string) *Tree {
+	mf, err := OpenMmapFile(fname, os.O_RDONLY, 0)
+	check(err)
+	return &Tree{mf: mf}
+}
+
 // NewTree returns a memory mapped B+ tree with given filename.
 func NewTree(maxSz int, fname string) *Tree {
 	mf, err := createFile(maxSz, fname)
