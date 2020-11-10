@@ -29,6 +29,7 @@ import (
 var (
 	pageSize    = os.Getpagesize()
 	maxKeys     = (pageSize / 16) - 1
+	oneThird    = int(float64(maxKeys) / 3)
 	absoluteMax = uint64(math.MaxUint64 - 1)
 )
 
@@ -221,6 +222,11 @@ func (t *Tree) set(pid, k, v uint64) node {
 	// Re-read n as the underlying buffer for tree might have changed during set.
 	n = t.node(pid)
 	if child.isFull() {
+		// Just consider the left sibling for simplicity.
+		// if t.shareWithSibling(n, idx) {
+		// 	return n
+		// }
+
 		nn := t.split(child.pageID())
 		// Re-read n and child as the underlying buffer for tree might have changed during split.
 		n = t.node(pid)
@@ -370,6 +376,36 @@ func (t *Tree) split(pid uint64) node {
 	return nn
 }
 
+// shareWithSiblingXXX is unused for now. The idea is to move some keys to
+// sibling when a node is full. But, I don't see any special benefits in our
+// access pattern. It doesn't result in better occupancy ratios.
+func (t *Tree) shareWithSiblingXXX(n node, idx int) bool {
+	if idx == 0 {
+		return false
+	}
+	left := t.node(n.val(idx - 1))
+	ns := left.numKeys()
+	if ns >= maxKeys/2 {
+		// Sibling is already getting full.
+		return false
+	}
+
+	right := t.node(n.val(idx))
+	// Copy over keys from right child to left child.
+	copied := copy(left[keyOffset(ns):], right[:keyOffset(oneThird)])
+	copied /= 2 // Considering that key-val constitute one key.
+	left.setNumKeys(ns + copied)
+
+	// Update the max key in parent node n for the left sibling.
+	n.setAt(keyOffset(idx-1), left.maxKey())
+
+	// Now move keys to left for the right sibling.
+	until := copy(right, right[keyOffset(oneThird):keyOffset(maxKeys)])
+	right.setNumKeys(until / 2)
+	zeroOut(right[until:keyOffset(maxKeys)])
+	return true
+}
+
 // Each node in the node is of size pageSize. Two kinds of nodes. Leaf nodes and internal nodes.
 // Leaf nodes only contain the data. Internal nodes would contain the key and the offset to the
 // child node.
@@ -424,8 +460,7 @@ func (n node) setBit(b uint64) {
 	n[vo] = val
 }
 func (n node) bits() uint64 {
-	vo := valOffset(maxKeys)
-	return n[vo]
+	return n.val(maxKeys) & 0xFF00000000000000
 }
 func (n node) isLeaf() bool {
 	return n.bits()&bitLeaf > 0
