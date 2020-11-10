@@ -36,7 +36,7 @@ func setPageSize(sz int) {
 }
 
 func TestTree(t *testing.T) {
-	bt := NewTree(1<<20, "")
+	bt := NewTree("", 1<<20)
 
 	N := uint64(256 * 256)
 	for i := uint64(1); i < N; i++ {
@@ -57,7 +57,7 @@ func TestTree(t *testing.T) {
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		bt := NewTree(1<<20, "")
+		bt := NewTree("", 1<<20)
 		defer bt.Release()
 
 		N := uint64(1 << 20)
@@ -81,7 +81,7 @@ func TestTreeBasic(t *testing.T) {
 }
 
 func TestTreeReset(t *testing.T) {
-	bt := NewTree(1<<20, "")
+	bt := NewTree("", 1<<20)
 	defer bt.Release()
 	N := 1 << 10
 	val := rand.Uint64()
@@ -115,7 +115,7 @@ func TestTreeReset(t *testing.T) {
 }
 
 func TestTreeCycle(t *testing.T) {
-	bt := NewTree(1<<20, "")
+	bt := NewTree("", 1<<20)
 	defer bt.Release()
 	val := uint64(0)
 	for i := 0; i < 16; i++ {
@@ -142,7 +142,7 @@ func TestOccupancyRatio(t *testing.T) {
 	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
 
-	bt := NewTree(1<<20, "")
+	bt := NewTree("", 1<<20)
 	defer bt.Release()
 
 	expectedRatio := float64(1) * 100 / float64(maxKeys)
@@ -245,7 +245,7 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		bt := NewTree(1<<30, "")
+		bt := NewTree("", 1<<30)
 		defer bt.Release()
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
@@ -279,7 +279,7 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	bt := NewTree(1<<30, "")
+	bt := NewTree("", 1<<30)
 	defer bt.Release()
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1

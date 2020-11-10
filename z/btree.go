@@ -65,7 +65,7 @@ func (t *Tree) initRootNode() {
 }
 
 // NewTree returns a memory mapped B+ tree with given filename.
-func NewTree(maxSz int, fname string) *Tree {
+func NewTree(fname string, maxSz int) *Tree {
 	mf, err := createFile(maxSz, fname)
 	if err != NewFile {
 		check(err)
