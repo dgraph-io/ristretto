@@ -57,13 +57,8 @@ func createFile(maxSz int, fname string) (*MmapFile, error) {
 	return OpenMmapFile(fname, os.O_RDWR|os.O_CREATE, maxSz)
 }
 
-// NewTree returns a new memory mapped tree in a tmp directory.
-func NewTree(maxSz int) *Tree {
-	return NewTreeWithFile(maxSz, "")
-}
-
-// NewTreeWithFile returns a memory mapped B+ tree with given filename.
-func NewTreeWithFile(maxSz int, fname string) *Tree {
+// NewTree returns a memory mapped B+ tree with given filename.
+func NewTree(maxSz int, fname string) *Tree {
 	mf, err := createFile(maxSz, fname)
 	if err != NewFile {
 		check(err)
