@@ -82,6 +82,39 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestTreeReset(t *testing.T) {
+	bt := NewTreeWithFile(1<<20, "/home/algod/btree")
+	N := 1 << 10
+	val := rand.Uint64()
+	for i := 0; i < N; i++ {
+		bt.Set(rand.Uint64(), val)
+	}
+
+	// Truncate it to small size that is less than pageSize.
+	bt.Reset(1 << 10)
+
+	stats := bt.Stats()
+	// Verify the tree stats.
+	require.Equal(t, 3, stats.NextPage)
+	require.Equal(t, 2, stats.NumNodes)
+	require.Equal(t, 1, stats.NumLeafKeys)
+	require.Equal(t, 1, stats.NumLeafKeys)
+	require.Equal(t, 2*pageSize, stats.Bytes)
+	expectedOcc := float64(2) * 100 / float64(stats.NumNodes*maxKeys)
+	require.InDelta(t, expectedOcc, stats.Occupancy, 0.01)
+	require.Zero(t, stats.FreePages)
+	// Check if we can reinsert the data.
+	mp := make(map[uint64]uint64)
+	for i := 0; i < N; i++ {
+		k := rand.Uint64()
+		mp[k] = val
+		bt.Set(k, val)
+	}
+	for k, v := range mp {
+		require.Equal(t, v, bt.Get(k))
+	}
+}
+
 func TestTreeCycle(t *testing.T) {
 	bt := NewTree(1 << 20)
 	val := uint64(0)

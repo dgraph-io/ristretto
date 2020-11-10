@@ -48,16 +48,27 @@ func (t *Tree) Release() {
 	}
 }
 
-// NewTree returns a memory mapped B+ tree.
-func NewTree(maxSz int) *Tree {
-	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
-	fd, err := ioutil.TempFile("", "btree")
-	check(err)
+func createFile(maxSz int, fname string) (*MmapFile, error) {
+	if fname == "" {
+		fd, err := ioutil.TempFile("", "btree")
+		check(err)
+		return OpenMmapFileUsing(fd, maxSz, true)
+	}
+	return OpenMmapFile(fname, os.O_RDWR|os.O_CREATE, maxSz)
+}
 
-	mf, err := OpenMmapFileUsing(fd, maxSz, true)
+// NewTree returns a new memory mapped tree in a tmp directory.
+func NewTree(maxSz int) *Tree {
+	return NewTreeWithFile(maxSz, "")
+}
+
+// NewTreeWithFile returns a memory mapped B+ tree with given filename.
+func NewTreeWithFile(maxSz int, fname string) *Tree {
+	mf, err := createFile(maxSz, fname)
 	if err != NewFile {
 		check(err)
 	}
+	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
 	check(Madvise(mf.Data, false))
 
 	t := &Tree{
@@ -70,6 +81,19 @@ func NewTree(maxSz int) *Tree {
 	// This acts as the rightmost pointer (all the keys are <= this key).
 	t.Set(absoluteMax, 0)
 	return t
+}
+
+// Reset resets the tree and truncates it to maxSz.
+func (t *Tree) Reset(maxSz int) {
+	t.nextPage = 1
+	t.freePage = 0
+	if maxSz < pageSize {
+		maxSz = pageSize
+	}
+	check(t.mf.Truncate(int64(maxSz)))
+	// Set the root.
+	t.newNode(0)
+	t.Set(absoluteMax, 0)
 }
 
 type TreeStats struct {
