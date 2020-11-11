@@ -15,6 +15,7 @@ import "C"
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -39,7 +40,7 @@ func throw(s string)
 // Compile Go program with `go build -tags=jemalloc` to enable this.
 
 type dalloc struct {
-	pc uintptr
+	f  string
 	no int
 	sz int
 }
@@ -76,15 +77,23 @@ func Calloc(n int) []byte {
 
 	if dallocs != nil {
 		// If leak detection is enabled.
-		pc, _, l, ok := runtime.Caller(1)
-		if ok {
+		for i := 1; ; i++ {
+			_, f, l, ok := runtime.Caller(i)
+			if !ok {
+				break
+			}
+			if strings.Contains(f, "/ristretto/") {
+				continue
+			}
+
 			dallocsMu.Lock()
 			dallocs[uptr] = &dalloc{
-				pc: pc,
+				f:  f,
 				no: l,
 				sz: n,
 			}
 			dallocsMu.Unlock()
+			break
 		}
 	}
 	atomic.AddInt64(&numBytes, int64(n))
@@ -126,8 +135,7 @@ func PrintLeaks() {
 		return
 	}
 	for _, da := range dallocs {
-		pname := runtime.FuncForPC(da.pc).Name()
-		fmt.Printf("LEAK: %d at func: %s %d\n", da.sz, pname, da.no)
+		fmt.Printf("LEAK: %d at file: %s %d\n", da.sz, da.f, da.no)
 	}
 }
 
