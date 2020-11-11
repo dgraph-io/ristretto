@@ -82,7 +82,7 @@ func Calloc(n int) []byte {
 			if !ok {
 				break
 			}
-			if strings.Contains(f, "/ristretto/") {
+			if strings.Contains(f, "/ristretto") {
 				continue
 			}
 
