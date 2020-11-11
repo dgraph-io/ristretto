@@ -90,17 +90,13 @@ func (a *Allocator) Reset() {
 
 func PrintAllocators() {
 	allocsMu.Lock()
-	tags := make(map[string]int)
-	var total uint64
+	tags := make(map[string]uint64)
 	for _, ac := range allocs {
-		tags[ac.Tag]++
-		total += ac.Allocated()
+		tags[ac.Tag] += ac.Allocated()
 	}
-	for tag, count := range tags {
-		fmt.Printf("Allocator Tag: %s Count: %d\n", tag, count)
+	for tag, sz := range tags {
+		fmt.Printf("Allocator Tag: %s Size: %s\n", tag, humanize.IBytes(sz))
 	}
-	fmt.Printf("Total allocators: %d. Total Size: %s\n",
-		len(allocs), humanize.IBytes(total))
 	allocsMu.Unlock()
 }
 
@@ -307,6 +303,9 @@ func NewAllocatorPool(sz int) *AllocatorPool {
 }
 
 func (p *AllocatorPool) Get(sz int) *Allocator {
+	if p == nil {
+		return NewAllocator(sz)
+	}
 	atomic.AddInt64(&p.numGets, 1)
 	select {
 	case alloc := <-p.allocCh:
@@ -317,6 +316,13 @@ func (p *AllocatorPool) Get(sz int) *Allocator {
 	}
 }
 func (p *AllocatorPool) Return(a *Allocator) {
+	if a == nil {
+		return
+	}
+	if p == nil {
+		a.Release()
+		return
+	}
 	a.TrimTo(400 << 20)
 
 	select {
@@ -328,6 +334,9 @@ func (p *AllocatorPool) Return(a *Allocator) {
 }
 
 func (p *AllocatorPool) Release() {
+	if p == nil {
+		return
+	}
 	p.closer.SignalAndWait()
 }
 
