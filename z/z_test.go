@@ -79,3 +79,29 @@ func TestCloser(t *testing.T) {
 	}()
 	closer.SignalAndWait()
 }
+
+func TestZeroOut(t *testing.T) {
+	dst := make([]byte, 4*1024)
+	fill := func() {
+		for i := 0; i < len(dst); i++ {
+			dst[i] = 0xFF
+		}
+	}
+	check := func(buf []byte, b byte) {
+		for i := 0; i < len(buf); i++ {
+			require.Equalf(t, b, buf[i], "idx: %d", i)
+		}
+	}
+	fill()
+
+	ZeroOut(dst, 0, 1)
+	check(dst[:1], 0x00)
+	check(dst[1:], 0xFF)
+
+	ZeroOut(dst, 0, 1024)
+	check(dst[:1024], 0x00)
+	check(dst[1024:], 0xFF)
+
+	ZeroOut(dst, 0, len(dst))
+	check(dst, 0x00)
+}

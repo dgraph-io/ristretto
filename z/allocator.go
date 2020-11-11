@@ -206,6 +206,10 @@ const nodeAlign = unsafe.Sizeof(uint64(0)) - 1
 func (a *Allocator) AllocateAligned(sz int) []byte {
 	tsz := sz + int(nodeAlign)
 	out := a.Allocate(tsz)
+	// We are reusing allocators. In that case, it's important to zero out the memory allocated
+	// here. We don't always zero it out (in Allocate), because other functions would be immediately
+	// overwriting the allocated slices anyway (see Copy).
+	ZeroOut(out, 0, len(out))
 
 	addr := uintptr(unsafe.Pointer(&out[0]))
 	aligned := (addr + nodeAlign) & ^nodeAlign
@@ -283,7 +287,8 @@ func (a *Allocator) Allocate(sz int) []byte {
 			// We added a new buffer. Let's acquire slice the right way by going back to the top.
 			continue
 		}
-		return buf[posIdx-sz : posIdx]
+		data := buf[posIdx-sz : posIdx]
+		return data
 	}
 }
 
