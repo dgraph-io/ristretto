@@ -62,9 +62,18 @@ func cmp2_native(twos, pk [2]uint64) int16 {
 
 func cmp4_native(fours, pk [4]uint64) int16 {
 	for i := range fours {
-		if fours[i] == pk[i] {
+		if fours[i] >= pk[i] {
 			return int16(i)
 		}
 	}
 	return 4
+}
+
+func cmp8_native(a [8]uint64, pk [4]uint64) int16 {
+	for i := range a {
+		if a[i] >= pk[0] {
+			return int16(i)
+		}
+	}
+	return 8
 }

@@ -40,6 +40,8 @@ func main() {
 	x0 := B.YMM()
 	x1 := B.YMM()
 	x2 := B.YMM()
+	x3 := B.YMM()
+	x4 := B.YMM()
 
 	one := B.GP64()
 	B.MOVQ(O.U64(18446744073709551615), one)
@@ -53,9 +55,11 @@ func main() {
 
 	B.Comment("Check Eq")
 	B.VPCMPEQQ(x0, x1, x2)
+	B.VPCMPGTQ(x1, x0, x3)
+	B.VPADDQ(x2, x3, x4)
 
 	B.Comment("Move results out")
-	B.VMOVDQU(x2, scratch)
+	B.VMOVDQU(x4, scratch)
 
 	/*
 		// debug

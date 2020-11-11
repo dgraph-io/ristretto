@@ -40,28 +40,49 @@ func TestSearchNaive(t *testing.T) {
 }
 
 func Test_cmp2(t *testing.T) {
-	a := cmp2_native([2]uint64{2, 1}, [2]uint64{2, 2})
-	b := cmp2([2]uint64{2, 2}, [2]uint64{2, 2})
-	t.Logf("a %v b %v", a, b)
-	//t.Logf("a %v b %v c %v", a, b, c)
-
-	a = cmp2_native([2]uint64{1, 2}, [2]uint64{2, 2})
-	b = cmp2([2]uint64{1, 2}, [2]uint64{2, 2})
-	t.Logf("a %v b %v", a, b)
-
-	a = cmp2_native([2]uint64{2, 2}, [2]uint64{2, 2})
-	b = cmp2([2]uint64{2, 2}, [2]uint64{2, 2})
-	t.Logf("a %v b %v", a, b)
-
-	a = cmp2_native([2]uint64{1, 1}, [2]uint64{2, 2})
-	b = cmp2([2]uint64{1, 1}, [2]uint64{2, 2})
-	t.Logf("a %v b %v", a, b)
+	data := [2]uint64{0, 1}
+	pk := [2]uint64{0, 0}
+	for i := range data {
+		// fill pk with i
+		for j := range pk {
+			pk[j] = uint64(i)
+		}
+		s := cmp2(data, pk)
+		s_n := cmp2_native(data, pk)
+		require.Equal(t, i, int(s))
+		require.Equal(t, s_n, s)
+	}
 }
 
 func Test_cmp4(t *testing.T) {
-	a := cmp4([4]uint64{0, 1, 2, 3}, [4]uint64{2, 2, 2, 2})
-	b := cmp4([4]uint64{0, 1, 2, 3}, [4]uint64{2, 2, 2, 2})
-	t.Logf("a %v b %v", a, b)
+	data := [4]uint64{0, 1, 2, 3}
+	pk := [4]uint64{0, 0, 0, 0}
+	for i := range data {
+		// fill pk with i
+		for j := range pk {
+			pk[j] = uint64(i)
+		}
+		s := cmp4(data, pk)
+		s_n := cmp4_native(data, pk)
+		require.Equal(t, i, int(s))
+		require.Equal(t, s_n, s)
+	}
+}
+
+func Test_cmp8(t *testing.T) {
+	data := [8]uint64{0, 1, 2, 3, 4, 5, 6, 7}
+	pk := [4]uint64{0, 0, 0, 0}
+	for i := range data {
+		// fill pk with i
+		for j := range pk {
+			pk[j] = uint64(i)
+		}
+		s := cmp8(data, pk)
+		s_n := cmp8(data, pk)
+		require.Equal(t, i, int(s))
+		require.Equal(t, s_n, s)
+	}
+
 }
 
 func Benchmark_cmp2_native(b *testing.B) {
@@ -114,6 +135,34 @@ func Benchmark_cmp4_avx2(b *testing.B) {
 	var idx int16
 	for i := 0; i < b.N; i++ {
 		idx = cmp4(fours, pk)
+	}
+	_ = idx
+}
+
+func Benchmark_cmp8_native(b *testing.B) {
+	b.StopTimer()
+	data := [8]uint64{1, 2, 3, 4, 5, 6, 7, 8}
+	pk := [4]uint64{2, 2, 2, 2}
+	b.ResetTimer()
+	b.StartTimer()
+
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		idx = cmp8_native(data, pk)
+	}
+	_ = idx
+}
+
+func Benchmark_cmp8_avx2(b *testing.B) {
+	b.StopTimer()
+	data := [8]uint64{1, 2, 3, 4, 5, 6, 7, 8}
+	pk := [4]uint64{2, 2, 2, 2}
+	b.ResetTimer()
+	b.StartTimer()
+
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		idx = cmp8(data, pk)
 	}
 	_ = idx
 }
