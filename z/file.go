@@ -35,7 +35,7 @@ type MmapFile struct {
 
 var NewFile = errors.New("Create a new file")
 
-func OpenMmapFileUsing(fd *os.File, maxSz int, writable bool) (*MmapFile, error) {
+func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 	filename := fd.Name()
 	fi, err := fd.Stat()
 	if err != nil {
@@ -44,20 +44,13 @@ func OpenMmapFileUsing(fd *os.File, maxSz int, writable bool) (*MmapFile, error)
 
 	var rerr error
 	fileSize := fi.Size()
-	if maxSz > 0 {
-		// We have a legit maxSz provided.
-		if fileSize == 0 {
-			// If file is empty, truncate it to maxSz.
-			if err := fd.Truncate(int64(maxSz)); err != nil {
-				return nil, errors.Wrapf(err, "error while truncation")
-			}
-			fileSize = int64(maxSz)
-			rerr = NewFile
-
-		} else if fileSize > int64(maxSz) {
-			return nil, errors.Errorf("file size %d greater than max size %d",
-				fileSize, maxSz)
+	if sz > 0 && fileSize == 0 {
+		// If file is empty, truncate it to sz.
+		if err := fd.Truncate(int64(sz)); err != nil {
+			return nil, errors.Wrapf(err, "error while truncation")
 		}
+		fileSize = int64(sz)
+		rerr = NewFile
 	}
 
 	// fmt.Printf("Mmaping file: %s with writable: %v filesize: %d\n", fd.Name(), writable, fileSize)
