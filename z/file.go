@@ -132,9 +132,26 @@ func (m *MmapFile) Slice(offset int) []byte {
 }
 
 // AllocateSlice allocates a slice of the given size at the given offset.
-func (m *MmapFile) AllocateSlice(sz, offset int) ([]byte, int) {
+func (m *MmapFile) AllocateSlice(sz, offset int) ([]byte, int, error) {
+	start := offset + 4
+
+	// If the file is too small, double its size or increase it by 1GB, whichever is smaller.
+	if start+sz > len(m.Data) {
+		const oneGB = 1 << 30
+		growBy := len(m.Data)
+		if growBy > oneGB {
+			growBy = oneGB
+		}
+		if growBy < sz+4 {
+			growBy = sz + 4
+		}
+		if err := m.Truncate(int64(len(m.Data) + growBy)); err != nil {
+			return nil, 0, err
+		}
+	}
+
 	binary.BigEndian.PutUint32(m.Data[offset:], uint32(sz))
-	return m.Data[offset+4 : offset+4+sz], offset + 4 + sz
+	return m.Data[start : start+sz], start + sz, nil
 }
 
 func (m *MmapFile) Sync() error {
