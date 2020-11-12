@@ -263,8 +263,4 @@ func TestBufferPadding(t *testing.T) {
 	copy(buf.Bytes(), b)
 	data := buf.Data(buf.StartOffset())
 	require.Equal(t, b, data[:sz])
-
-	newOffset := buf.IncrementOffset(int(sz))
-	require.Equal(t, buf.StartOffset()+int(sz+sz), newOffset)
-
 }

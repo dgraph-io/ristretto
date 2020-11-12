@@ -239,17 +239,6 @@ func (b *Buffer) AllocateOffset(n int) int {
 	return int(b.offset) - n
 }
 
-// IncrementOffset returns the incremented offset. This operation is thread-safe. This API should be
-// used carefully. It is NOT used by other methods in this struct.
-// Note: Only this API is thread-safe, the other APIs should not be used concurrently.
-func (b *Buffer) IncrementOffset(n int) int {
-	out := int(atomic.AddUint64(&b.offset, uint64(n)))
-	if out > b.curSz {
-		panic("Buffer size limit hit")
-	}
-	return out
-}
-
 func (b *Buffer) writeLen(sz int) {
 	buf := b.Allocate(4)
 	binary.BigEndian.PutUint32(buf, uint32(sz))
