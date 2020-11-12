@@ -37,7 +37,7 @@ func main() {
 	x2 := B.XMM()
 
 	one := B.GP64()
-	B.MOVQ(O.U64(18446744073709551615), one)
+	B.MOVQ(O.U64(18446744073709551615), one) // -1
 
 	//bs := B.GP64()
 	//B.MOVQ(O.U64(23), bs)

@@ -3,6 +3,7 @@ package simd
 import (
 	"math"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -78,11 +79,23 @@ func Test_cmp8(t *testing.T) {
 			pk[j] = uint64(i)
 		}
 		s := cmp8(data, pk)
-		s_n := cmp8(data, pk)
+		s_n := cmp8_native(data, pk)
 		require.Equal(t, i, int(s))
 		require.Equal(t, s_n, s)
 	}
-
+	var n1, n2 int64 = -1, -2
+	data[1] = *(*uint64)(unsafe.Pointer(&n1))
+	data[2] = *(*uint64)(unsafe.Pointer(&n2))
+	for i := range data {
+		// fill pk with i
+		for j := range pk {
+			pk[j] = uint64(i)
+		}
+		s := cmp8(data, pk)
+		s_n := cmp8_native(data, pk)
+		require.Equal(t, i, int(s))
+		require.Equal(t, s_n, s)
+	}
 }
 
 func Benchmark_cmp2_native(b *testing.B) {
