@@ -39,8 +39,24 @@ func TestSearchNaive(t *testing.T) {
 	require.Equal(t, 256, int(Search(keys, math.MaxUint64)))
 }
 
-func TestSearchSIMD(t *testing.T) {
-	Search := skernel
+func TestSearchAVX(t *testing.T) {
+	Search := AVXSearch
+	keys := make([]uint64, 512)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+
+	for i := 0; i < len(keys); i++ {
+		idx := int(Search(keys, uint64(i)))
+		require.Equal(t, (i+1)/2, idx, "%v\n%v", i, keys)
+	}
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64>>1)))
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64)))
+}
+
+func TestSearchSSE(t *testing.T) {
+	Search := SSESearch
 	keys := make([]uint64, 512)
 	for i := 0; i < len(keys); i += 2 {
 		keys[i] = uint64(i)
@@ -73,12 +89,12 @@ func TestSearchParallel(t *testing.T) {
 
 func TestSIMDKernel(t *testing.T) {
 	data := []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
-	out0 := skernel(data, 0)
-	out1 := skernel(data, 1)
-	out2 := skernel(data, 2)
-	out7 := skernel(data, 7)
-	out10 := skernel(data, 10)
-	out50 := skernel(data, 50)
+	out0 := AVXSearch(data, 0)
+	out1 := AVXSearch(data, 1)
+	out2 := AVXSearch(data, 2)
+	out7 := AVXSearch(data, 7)
+	out10 := AVXSearch(data, 10)
+	out50 := AVXSearch(data, 50)
 	t.Logf("out %v %v %v %v %v %v", out0, out1, out2, out7, out10, out50)
 }
 func TestNaive(t *testing.T) {
@@ -234,7 +250,7 @@ func Benchmark_cmp8_avx2(b *testing.B) {
 	_ = idx
 }
 
-const BENCHKEYS = 65535 //16384 fits entirely in my L2  cache, so that gives linear search an advantage
+const BENCHKEYS = 65536 //16384 fits entirely in my L2  cache, so that gives linear search an advantage
 
 type kv struct {
 	k, v uint64
@@ -306,7 +322,7 @@ func BenchmarkSearchAVX2(b *testing.B) {
 	var idx int16
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < len(keys); j++ {
-			idx = skernel(keys, uint64(j))
+			idx = AVXSearch(keys, uint64(j))
 		}
 		//b.StopTimer()
 		//rand.Shuffle(len(askv), askv.Swap)
@@ -360,4 +376,28 @@ func BenchmarkSearchMrjn(b *testing.B) {
 		//b.StartTimer()
 	}
 	_ = idx
+}
+
+func BenchmarkSearchSSE(b *testing.B) {
+	b.StopTimer()
+	keys := make([]uint64, BENCHKEYS)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+	//askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	//rand.Shuffle(len(askv), askv.Swap)
+	b.ResetTimer()
+	b.StartTimer()
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < len(keys); j++ {
+			idx = SSESearch(keys, uint64(j))
+		}
+		//b.StopTimer()
+		//rand.Shuffle(len(askv), askv.Swap)
+		//b.StartTimer()
+	}
+	_ = idx
+
 }

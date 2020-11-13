@@ -7,14 +7,12 @@ import (
 	O "github.com/mmcloughlin/avo/operand"
 )
 
-//go:generate go run simd.go -out avx.s -stubs stub_avx.go
+//go:generate go run sse.go -out sse.s -stubs stub_sse.go
 
 func main() {
-	B.TEXT("AVXSearch", B.NOSPLIT, "func(xs []uint64, key uint64) int16")
+	B.TEXT("SSESearch", B.NOSPLIT, "func(xs []uint64, key uint64) int16")
 	packed := B.AllocLocal(4 * 8) // 4x 8bytes. Each uint64 has 8bytes
 	packed1 := packed.Offset(8)   // packed[1]
-	packed2 := packed.Offset(16)  //packed[2]
-	packed3 := packed.Offset(24)  //packed[3]
 
 	/*
 		packedB := B.AllocLocal(4 * 8) // 4x 8bytes. Each uint64 has 8bytes
@@ -47,18 +45,18 @@ func main() {
 
 	// might have to move this closer to where all the other VPXXX instructions are made
 	//B.Comment("Copy key into ymm")
-	pk := B.YMM()
-	x0 := B.YMM()
-	x2 := B.YMM()
-	x3 := B.YMM()
-	x4 := B.YMM()
+	pk := B.XMM()
+	x0 := B.XMM()
+	x1 := B.XMM()
+	x2 := B.XMM()
+	x3 := B.XMM()
 
-	/*
-		x5 := B.YMM()
-		x6 := B.YMM()
-		x7 := B.YMM()
-		x8 := B.YMM()
-	*/
+	res1 := B.GP32()
+	res2 := B.GP32()
+
+	one := B.GP32()
+	B.MOVL(O.U32(4294967295), one) // -1
+
 	XX := B.GP32()
 	//YY := B.GP32()
 
@@ -83,8 +81,8 @@ func main() {
 	B.JMP(O.LabelRef("loop"))
 
 	B.Label("plusplus")
-	B.Comment("i+=8")
-	B.ADDL(O.Imm(8), i)
+	B.Comment("i+=4")
+	B.ADDL(O.Imm(4), i)
 
 	B.Comment("For loop starts")
 	B.Label("loop")
@@ -94,9 +92,6 @@ func main() {
 	B.Comment("Copy 4 keys into packed")
 	mem := O.Mem{Base: ptr, Index: i, Scale: 8} // (ptr)(i*8)
 	mem1 := mem.Offset(16)                      // skip 2 - (ptr)((i+2)*8)
-	mem2 := mem.Offset(32)                      // skip 4 - (ptr)((i+4)*8)
-	mem3 := mem.Offset(48)                      // skip 6 - (ptr)((i+6)*8)
-
 	/*
 		memB := mem.Offset(64) // skip 8 - (ptr)((i+8)*8)
 		memB1 := mem.Offset(80)
@@ -108,70 +103,35 @@ func main() {
 	B.MOVQ(tmpXs, packed)
 	B.MOVQ(mem1, tmpXs)
 	B.MOVQ(tmpXs, packed1)
-	B.MOVQ(mem2, tmpXs)
-	B.MOVQ(tmpXs, packed2)
-	B.MOVQ(mem3, tmpXs)
-	B.MOVQ(tmpXs, packed3)
-	/*
-		B.MOVQ(memB, tmpXs)
-		B.MOVQ(tmpXs, packedB)
-		B.MOVQ(memB1, tmpXs)
-		B.MOVQ(tmpXs, packedB1)
-		B.MOVQ(memB2, tmpXs)
-		B.MOVQ(tmpXs, packedB2)
-		B.MOVQ(memB3, tmpXs)
-		B.MOVQ(tmpXs, packedB3)
-	*/
 
 	B.Comment("Move the packed keys into ymm; move key into pk")
-	B.VMOVUPD(packed, x0)
-	//B.VMOVUPD(packedB, x5)
-	//B.VPBROADCASTQ(key.Addr, pk)
+	B.MOVUPS(packed, x0)
 
 	B.Comment("Check GTE")
-	B.VPCMPEQQ(x0, pk, x2)
-	B.VPCMPGTQ(pk, x0, x3)
-	B.VPADDQ(x2, x3, x4)
-
-	//B.VPCMPEQQ(x5, pk, x6)
-	//B.VPCMPGTW(pk, x5, x7)
-	//B.VPADDQ(x6, x7, x8)
+	B.VPCMPEQQ(x0, pk, x1)
+	B.VPCMPGTQ(pk, x0, x2)
+	B.VPADDQ(x1, x2, x3)
 
 	B.Comment("Move result out")
-	B.VMOVMSKPD(x4, XX)
-	//B.VMOVMSKPD(x8, YY)
 
-	B.Comment("Count trailing zeroes XX")
-	B.TZCNTL(XX, XX)
+	B.MOVQ(x3, res1)
+	B.PUNPCKHQDQ(x3, x3) // move high bits to low bits because MOVQ can only move low bits
+	B.MOVQ(x3, res2)
 
-	B.Comment("if tz < 4 we got a result")
-	B.CMPL(XX, four)
-	//B.JLE(O.LabelRef("FoundXX"))
-	B.JGE(O.LabelRef("plusplus"))
+	B.CMPL(one, res1)
+	B.JE(O.LabelRef("FoundFst"))
 
-	//B.Comment("Count trailing zeroes YY")
-	//B.TZCNTL(YY, YY)
-	//B.CMPL(YY, four)
-	//B.JGE(O.LabelRef("plusplus"))
+	B.CMPL(one, res2)
+	B.JNE(O.LabelRef("plusplus"))
+	B.MOVL(O.U32(1), XX)
+	B.JMP(O.LabelRef("Found"))
 
-	/*
-		B.Comment("weve found the results in YY")
-		B.Comment("2*(tz+4)+i")
-		B.ADDL(four, YY)
-		B.SHLL(O.Imm(1), YY)
-		B.ADDL(i, YY)
-		B.Comment("div by 2")
-		B.MOVL(YY, i) // i is no longer needed
-		B.SHRL(O.Imm(31), i)
-		B.ADDL(i, YY)
-		B.SARL(O.Imm(1), YY)
-		B.MOVL(YY, retVal.Addr)
-		B.RET()
-	*/
+	B.Label("FoundFst")
+	B.MOVL(O.U32(0), XX)
 
-	B.Label("FoundXX")
-	B.Comment("we've found the results in XX")
-	B.Comment("2*tz + i")
+	B.Label("Found")
+	B.Comment("we've found the results in fst")
+	B.Comment("2*xx + i")
 	B.SHLL(O.Imm(1), XX) // xx *=2
 	B.ADDL(i, XX)
 	B.Comment("div by 2")

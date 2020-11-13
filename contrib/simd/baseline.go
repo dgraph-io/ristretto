@@ -19,6 +19,9 @@ func Naive(xs []uint64, k uint64) int16 {
 }
 
 func Clever(xs []uint64, k uint64) int16 {
+	if len(xs) < 8 {
+		return Naive(xs, k)
+	}
 	var twos, pk [4]uint64
 	pk[0] = k
 	pk[1] = k

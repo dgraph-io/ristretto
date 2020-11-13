@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
 
 	"github.com/dgraph-io/ristretto/contrib/simd"
@@ -267,22 +268,25 @@ func BenchmarkRead(b *testing.B) {
 }
 
 func BenchmarkSearch(b *testing.B) {
-	// linear := func(n node, k uint64, N int) int {
-	// 	for i := 0; i < N; i++ {
-	// 		if ki := n.key(i); ki >= k {
-	// 			return i
-	// 		}
-	// 	}
-	// 	return N
-	// }
-	// binary := func(n node, k uint64, N int) int {
-	// 	return sort.Search(N, func(i int) bool {
-	// 		return n.key(i) >= k
-	// 	})
-	// }
+	linear := func(n node, k uint64, N int) int {
+		for i := 0; i < N; i++ {
+			if ki := n.key(i); ki >= k {
+				return i
+			}
+		}
+		return N
+	}
+	binary := func(n node, k uint64, N int) int {
+		return sort.Search(N, func(i int) bool {
+			return n.key(i) >= k
+		})
+	}
 	asm := func(n node, k uint64, N int) int {
 		return int(simd.Search(n[:2*N], k))
 	}
+	sse := func(n node, k uint64, N int) int { return int(simd.SSESearch(n[:2*N], k)) }
+	avx := func(n node, k uint64, N int) int { return int(simd.AVXSearch(n[:2*N], k)) }
+	clever := func(n node, k uint64, N int) int { return int(simd.Clever(n[:2*N], k)) }
 
 	for sz := 1; sz < 256; sz *= 2 {
 		f, err := ioutil.TempFile(".", "tree")
@@ -298,19 +302,34 @@ func BenchmarkSearch(b *testing.B) {
 			n.set(uint64(i), uint64(i))
 		}
 
-		// b.Run(fmt.Sprintf("linear-%d", sz), func(b *testing.B) {
-		// 	for i := 0; i < b.N; i++ {
-		// 		tmp = linear(n, uint64(sz), sz)
-		// 	}
-		// })
-		// b.Run(fmt.Sprintf("binary-%d", sz), func(b *testing.B) {
-		// 	for i := 0; i < b.N; i++ {
-		// 		tmp = binary(n, uint64(sz), sz)
-		// 	}
-		// })
-		b.Run(fmt.Sprintf("simd-%d", sz), func(b *testing.B) {
+		b.Run(fmt.Sprintf("linear-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = linear(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("binary-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = binary(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("asm-%d", sz), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				tmp = asm(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("sse-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = sse(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("avx-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = avx(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("unrolled-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = clever(n, uint64(sz), sz)
 			}
 		})
 		mf.Close(0)
