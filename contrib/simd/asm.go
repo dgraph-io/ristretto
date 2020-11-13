@@ -7,7 +7,7 @@ import (
 	. "github.com/mmcloughlin/avo/operand"
 )
 
-//go:generate go run asm.go -out add.s -stubs stub.go
+//go:generate go run asm.go -out search.s -stubs stub_search.go
 
 func main() {
 	TEXT("Search", NOSPLIT, "func(xs []uint64, k uint64) int16")

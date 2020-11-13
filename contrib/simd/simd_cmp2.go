@@ -9,6 +9,8 @@ import (
 	O "github.com/mmcloughlin/avo/operand"
 )
 
+//go:generate go run simd_cmp2.go -out simd_cmp2.s -stubs stub_cmp2.go
+
 func main() {
 	B.TEXT("cmp2", B.NOSPLIT, "func(twos [2]uint64, pk [2]uint64) int16")
 	twosParam := B.Param("twos").Index(0)

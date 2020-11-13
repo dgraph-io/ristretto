@@ -9,6 +9,8 @@ import (
 	O "github.com/mmcloughlin/avo/operand"
 )
 
+//go:generate go run simd_cmp4.go -out simd_cmp4.s -stubs stub_cmp4.go
+
 func main() {
 	B.TEXT("cmp4", B.NOSPLIT, "func(fours [4]uint64, pk [4]uint64) int16")
 	twosParam := B.Param("fours").Index(0)

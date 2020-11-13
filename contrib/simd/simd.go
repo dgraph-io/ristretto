@@ -7,6 +7,8 @@ import (
 	O "github.com/mmcloughlin/avo/operand"
 )
 
+//go:generate go run simd.go -out simd.s -stubs stub_SIMDKernel.go
+
 func main() {
 	B.TEXT("skernel", B.NOSPLIT, "func(xs []uint64, key uint64) int16")
 	packed := B.AllocLocal(4 * 8) // 4x 8bytes. Each uint64 has 8bytes
