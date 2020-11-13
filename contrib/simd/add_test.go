@@ -2,7 +2,9 @@ package simd
 
 import (
 	"math"
+	"math/rand"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -234,7 +236,7 @@ func Benchmark_cmp8_avx2(b *testing.B) {
 	_ = idx
 }
 
-const BENCHKEYS = 16384
+const BENCHKEYS = 65536 //16384 fits entirely in my L2  cache, so that gives linear search an advantage
 
 type kv struct {
 	k, v uint64
@@ -244,14 +246,17 @@ type kvs []kv
 
 func (l kvs) Len() int           { return len(l) }
 func (l kvs) Less(i, j int) bool { return l[i].k < l[j].k }
+func (l kvs) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 
 func BenchmarkSearchNaive(b *testing.B) {
 	b.StopTimer()
-	keys := make([]kv, BENCHKEYS/2)
+	keys := make([]uint64, BENCHKEYS)
 	for i := 0; i < len(keys); i += 2 {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
 	}
+	askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	rand.Shuffle(len(askv), askv.Swap)
 	b.ResetTimer()
 	b.StartTimer()
 	var idx int16
@@ -259,17 +264,22 @@ func BenchmarkSearchNaive(b *testing.B) {
 		for j := 0; j < len(keys); j++ {
 			idx = Naive(keys, uint64(j))
 		}
+		b.StopTimer()
+		rand.Shuffle(len(askv), askv.Swap)
+		b.StartTimer()
 	}
 	_ = idx
 }
 
-func BenchmarkClever(b *testing.B) {
+func BenchmarkSearchClever(b *testing.B) {
 	b.StopTimer()
 	keys := make([]uint64, BENCHKEYS)
 	for i := 0; i < len(keys); i += 2 {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
 	}
+	askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	rand.Shuffle(len(askv), askv.Swap)
 	b.ResetTimer()
 	b.StartTimer()
 	var idx int16
@@ -277,6 +287,9 @@ func BenchmarkClever(b *testing.B) {
 		for j := 0; j < len(keys); j++ {
 			idx = Clever(keys, uint64(j))
 		}
+		b.StopTimer()
+		rand.Shuffle(len(askv), askv.Swap)
+		b.StartTimer()
 	}
 	_ = idx
 }
@@ -288,6 +301,8 @@ func BenchmarkSearchAVX2(b *testing.B) {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
 	}
+	askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	rand.Shuffle(len(askv), askv.Swap)
 	b.ResetTimer()
 	b.StartTimer()
 	var idx int16
@@ -295,6 +310,9 @@ func BenchmarkSearchAVX2(b *testing.B) {
 		for j := 0; j < len(keys); j++ {
 			idx = skernel(keys, uint64(j))
 		}
+		b.StopTimer()
+		rand.Shuffle(len(askv), askv.Swap)
+		b.StartTimer()
 	}
 	_ = idx
 
@@ -307,13 +325,18 @@ func BenchmarkSearchParallel(b *testing.B) {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
 	}
+	askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	rand.Shuffle(len(askv), askv.Swap)
 	b.ResetTimer()
 	b.StartTimer()
 	var idx int16
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < len(keys); j++ {
-			idx = skernel(keys, uint64(j))
+			idx = Parallel(keys, uint64(j))
 		}
+		b.StopTimer()
+		rand.Shuffle(len(askv), askv.Swap)
+		b.StartTimer()
 	}
 	_ = idx
 
