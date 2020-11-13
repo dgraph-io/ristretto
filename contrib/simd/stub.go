@@ -2,5 +2,5 @@
 
 package simd
 
-// Search finds the first key >= k in xs.
+// Search finds the first idx for which xs[idx] >= k in xs.
 func Search(xs []uint64, k uint64) int16

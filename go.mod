@@ -6,7 +6,7 @@ require (
 	github.com/cespare/xxhash v1.1.0
 	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2
 	github.com/dustin/go-humanize v1.0.0
-	github.com/intel-go/cpuid v0.0.0-20200819041909-2aa72927c3e2 // indirect
+	github.com/go-delve/delve v1.5.0 // indirect
 	github.com/mmcloughlin/avo v0.0.0-20201105074841-5d2f697d268f // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0

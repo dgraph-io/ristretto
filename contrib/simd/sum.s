@@ -18,12 +18,11 @@ loop:
 
 	// Load from pointer and add to running sum.
 	CMPQ (AX), DX
-	JGE  done
+	JAE  done
 
 	// Advance pointer, decrement byte count.
 	ADDQ $0x10, AX
-	DECQ CX
-	DECQ CX
+	SUBQ $0x02, CX
 	ADDW $0x01, BX
 	JMP  loop
 
