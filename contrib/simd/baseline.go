@@ -1,5 +1,11 @@
 package simd
 
+import (
+	"fmt"
+	"runtime"
+	"sync"
+)
+
 // Search finds the key using the naive way
 func Naive(xs []uint64, k uint64) int16 {
 	var i int
@@ -28,10 +34,10 @@ func Clever(xs []uint64, k uint64) int16 {
 			eq[1] = 1
 		}
 		if eq[0] == 1 {
-			return int16(i)
+			return int16(i) / 2
 		}
 		if eq[1] == 1 {
-			return int16(i + 2)
+			return int16(i+2) / 2
 		}
 		if twos[0] > pk[0] {
 			eq[0] += 1
@@ -40,14 +46,53 @@ func Clever(xs []uint64, k uint64) int16 {
 			eq[1] += 1
 		}
 		if eq[0] == 1 {
-			return int16(i)
+			return int16(i) / 2
 		}
 		if eq[1] == 1 {
-			return int16(i + 2)
+			return int16(i+2) / 2
 		}
 
 	}
-	return -1
+	return int16(len(xs) / 2)
+}
+
+func Parallel(xs []uint64, k uint64) int16 {
+	cpus := runtime.NumCPU()
+	if cpus%2 != 0 {
+		panic(fmt.Sprintf("odd number of CPUs %v", cpus))
+	}
+	sz := len(xs)/cpus + 1
+	var wg sync.WaitGroup
+	retChan := make(chan int16, cpus)
+	for i := 0; i < len(xs); i += sz {
+		end := i + sz
+		if end >= len(xs) {
+			end = len(xs)
+		}
+		chunk := xs[i:end]
+		wg.Add(1)
+		go func(hd int16, xs []uint64, k uint64, wg *sync.WaitGroup, ch chan int16) {
+			for i := 0; i < len(xs); i += 2 {
+				if xs[i] >= k {
+					ch <- (int16(i) + hd) / 2
+					break
+				}
+			}
+			wg.Done()
+		}(int16(i), chunk, k, &wg, retChan)
+	}
+	wg.Wait()
+	close(retChan)
+	var min int16 = (1 << 15) - 1
+	for i := range retChan {
+		if i < min {
+			min = i
+		}
+	}
+	if min == (1<<15)-1 {
+		return int16(len(xs) / 2)
+	}
+	return min
 }
 
 func cmp2_native(twos, pk [2]uint64) int16 {

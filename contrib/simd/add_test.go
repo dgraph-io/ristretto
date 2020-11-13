@@ -3,7 +3,6 @@ package simd
 import (
 	"math"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +37,59 @@ func TestSearchNaive(t *testing.T) {
 	}
 	require.Equal(t, 256, int(Search(keys, math.MaxUint64>>1)))
 	require.Equal(t, 256, int(Search(keys, math.MaxUint64)))
+}
+
+func TestSearchSIMD(t *testing.T) {
+	Search := skernel
+	keys := make([]uint64, 512)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+
+	for i := 0; i < len(keys); i++ {
+		idx := int(Search(keys, uint64(i)))
+		require.Equal(t, (i+1)/2, idx, "%v\n%v", i, keys)
+	}
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64>>1)))
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64)))
+}
+
+func TestSearchParallel(t *testing.T) {
+	Search := Parallel
+	keys := make([]uint64, 512)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+
+	for i := 0; i < len(keys); i++ {
+		idx := int(Search(keys, uint64(i)))
+		require.Equal(t, (i+1)/2, idx, "%v\n%v", i, keys)
+	}
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64>>1)))
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64)))
+}
+
+func TestSIMDKernel(t *testing.T) {
+	data := []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	out0 := skernel(data, 0)
+	out1 := skernel(data, 1)
+	out2 := skernel(data, 2)
+	out7 := skernel(data, 7)
+	out10 := skernel(data, 10)
+	out50 := skernel(data, 50)
+	t.Logf("out %v %v %v %v %v %v", out0, out1, out2, out7, out10, out50)
+}
+func TestNaive(t *testing.T) {
+	data := []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	out0 := Naive(data, 0)
+	out1 := Naive(data, 1)
+	out2 := Naive(data, 2)
+	out7 := Naive(data, 7)
+	out10 := Naive(data, 10)
+	out50 := Naive(data, 50)
+	t.Logf("out %v %v %v %v %v %v", out0, out1, out2, out7, out10, out50)
 }
 
 func Test_cmp2(t *testing.T) {
@@ -83,6 +135,7 @@ func Test_cmp8(t *testing.T) {
 		require.Equal(t, i, int(s))
 		require.Equal(t, s_n, s)
 	}
+	/* keys that are greater than maxint64
 	var n1, n2 int64 = -1, -2
 	data[1] = *(*uint64)(unsafe.Pointer(&n1))
 	data[2] = *(*uint64)(unsafe.Pointer(&n2))
@@ -96,6 +149,7 @@ func Test_cmp8(t *testing.T) {
 		require.Equal(t, i, int(s))
 		require.Equal(t, s_n, s)
 	}
+	*/
 }
 
 func Benchmark_cmp2_native(b *testing.B) {
@@ -180,9 +234,20 @@ func Benchmark_cmp8_avx2(b *testing.B) {
 	_ = idx
 }
 
-func BenchmarkNaive(b *testing.B) {
+const BENCHKEYS = 16384
+
+type kv struct {
+	k, v uint64
+}
+
+type kvs []kv
+
+func (l kvs) Len() int           { return len(l) }
+func (l kvs) Less(i, j int) bool { return l[i].k < l[j].k }
+
+func BenchmarkSearchNaive(b *testing.B) {
 	b.StopTimer()
-	keys := make([]uint64, 512)
+	keys := make([]kv, BENCHKEYS/2)
 	for i := 0; i < len(keys); i += 2 {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
@@ -200,7 +265,7 @@ func BenchmarkNaive(b *testing.B) {
 
 func BenchmarkClever(b *testing.B) {
 	b.StopTimer()
-	keys := make([]uint64, 512)
+	keys := make([]uint64, BENCHKEYS)
 	for i := 0; i < len(keys); i += 2 {
 		keys[i] = uint64(i)
 		keys[i+1] = 1
@@ -214,4 +279,42 @@ func BenchmarkClever(b *testing.B) {
 		}
 	}
 	_ = idx
+}
+
+func BenchmarkSearchAVX2(b *testing.B) {
+	b.StopTimer()
+	keys := make([]uint64, BENCHKEYS)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+	b.ResetTimer()
+	b.StartTimer()
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < len(keys); j++ {
+			idx = skernel(keys, uint64(j))
+		}
+	}
+	_ = idx
+
+}
+
+func BenchmarkSearchParallel(b *testing.B) {
+	b.StopTimer()
+	keys := make([]uint64, BENCHKEYS)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+	b.ResetTimer()
+	b.StartTimer()
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < len(keys); j++ {
+			idx = skernel(keys, uint64(j))
+		}
+	}
+	_ = idx
+
 }
