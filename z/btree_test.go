@@ -287,6 +287,17 @@ func BenchmarkSearch(b *testing.B) {
 	sse := func(n node, k uint64, N int) int { return int(simd.SSESearch(n[:2*N], k)) }
 	avx := func(n node, k uint64, N int) int { return int(simd.AVXSearch(n[:2*N], k)) }
 	clever := func(n node, k uint64, N int) int { return int(simd.Clever(n[:2*N], k)) }
+	unroll4 := func(n node, k uint64, N int) int {
+		if len(n[:2*N]) < 8 {
+			for i := 0; i < N; i++ {
+				if ki := n.key(i); ki >= k {
+					return i
+				}
+			}
+			return N
+		}
+		return int(simd.Search2(n[:2*N], k))
+	}
 
 	for sz := 1; sz < 256; sz *= 2 {
 		f, err := ioutil.TempFile(".", "tree")
@@ -327,9 +338,14 @@ func BenchmarkSearch(b *testing.B) {
 				tmp = avx(n, uint64(sz), sz)
 			}
 		})
-		b.Run(fmt.Sprintf("unrolled-%d", sz), func(b *testing.B) {
+		b.Run(fmt.Sprintf("unrolled-go-%d", sz), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				tmp = clever(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("unrolled-asm-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = unroll4(n, uint64(sz), sz)
 			}
 		})
 		mf.Close(0)

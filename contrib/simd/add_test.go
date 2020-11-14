@@ -87,6 +87,22 @@ func TestSearchParallel(t *testing.T) {
 	require.Equal(t, 256, int(Search(keys, math.MaxInt64)))
 }
 
+func TestSearchSearch2(t *testing.T) {
+	Search := Parallel
+	keys := make([]uint64, 512)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+
+	for i := 0; i < len(keys); i++ {
+		idx := int(Search2(keys, uint64(i)))
+		require.Equal(t, (i+1)/2, idx, "%v\n%v", i, keys)
+	}
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64>>1)))
+	require.Equal(t, 256, int(Search(keys, math.MaxInt64)))
+}
+
 func TestSIMDKernel(t *testing.T) {
 	data := []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 	out0 := AVXSearch(data, 0)
@@ -105,6 +121,18 @@ func TestNaive(t *testing.T) {
 	out7 := Naive(data, 7)
 	out10 := Naive(data, 10)
 	out50 := Naive(data, 50)
+	t.Logf("out %v %v %v %v %v %v", out0, out1, out2, out7, out10, out50)
+}
+
+func TestSearch2(t *testing.T) {
+	f := Search2
+	data := []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	out0 := f(data, 0)
+	out1 := f(data, 1)
+	out2 := f(data, 2)
+	out7 := f(data, 7)
+	out10 := f(data, 10)
+	out50 := f(data, 50)
 	t.Logf("out %v %v %v %v %v %v", out0, out1, out2, out7, out10, out50)
 }
 
@@ -250,7 +278,7 @@ func Benchmark_cmp8_avx2(b *testing.B) {
 	_ = idx
 }
 
-const BENCHKEYS = 65536 //16384 fits entirely in my L2  cache, so that gives linear search an advantage
+const BENCHKEYS = 512 //16384 fits entirely in my L2  cache, so that gives linear search an advantage
 
 type kv struct {
 	k, v uint64
@@ -393,6 +421,30 @@ func BenchmarkSearchSSE(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < len(keys); j++ {
 			idx = SSESearch(keys, uint64(j))
+		}
+		//b.StopTimer()
+		//rand.Shuffle(len(askv), askv.Swap)
+		//b.StartTimer()
+	}
+	_ = idx
+
+}
+
+func BenchmarkSearch2(b *testing.B) {
+	b.StopTimer()
+	keys := make([]uint64, BENCHKEYS)
+	for i := 0; i < len(keys); i += 2 {
+		keys[i] = uint64(i)
+		keys[i+1] = 1
+	}
+	//askv := (*(*kvs)(unsafe.Pointer(&keys)))[:BENCHKEYS/2]
+	//rand.Shuffle(len(askv), askv.Swap)
+	b.ResetTimer()
+	b.StartTimer()
+	var idx int16
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < len(keys); j++ {
+			idx = Search2(keys, uint64(j))
 		}
 		//b.StopTimer()
 		//rand.Shuffle(len(askv), askv.Swap)
