@@ -281,12 +281,7 @@ func BenchmarkSearch(b *testing.B) {
 			return n.key(i) >= k
 		})
 	}
-	asm := func(n node, k uint64, N int) int {
-		return int(simd.Search(n[:2*N], k))
-	}
-	sse := func(n node, k uint64, N int) int { return int(simd.SSESearch(n[:2*N], k)) }
-	avx := func(n node, k uint64, N int) int { return int(simd.AVXSearch(n[:2*N], k)) }
-	clever := func(n node, k uint64, N int) int { return int(simd.Clever(n[:2*N], k)) }
+
 	unroll4 := func(n node, k uint64, N int) int {
 		if len(n[:2*N]) < 8 {
 			for i := 0; i < N; i++ {
@@ -296,7 +291,7 @@ func BenchmarkSearch(b *testing.B) {
 			}
 			return N
 		}
-		return int(simd.Search2(n[:2*N], k))
+		return int(simd.Search(n[:2*N], k))
 	}
 
 	for sz := 1; sz < 256; sz *= 2 {
@@ -321,26 +316,6 @@ func BenchmarkSearch(b *testing.B) {
 		b.Run(fmt.Sprintf("binary-%d", sz), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				tmp = binary(n, uint64(sz), sz)
-			}
-		})
-		b.Run(fmt.Sprintf("asm-%d", sz), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				tmp = asm(n, uint64(sz), sz)
-			}
-		})
-		b.Run(fmt.Sprintf("sse-%d", sz), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				tmp = sse(n, uint64(sz), sz)
-			}
-		})
-		b.Run(fmt.Sprintf("avx-%d", sz), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				tmp = avx(n, uint64(sz), sz)
-			}
-		})
-		b.Run(fmt.Sprintf("unrolled-go-%d", sz), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				tmp = clever(n, uint64(sz), sz)
 			}
 		})
 		b.Run(fmt.Sprintf("unrolled-asm-%d", sz), func(b *testing.B) {

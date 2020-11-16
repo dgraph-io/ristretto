@@ -3,6 +3,7 @@ package simd
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"sync"
 )
 
@@ -86,6 +87,15 @@ func Parallel(xs []uint64, k uint64) int16 {
 		return int16(len(xs) / 2)
 	}
 	return min
+}
+
+func Binary(keys []uint64, key uint64) int16 {
+	return int16(sort.Search(len(keys), func(i int) bool {
+		if i*2 >= len(keys) {
+			return true
+		}
+		return keys[i*2] >= key
+	}))
 }
 
 func cmp2_native(twos, pk [2]uint64) int16 {

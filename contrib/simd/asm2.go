@@ -10,7 +10,7 @@ import (
 //go:generate go run asm2.go -out search2.s -stubs stub_search2.go
 
 func main() {
-	TEXT("Search2", NOSPLIT, "func(xs []uint64, k uint64) int16")
+	TEXT("Search", NOSPLIT, "func(xs []uint64, k uint64) int16")
 	Doc("Search finds the first idx for which xs[idx] >= k in xs.")
 	ptr := Load(Param("xs").Base(), GP64())
 	n := Load(Param("xs").Len(), GP64())
