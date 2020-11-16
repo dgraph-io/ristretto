@@ -249,23 +249,18 @@ func TestBufferSort(t *testing.T) {
 	}
 }
 
-// Test that AllocateOffset and IncrementOffset returns logical
-// offsets, i.e. excludes padding.
+// Test that the APIs returns the expected offsets.
 func TestBufferPadding(t *testing.T) {
 	buf := NewBuffer(1 << 10)
 	sz := rand.Int31n(100)
 
 	writeOffset := buf.AllocateOffset(int(sz))
-	require.Equal(t, 0, writeOffset)
+	require.Equal(t, buf.StartOffset(), writeOffset)
 
 	b := make([]byte, sz)
 	rand.Read(b)
 
 	copy(buf.Bytes(), b)
-	data := buf.Data(0)
+	data := buf.Data(buf.StartOffset())
 	require.Equal(t, b, data[:sz])
-
-	newOffset := buf.IncrementOffset(int(sz))
-	require.Equal(t, int(sz+sz), newOffset)
-
 }

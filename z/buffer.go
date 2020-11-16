@@ -236,20 +236,7 @@ func (b *Buffer) Allocate(n int) []byte {
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
 	b.offset += uint64(n)
-	// Remove padding from the offset because the padding should be invisible to the API caller.
-	return int(b.offset) - n - b.StartOffset()
-}
-
-// IncrementOffset returns the incremented offset. This operation is thread-safe. This API should be
-// used carefully. It is NOT used by other methods in this struct.
-// Note: Only this API is thread-safe, the other APIs should not be used concurrently.
-func (b *Buffer) IncrementOffset(n int) int {
-	out := int(atomic.AddUint64(&b.offset, uint64(n)))
-	if out > b.curSz {
-		panic("Buffer size limit hit")
-	}
-	// Remove padding from the offset because the padding should be invisible to the API caller.
-	return out - b.StartOffset()
+	return int(b.offset) - n
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -472,7 +459,7 @@ func (b *Buffer) Data(offset int) []byte {
 	if offset > b.curSz {
 		panic("offset beyond current size")
 	}
-	return b.buf[b.StartOffset()+offset : b.curSz]
+	return b.buf[offset:b.curSz]
 }
 
 // Write would write p bytes to the buffer.

@@ -37,8 +37,7 @@ func setPageSize(sz int) {
 }
 
 func TestTree(t *testing.T) {
-	bt := NewTree(1 << 20)
-	// bt.Print()
+	bt := NewTree("", 1<<20)
 
 	N := uint64(256 * 256)
 	for i := uint64(1); i < N; i++ {
@@ -55,12 +54,11 @@ func TestTree(t *testing.T) {
 	for i := uint64(100); i < N; i++ {
 		require.Equal(t, i, bt.Get(i))
 	}
-	// bt.Print()
 }
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		bt := NewTree(1 << 20)
+		bt := NewTree("", 1<<20)
 		defer bt.Release()
 
 		N := uint64(1 << 20)
@@ -83,8 +81,43 @@ func TestTreeBasic(t *testing.T) {
 	setAndGet()
 }
 
+func TestTreeReset(t *testing.T) {
+	bt := NewTree("", 1<<20)
+	defer bt.Release()
+	N := 1 << 10
+	val := rand.Uint64()
+	for i := 0; i < N; i++ {
+		bt.Set(rand.Uint64(), val)
+	}
+
+	// Truncate it to small size that is less than pageSize.
+	bt.Reset(1 << 10)
+
+	stats := bt.Stats()
+	// Verify the tree stats.
+	require.Equal(t, 3, stats.NextPage)
+	require.Equal(t, 2, stats.NumNodes)
+	require.Equal(t, 1, stats.NumLeafKeys)
+	require.Equal(t, 1, stats.NumLeafKeys)
+	require.Equal(t, 2*pageSize, stats.Bytes)
+	expectedOcc := float64(2) * 100 / float64(stats.NumNodes*maxKeys)
+	require.InDelta(t, expectedOcc, stats.Occupancy, 0.01)
+	require.Zero(t, stats.FreePages)
+	// Check if we can reinsert the data.
+	mp := make(map[uint64]uint64)
+	for i := 0; i < N; i++ {
+		k := rand.Uint64()
+		mp[k] = val
+		bt.Set(k, val)
+	}
+	for k, v := range mp {
+		require.Equal(t, v, bt.Get(k))
+	}
+}
+
 func TestTreeCycle(t *testing.T) {
-	bt := NewTree(1 << 20)
+	bt := NewTree("", 1<<20)
+	defer bt.Release()
 	val := uint64(0)
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 1e6+i*1e4; j++ {
@@ -110,7 +143,7 @@ func TestOccupancyRatio(t *testing.T) {
 	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
 
-	bt := NewTree(1 << 20)
+	bt := NewTree("", 1<<20)
 	defer bt.Release()
 
 	expectedRatio := float64(1) * 100 / float64(maxKeys)
@@ -213,7 +246,7 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		bt := NewTree(1 << 30)
+		bt := NewTree("", 1<<30)
 		defer bt.Release()
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
@@ -247,7 +280,7 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	bt := NewTree(1 << 30)
+	bt := NewTree("", 1<<30)
 	defer bt.Release()
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1

@@ -48,9 +48,6 @@ var allocsMu *sync.Mutex
 var allocRef uint64
 var allocs map[uint64]*Allocator
 var calculatedLog2 []int
-var allocatorPool chan *Allocator
-var numGets int64
-var zCloser *Closer
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -63,73 +60,6 @@ func init() {
 	calculatedLog2 = make([]int, 1025)
 	for i := 1; i <= 1024; i++ {
 		calculatedLog2[i] = int(math.Log2(float64(i)))
-	}
-	allocatorPool = make(chan *Allocator, 8)
-
-	zCloser = NewCloser(1)
-	go freeupAllocators(zCloser)
-}
-
-func Done() {
-	zCloser.SignalAndWait()
-}
-
-func freeupAllocators(closer *Closer) {
-	defer closer.Done()
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	releaseOne := func() bool {
-		select {
-		case alloc := <-allocatorPool:
-			alloc.Release()
-			return true
-		default:
-			return false
-		}
-	}
-
-	var last int64
-	for {
-		select {
-		case <-closer.HasBeenClosed():
-			close(allocatorPool)
-			for alloc := range allocatorPool {
-				alloc.Release()
-			}
-			return
-
-		case <-ticker.C:
-			gets := atomic.LoadInt64(&numGets)
-			if gets != last {
-				// Some retrievals were made since the last time. So, let's avoid doing a release.
-				last = gets
-				continue
-			}
-			releaseOne()
-		}
-	}
-}
-
-func GetAllocatorFromPool(sz int) *Allocator {
-	atomic.AddInt64(&numGets, 1)
-	select {
-	case alloc := <-allocatorPool:
-		alloc.Reset()
-		return alloc
-	default:
-		return NewAllocator(sz)
-	}
-}
-func ReturnAllocator(a *Allocator) {
-	a.TrimTo(400 << 20)
-
-	select {
-	case allocatorPool <- a:
-		return
-	default:
-		a.Release()
 	}
 }
 
@@ -160,17 +90,13 @@ func (a *Allocator) Reset() {
 
 func PrintAllocators() {
 	allocsMu.Lock()
-	tags := make(map[string]int)
-	var total uint64
+	tags := make(map[string]uint64)
 	for _, ac := range allocs {
-		tags[ac.Tag]++
-		total += ac.Allocated()
+		tags[ac.Tag] += ac.Allocated()
 	}
-	for tag, count := range tags {
-		fmt.Printf("Allocator Tag: %s Count: %d\n", tag, count)
+	for tag, sz := range tags {
+		fmt.Printf("Allocator Tag: %s Size: %s\n", tag, humanize.IBytes(sz))
 	}
-	fmt.Printf("Total allocators: %d. Total Size: %s\n",
-		len(allocs), humanize.IBytes(total))
 	allocsMu.Unlock()
 }
 
@@ -280,6 +206,10 @@ const nodeAlign = unsafe.Sizeof(uint64(0)) - 1
 func (a *Allocator) AllocateAligned(sz int) []byte {
 	tsz := sz + int(nodeAlign)
 	out := a.Allocate(tsz)
+	// We are reusing allocators. In that case, it's important to zero out the memory allocated
+	// here. We don't always zero it out (in Allocate), because other functions would be immediately
+	// overwriting the allocated slices anyway (see Copy).
+	ZeroOut(out, 0, len(out))
 
 	addr := uintptr(unsafe.Pointer(&out[0]))
 	aligned := (addr + nodeAlign) & ^nodeAlign
@@ -357,6 +287,98 @@ func (a *Allocator) Allocate(sz int) []byte {
 			// We added a new buffer. Let's acquire slice the right way by going back to the top.
 			continue
 		}
-		return buf[posIdx-sz : posIdx]
+		data := buf[posIdx-sz : posIdx]
+		return data
+	}
+}
+
+type AllocatorPool struct {
+	numGets int64
+	allocCh chan *Allocator
+	closer  *Closer
+}
+
+func NewAllocatorPool(sz int) *AllocatorPool {
+	a := &AllocatorPool{
+		allocCh: make(chan *Allocator, sz),
+		closer:  NewCloser(1),
+	}
+	go a.freeupAllocators()
+	return a
+}
+
+func (p *AllocatorPool) Get(sz int) *Allocator {
+	if p == nil {
+		return NewAllocator(sz)
+	}
+	atomic.AddInt64(&p.numGets, 1)
+	select {
+	case alloc := <-p.allocCh:
+		alloc.Reset()
+		return alloc
+	default:
+		return NewAllocator(sz)
+	}
+}
+func (p *AllocatorPool) Return(a *Allocator) {
+	if a == nil {
+		return
+	}
+	if p == nil {
+		a.Release()
+		return
+	}
+	a.TrimTo(400 << 20)
+
+	select {
+	case p.allocCh <- a:
+		return
+	default:
+		a.Release()
+	}
+}
+
+func (p *AllocatorPool) Release() {
+	if p == nil {
+		return
+	}
+	p.closer.SignalAndWait()
+}
+
+func (p *AllocatorPool) freeupAllocators() {
+	defer p.closer.Done()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	releaseOne := func() bool {
+		select {
+		case alloc := <-p.allocCh:
+			alloc.Release()
+			return true
+		default:
+			return false
+		}
+	}
+
+	var last int64
+	for {
+		select {
+		case <-p.closer.HasBeenClosed():
+			close(p.allocCh)
+			for alloc := range p.allocCh {
+				alloc.Release()
+			}
+			return
+
+		case <-ticker.C:
+			gets := atomic.LoadInt64(&p.numGets)
+			if gets != last {
+				// Some retrievals were made since the last time. So, let's avoid doing a release.
+				last = gets
+				continue
+			}
+			releaseOne()
+		}
 	}
 }
