@@ -99,3 +99,7 @@ func madvise(b []byte, readahead bool) error {
 func msync(b []byte) error {
 	return unix.Msync(b, unix.MS_SYNC)
 }
+
+func mlock(b []byte) error {
+	return unix.Mlock(b)
+}

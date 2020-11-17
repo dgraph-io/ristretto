@@ -42,3 +42,9 @@ func Madvise(b []byte, readahead bool) error {
 func Msync(b []byte) error {
 	return msync(b)
 }
+
+// Mlock uses mlock system call to lock the byte slice into RAM, preventing the
+// memory from being paged to the swap area.
+func Mlock(b []byte) error {
+	return mlock(b)
+}

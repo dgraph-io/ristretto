@@ -24,8 +24,6 @@ import (
 	"reflect"
 	"strings"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 var (
@@ -40,7 +38,13 @@ var (
 type Tree struct {
 	mf       *MmapFile
 	nextPage uint64
-	freePage uint64
+
+	// for stats
+	freePage    uint64
+	numFree     int
+	numLeaf     int
+	numLeafKeys int
+	numIntKeys  int
 
 	mlockSz int
 }
@@ -69,43 +73,50 @@ func (t *Tree) initRootNode() {
 }
 
 // NewTree returns a memory mapped B+ tree with given filename.
-func NewTree(fname string, maxSz int) *Tree {
+func NewTree(fname string, maxSz, mlockSz int) *Tree {
 	mf, err := createFile(maxSz, fname)
 	if err != NewFile {
 		check(err)
 	}
-	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
-	// TODO: Do some benchmark to figure out if this helps.
-	check(Madvise(mf.Data, false))
-
 	t := &Tree{
 		mf:       mf,
 		nextPage: 1,
+		mlockSz:  mlockSz,
 	}
+	t.memoryAdvise()
 	t.initRootNode()
 	return t
 }
 
-func (t *Tree) truncate(toSz int64) {
-	check(t.mf.Truncate(toSz))
-	check(Madvise(t.mf.Data, false))
+func (t *Tree) memoryAdvise() error {
+	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
+	// TODO: Do some benchmark to figure out if this helps.
+	if err := Madvise(t.mf.Data, false); err != nil {
+		return err
+	}
 	if len(t.mf.Data) < t.mlockSz {
 		// TODO: Make it work cross platform.
 		// The size of mlock should be passed as a flag to zero. By default, 1GB.
-		check(unix.Mlock(t.mf.Data))
-	} else {
-		check(unix.Mlock(t.mf.Data[:t.mlockSz]))
+		return Mlock(t.mf.Data)
 	}
+	return Mlock(t.mf.Data[:t.mlockSz])
+}
+
+func (t *Tree) truncate(toSz int64) {
+	check(t.mf.Truncate(toSz))
+	check(t.memoryAdvise())
 }
 
 // Reset resets the tree and truncates it to maxSz.
 func (t *Tree) Reset(maxSz int) {
-	t.nextPage = 1
-	t.freePage = 0
+	*t = Tree{
+		mf:       t.mf,
+		nextPage: 1,
+	}
 	if maxSz < pageSize {
 		maxSz = pageSize
 	}
-	check(t.mf.Truncate(int64(maxSz)))
+	t.truncate(int64(maxSz))
 	t.initRootNode()
 }
 
@@ -121,39 +132,15 @@ type TreeStats struct {
 
 // Stats returns stats about the tree.
 func (t *Tree) Stats() TreeStats {
-	var totalKeys, maxPossible, numNodes, numKeys, numLeaf int
-	fn := func(n node) {
-		// TODO: See if we can keep track of numNodes and numKeys as we update the tree, instead of
-		// by iterating the tree. Make Stats cheap.
-		numNodes++
-		nk := n.numKeys()
-		totalKeys += nk
-		maxPossible += maxKeys
-		if n.isLeaf() {
-			numKeys += nk
-			numLeaf++
-		}
-	}
-	t.Iterate(fn)
-	occ := float64(totalKeys) / float64(maxPossible)
-
-	// TODO: Remove this.
-	freePage, numFree := t.freePage, 0
-	for freePage > 0 {
-		numFree++
-		n := t.node(freePage)
-		freePage = n.uint64(0)
-	}
-	assert(int(t.nextPage-1) == numFree+numNodes)
-
+	occ := float64(t.numLeafKeys+t.numIntKeys) / float64(int(t.nextPage-1)*maxKeys)
 	return TreeStats{
 		NextPage:     int(t.nextPage),
-		NumNodes:     numNodes,
-		NumLeafNodes: numLeaf,
-		NumLeafKeys:  numKeys,
+		NumNodes:     int(t.nextPage - 1),
+		NumLeafNodes: t.numLeaf,
+		NumLeafKeys:  t.numLeafKeys,
 		Bytes:        int(t.nextPage-1) * pageSize,
 		Occupancy:    occ * 100,
-		FreePages:    numFree,
+		FreePages:    t.numFree,
 	}
 }
 
@@ -173,6 +160,8 @@ func BytesToUint64Slice(b []byte) []uint64 {
 func (t *Tree) newNode(bit uint64) node {
 	var pageId uint64
 	if t.freePage > 0 {
+		assert(t.numFree > 0)
+		t.numFree--
 		pageId = t.freePage
 	} else {
 		pageId = t.nextPage
@@ -181,7 +170,7 @@ func (t *Tree) newNode(bit uint64) node {
 		sz := len(t.mf.Data)
 		// Double the size of file if current buffer is insufficient.
 		if offset+pageSize > sz {
-			check(t.mf.Truncate(int64(2 * sz)))
+			t.truncate(int64(2 * sz))
 		}
 	}
 	n := t.node(pageId)
@@ -190,6 +179,9 @@ func (t *Tree) newNode(bit uint64) node {
 	}
 	zeroOut(n)
 	n.setBit(bit)
+	if bit&bitLeaf > 0 {
+		t.numLeaf++
+	}
 	n.setAt(keyOffset(maxKeys), pageId)
 	return n
 }
@@ -220,6 +212,10 @@ func (t *Tree) Set(k, v uint64) {
 	}
 	root := t.set(1, k, v)
 	if root.isFull() {
+		// All the keys from the root node are copied over to its new children and the new root gets
+		// 2 keys.
+		t.numIntKeys += 2
+
 		right := t.split(1)
 		left := t.newNode(root.bits())
 		// Re-read the root as the underlying buffer for tree might have changed during split.
@@ -242,7 +238,10 @@ func (t *Tree) Set(k, v uint64) {
 func (t *Tree) set(pid, k, v uint64) node {
 	n := t.node(pid)
 	if n.isLeaf() {
-		return n.set(k, v)
+		t.numLeafKeys -= n.numKeys()
+		n = n.set(k, v)
+		t.numLeafKeys += n.numKeys()
+		return n
 	}
 
 	// This is an internal node.
@@ -252,6 +251,7 @@ func (t *Tree) set(pid, k, v uint64) node {
 	}
 	// If no key at idx.
 	if n.key(idx) == 0 {
+		t.numIntKeys++
 		n.setAt(keyOffset(idx), k)
 		n.setNumKeys(n.numKeys() + 1)
 	}
@@ -269,6 +269,10 @@ func (t *Tree) set(pid, k, v uint64) node {
 		// if t.shareWithSibling(n, idx) {
 		// 	return n
 		// }
+
+		// When a node is split, the keys from right half of child gets moved to nn, and the max key
+		// from left half is inserted into parent (i.e. n).
+		t.numIntKeys++
 
 		nn := t.split(child.pageID())
 		// Re-read n and child as the underlying buffer for tree might have changed during split.
@@ -316,7 +320,10 @@ func (t *Tree) DeleteBelow(ts uint64) {
 
 func (t *Tree) compact(n node, ts uint64) int {
 	if n.isLeaf() {
-		return n.compact(ts)
+		t.numLeafKeys -= n.numKeys()
+		rem := n.compact(ts)
+		t.numLeafKeys += rem
+		return rem
 	}
 	// Not leaf.
 	N := n.numKeys()
@@ -330,37 +337,14 @@ func (t *Tree) compact(n node, ts uint64) int {
 			child.setAt(0, t.freePage)
 			t.freePage = childID
 			n.setAt(valOffset(i), 0)
+			// A free page is created and the internal node is
+			t.numFree++
+			t.numIntKeys--
 		}
 	}
 	// We use ts=1 here because we want to delete all the keys whose value is 0, which means they no
 	// longer have a valid page for that key.
 	return n.compact(1)
-}
-
-func (t *Tree) iterate(n node, fn func(node)) {
-	fn(n)
-	if n.isLeaf() {
-		return
-	}
-	// Explore children.
-	for i := 0; i < maxKeys; i++ {
-		if n.key(i) == 0 {
-			return
-		}
-		childID := n.uint64(valOffset(i))
-		assert(childID > 0)
-
-		child := t.node(childID)
-		t.iterate(child, fn)
-	}
-}
-
-// Iterate iterates over the tree and executes the fn on each node.
-// TODO: See if we can do stats while updating the tree. So, we don't need iterate func anymore. Get
-// rid of it.
-func (t *Tree) Iterate(fn func(node)) {
-	root := t.node(1)
-	t.iterate(root, fn)
 }
 
 func (t *Tree) print(n node, parentID uint64) {
@@ -388,6 +372,7 @@ func (t *Tree) Print() {
 // Splits the node into two. It moves right half of the keys from the original node to a newly
 // created right node. It returns the right node.
 func (t *Tree) split(pid uint64) node {
+	// No. of leaf keys remains same after the split.
 	n := t.node(pid)
 	if !n.isFull() {
 		panic("This should be called only when n is full")
