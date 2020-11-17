@@ -24,6 +24,8 @@ import (
 	"reflect"
 	"strings"
 	"unsafe"
+
+	"github.com/dgraph-io/ristretto/z/simd"
 )
 
 var (
@@ -483,28 +485,37 @@ func (n node) isFull() bool {
 // Search returns the index of a smallest key >= k in a node.
 func (n node) search(k uint64) int {
 	N := n.numKeys()
-	lo, hi := 0, N
-	// Reduce the search space using binary seach and then do linear search.
-	for hi-lo > 32 {
-		mid := (hi + lo) / 2
-		km := n.key(mid)
-		if k == km {
-			return mid
+	if N < 4 {
+		for i := 0; i < N; i++ {
+			if ki := n.key(i); ki >= k {
+				return i
+			}
 		}
-		if k > km {
-			// key is greater than the key at mid, so move right.
-			lo = mid + 1
-		} else {
-			// else move left.
-			hi = mid
-		}
+		return N
 	}
-	for i := lo; i <= hi; i++ {
-		if ki := n.key(i); ki >= k {
-			return i
-		}
-	}
-	return N
+	return int(simd.Search(n[:2*N], k))
+	// lo, hi := 0, N
+	// // Reduce the search space using binary seach and then do linear search.
+	// for hi-lo > 32 {
+	// 	mid := (hi + lo) / 2
+	// 	km := n.key(mid)
+	// 	if k == km {
+	// 		return mid
+	// 	}
+	// 	if k > km {
+	// 		// key is greater than the key at mid, so move right.
+	// 		lo = mid + 1
+	// 	} else {
+	// 		// else move left.
+	// 		hi = mid
+	// 	}
+	// }
+	// for i := lo; i <= hi; i++ {
+	// 	if ki := n.key(i); ki >= k {
+	// 		return i
+	// 	}
+	// }
+	// return N
 }
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()
