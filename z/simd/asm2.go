@@ -67,6 +67,7 @@ func main() {
 
 	Label("Found")
 	MOVL(idx.As32(), n2.As32()) // n2 is no longer being used
+
 	Label("NotFound")
 	MOVL(n2.As32(), idx.As32())
 	SHRL(Imm(31), idx.As32())
