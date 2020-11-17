@@ -24,6 +24,8 @@ import (
 	"reflect"
 	"strings"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -39,6 +41,8 @@ type Tree struct {
 	mf       *MmapFile
 	nextPage uint64
 	freePage uint64
+
+	mlockSz int
 }
 
 // Release the memory allocated to tree.
@@ -71,6 +75,7 @@ func NewTree(fname string, maxSz int) *Tree {
 		check(err)
 	}
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
+	// TODO: Do some benchmark to figure out if this helps.
 	check(Madvise(mf.Data, false))
 
 	t := &Tree{
@@ -79,6 +84,18 @@ func NewTree(fname string, maxSz int) *Tree {
 	}
 	t.initRootNode()
 	return t
+}
+
+func (t *Tree) truncate(toSz int64) {
+	check(t.mf.Truncate(toSz))
+	check(Madvise(t.mf.Data, false))
+	if len(t.mf.Data) < t.mlockSz {
+		// TODO: Make it work cross platform.
+		// The size of mlock should be passed as a flag to zero. By default, 1GB.
+		check(unix.Mlock(t.mf.Data))
+	} else {
+		check(unix.Mlock(t.mf.Data[:t.mlockSz]))
+	}
 }
 
 // Reset resets the tree and truncates it to maxSz.
@@ -106,6 +123,8 @@ type TreeStats struct {
 func (t *Tree) Stats() TreeStats {
 	var totalKeys, maxPossible, numNodes, numKeys, numLeaf int
 	fn := func(n node) {
+		// TODO: See if we can keep track of numNodes and numKeys as we update the tree, instead of
+		// by iterating the tree. Make Stats cheap.
 		numNodes++
 		nk := n.numKeys()
 		totalKeys += nk
@@ -118,6 +137,7 @@ func (t *Tree) Stats() TreeStats {
 	t.Iterate(fn)
 	occ := float64(totalKeys) / float64(maxPossible)
 
+	// TODO: Remove this.
 	freePage, numFree := t.freePage, 0
 	for freePage > 0 {
 		numFree++
@@ -336,6 +356,8 @@ func (t *Tree) iterate(n node, fn func(node)) {
 }
 
 // Iterate iterates over the tree and executes the fn on each node.
+// TODO: See if we can do stats while updating the tree. So, we don't need iterate func anymore. Get
+// rid of it.
 func (t *Tree) Iterate(fn func(node)) {
 	root := t.node(1)
 	t.iterate(root, fn)
