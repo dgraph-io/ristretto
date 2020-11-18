@@ -231,9 +231,9 @@ func (t *Tree) Set(k, v uint64) {
 func (t *Tree) set(pid, k, v uint64) node {
 	n := t.node(pid)
 	if n.isLeaf() {
-		t.numLeafKeys -= n.numKeys()
-		n = n.set(k, v)
-		t.numLeafKeys += n.numKeys()
+		if !n.set(k, v) {
+			t.numLeafKeys++
+		}
 		return n
 	}
 
@@ -565,7 +565,9 @@ func (n node) get(k uint64) uint64 {
 	return 0
 }
 
-func (n node) set(k, v uint64) node {
+// If the key already exists, set updates value and returns true. Otherwise, set inserts the kv and
+// returns false.
+func (n node) set(k, v uint64) bool {
 	idx := n.search(k)
 	ki := n.key(idx)
 	if n.numKeys() == maxKeys {
@@ -573,6 +575,8 @@ func (n node) set(k, v uint64) node {
 		// right node. Hence, the key should already exist.
 		assert(ki == k)
 	}
+
+	exist := true
 	if ki > k {
 		// Found the first entry which is greater than k. So, we need to fit k
 		// just before it. For that, we should move the rest of the data in the
@@ -582,11 +586,12 @@ func (n node) set(k, v uint64) node {
 	// If the k does not exist already, increment the number of keys.
 	if ki != k {
 		n.setNumKeys(n.numKeys() + 1)
+		exist = false
 	}
 	if ki == 0 || ki >= k {
 		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
-		return n
+		return exist
 	}
 	panic("shouldn't reach here")
 }
