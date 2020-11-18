@@ -46,3 +46,7 @@ func msync(b []byte) error {
 func mlock(b []byte) error {
 	return syscall.EPLAN9
 }
+
+func munlock(b []byte) error {
+	return syscall.EPLAN9
+}

@@ -61,3 +61,7 @@ func msync(b []byte) error {
 func mlock(b []byte) error {
 	return unix.Mlock(b)
 }
+
+func munlock(b []byte) error {
+	return unix.Munlock(b)
+}

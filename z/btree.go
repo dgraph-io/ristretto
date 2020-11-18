@@ -83,28 +83,19 @@ func NewTree(fname string, maxSz, mlockSz int) *Tree {
 		nextPage: 1,
 		mlockSz:  mlockSz,
 	}
-	t.memoryAdvise()
+	check(Madvise(t.mf.Data, false))
+	check(Mlock(t.mf.Data, t.mlockSz))
 	t.initRootNode()
 	return t
 }
 
-func (t *Tree) memoryAdvise() error {
+func (t *Tree) truncate(toSz int64) {
+	check(Munlock(t.mf.Data, t.mlockSz))
+	check(t.mf.Truncate(toSz))
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
 	// TODO: Do some benchmark to figure out if this helps.
-	if err := Madvise(t.mf.Data, false); err != nil {
-		return err
-	}
-	if len(t.mf.Data) < t.mlockSz {
-		// TODO: Make it work cross platform.
-		// The size of mlock should be passed as a flag to zero. By default, 1GB.
-		return Mlock(t.mf.Data)
-	}
-	return Mlock(t.mf.Data[:t.mlockSz])
-}
-
-func (t *Tree) truncate(toSz int64) {
-	check(t.mf.Truncate(toSz))
-	check(t.memoryAdvise())
+	check(Madvise(t.mf.Data, false))
+	check(Mlock(t.mf.Data, t.mlockSz))
 }
 
 // Reset resets the tree and truncates it to maxSz.

@@ -99,3 +99,8 @@ func mlock(b []byte) error {
 	// Do Nothing. We don’t care about this setting on Windows
 	return nil
 }
+
+func munlock(b []byte) error {
+	// Do Nothing. We don’t care about this setting on Windows
+	return nil
+}

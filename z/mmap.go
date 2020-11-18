@@ -45,6 +45,17 @@ func Msync(b []byte) error {
 
 // Mlock uses mlock system call to lock the byte slice into RAM, preventing the
 // memory from being paged to the swap area.
-func Mlock(b []byte) error {
-	return mlock(b)
+func Mlock(b []byte, maxSz int) error {
+	if len(b) < maxSz {
+		return mlock(b)
+	}
+	return mlock(b[:maxSz])
+}
+
+// Munlock uses munlock system call to unlock the locked byte slice.
+func Munlock(b []byte, maxSz int) error {
+	if len(b) < maxSz {
+		return munlock(b)
+	}
+	return munlock(b[:maxSz])
 }
