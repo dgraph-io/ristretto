@@ -19,11 +19,13 @@ package z
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
 	"testing"
 
+	"github.com/dgraph-io/ristretto/z/simd"
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 )
@@ -313,8 +315,20 @@ func BenchmarkSearch(b *testing.B) {
 			return n.key(i) >= k
 		})
 	}
+	unroll4 := func(n node, k uint64, N int) int {
+		if len(n[:2*N]) < 8 {
+			for i := 0; i < N; i++ {
+				if ki := n.key(i); ki >= k {
+					return i
+				}
+			}
+			return N
+		}
+		return int(simd.Search(n[:2*N], k))
+	}
 
-	for sz := 1; sz < 256; sz *= 2 {
+	jumpBy := []int{8, 16, 32, 64, 128, 196, 255}
+	for _, sz := range jumpBy {
 		f, err := ioutil.TempFile(".", "tree")
 		require.NoError(b, err)
 
@@ -330,12 +344,17 @@ func BenchmarkSearch(b *testing.B) {
 
 		b.Run(fmt.Sprintf("linear-%d", sz), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				tmp = linear(n, uint64(sz), sz)
+				tmp = linear(n, math.MaxUint64, sz)
 			}
 		})
 		b.Run(fmt.Sprintf("binary-%d", sz), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				tmp = binary(n, uint64(sz), sz)
+			}
+		})
+		b.Run(fmt.Sprintf("unrolled-asm-%d", sz), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tmp = unroll4(n, math.MaxUint64, sz)
 			}
 		})
 		mf.Close(0)
