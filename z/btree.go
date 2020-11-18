@@ -153,8 +153,6 @@ func BytesToUint64Slice(b []byte) []uint64 {
 }
 
 func (t *Tree) newNode(bit uint64) node {
-	//pc, _, line, _ := runtime.Caller(1)
-	//log.Printf("%v:%v called newnode %d", runtime.FuncForPC(pc).Name(), line, bit)
 	var pageId uint64
 	if t.freePage > 0 {
 		pageId = t.freePage
@@ -174,7 +172,6 @@ func (t *Tree) newNode(bit uint64) node {
 	}
 	zeroOut(n)
 	n.setBit(bit)
-	//log.Printf("isLeaf? %v", n.isLeaf())
 	n.setAt(keyOffset(maxKeys), pageId)
 	return n
 }
@@ -200,8 +197,6 @@ func (t *Tree) node(pid uint64) node {
 
 // Set sets the key-value pair in the tree.
 func (t *Tree) Set(k, v uint64) {
-	//pc, _, line, _ := runtime.Caller(1)
-	//log.Printf("%v:%v called Set k %d v %d", runtime.FuncForPC(pc).Name(), line, k, v)
 	if k == math.MaxUint64 || k == 0 {
 		panic("Error setting zero or MaxUint64")
 	}
@@ -227,11 +222,8 @@ func (t *Tree) Set(k, v uint64) {
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
 func (t *Tree) set(pid, k, v uint64, isRightmost bool) node {
-	//pc, _, line, _ := runtime.Caller(1)
-	//log.Printf("%v:%v called set pid %d k %v v %v", runtime.FuncForPC(pc).Name(), line, pid, k, v)
 	n := t.node(pid)
 	if n.isLeaf() {
-		//	log.Printf("isLeaf. isRightmost %v", isRightmost)
 		if !isRightmost {
 			return n.setAsLeaf(k, v)
 		}
@@ -278,8 +270,6 @@ func (t *Tree) set(pid, k, v uint64, isRightmost bool) node {
 
 // setRightmost sets the key-value pair in the tree.
 func (t *Tree) setRightmost(k, v uint64) {
-	//pc, _, line, _ := runtime.Caller(1)
-	//log.Printf("%v:%v called setRightmost k %d v %d", runtime.FuncForPC(pc).Name(), line, k, v)
 	if k == math.MaxUint64 || k == 0 {
 		panic("Error setting zero or MaxUint64")
 	}
@@ -477,7 +467,6 @@ func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {
-	//log.Printf("set %v at %v", k, start)
 	n[start] = k
 }
 
@@ -611,7 +600,6 @@ func (n node) set(k, v uint64) node {
 
 func (n node) setAsLeaf(k, v uint64) node {
 	idx := n.numKeys()
-	//log.Printf("%v\n%v", idx, n)
 	n.setAt(keyOffset(idx), k)
 	n.setAt(valOffset(idx), v)
 	n.setNumKeys(n.numKeys() + 1)
