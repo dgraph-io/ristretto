@@ -23,7 +23,6 @@ import (
 	"os"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
@@ -400,19 +399,4 @@ func BenchmarkCustomSearch(b *testing.B) {
 			})
 		}
 	}
-}
-
-func TestMlock(t *testing.T) {
-	fmt.Println(os.Getpid())
-	bt := NewTree("", 1<<20, 10<<30)
-	fmt.Println(bt.Stats())
-	for i := 2; i <= 8; i++ {
-		fmt.Println(i)
-		bt.truncate(int64(8 << 30))
-		time.Sleep(2 * time.Second)
-	}
-	bt.Release()
-	fmt.Println("done")
-	time.Sleep(30 * time.Second)
-	// time.Sleep(1 * time.Minute)
 }

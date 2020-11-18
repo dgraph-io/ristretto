@@ -38,9 +38,9 @@ var (
 type Tree struct {
 	mf       *MmapFile
 	nextPage uint64
+	freePage uint64
 
 	// for stats
-	freePage    uint64
 	numFree     int
 	numLeaf     int
 	numLeafKeys int
@@ -203,7 +203,7 @@ func (t *Tree) Set(k, v uint64) {
 	}
 	root := t.set(1, k, v)
 	if root.isFull() {
-		// All the keys from the root node are copied over to its new children and the new root gets
+		// All the keys from the root node are moved to its new children and the new root gets
 		// 2 keys.
 		t.numIntKeys += 2
 
