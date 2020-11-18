@@ -120,7 +120,7 @@ func TestAllocateConcurrent(t *testing.T) {
 	defer a.Release()
 
 	N := 10240
-	M := 1
+	M := 16
 	var wg sync.WaitGroup
 
 	m := make(map[uintptr]struct{})
