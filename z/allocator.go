@@ -103,12 +103,18 @@ func PrintAllocators() {
 func (a *Allocator) String() string {
 	var s strings.Builder
 	s.WriteString(fmt.Sprintf("Allocator: %x\n", a.Ref))
+	var cum int
 	for i, b := range a.buffers {
-		s.WriteString(fmt.Sprintf("idx: %d len: %d\n", i, len(b)))
+		cum += len(b)
 		if len(b) == 0 {
 			break
 		}
+		s.WriteString(fmt.Sprintf("idx: %d len: %d cum: %d\n", i, len(b), cum))
 	}
+	pos := atomic.LoadUint64(&a.compIdx)
+	bi, pi := parse(pos)
+	s.WriteString(fmt.Sprintf("bi: %d pi: %d\n", bi, pi))
+	s.WriteString(fmt.Sprintf("Size: %d\n", a.Size()))
 	return s.String()
 }
 
@@ -132,6 +138,7 @@ func (a *Allocator) Size() int {
 	for i, b := range a.buffers {
 		if i < bi {
 			sz += len(b)
+			continue
 		}
 		sz += pi
 		return sz
