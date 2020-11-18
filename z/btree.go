@@ -90,7 +90,7 @@ func NewTree(fname string, maxSz, mlockSz int) *Tree {
 }
 
 func (t *Tree) truncate(toSz int64) {
-	check(Munlock(t.mf.Data, t.mlockSz))
+	// check(Munlock(t.mf.Data, t.mlockSz))
 	check(t.mf.Truncate(toSz))
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
 	// TODO: Do some benchmark to figure out if this helps.

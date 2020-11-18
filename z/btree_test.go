@@ -30,6 +30,7 @@ import (
 )
 
 var tmp int
+var tmp_uint64 uint64
 
 func setPageSize(sz int) {
 	pageSize = sz
@@ -408,11 +409,50 @@ func TestMlock(t *testing.T) {
 	fmt.Println(bt.Stats())
 	for i := 2; i <= 8; i++ {
 		fmt.Println(i)
-		bt.truncate(int64(8 << 30))
+		bt.truncate(int64(i << 30))
 		time.Sleep(2 * time.Second)
 	}
 	bt.Release()
 	fmt.Println("done")
 	time.Sleep(30 * time.Second)
 	// time.Sleep(1 * time.Minute)
+}
+
+func BenchmarkMlock(b *testing.B) {
+	N := 1 << 20
+	fmt.Println("Doing with mlock")
+	bt1 := NewTree("", 1<<30, 1<<30)
+	for i := 0; i < N; i++ {
+		bt1.Set(rand.Uint64(), rand.Uint64())
+	}
+	fmt.Println("Done initilizing.")
+	b.Run("read-with-mlock", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			bt1.Set(rand.Uint64(), rand.Uint64())
+		}
+	})
+	b.Run("write-with-mlock", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			tmp_uint64 = bt1.Get(rand.Uint64())
+		}
+	})
+	bt1.Release()
+
+	fmt.Println("Doing without mlock")
+	bt2 := NewTree("", 1<<30, 0)
+	for i := 0; i < N; i++ {
+		bt2.Set(rand.Uint64(), rand.Uint64())
+	}
+	fmt.Println("Done initilizing.")
+	b.Run("read-without-mlock", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			bt2.Set(rand.Uint64(), rand.Uint64())
+		}
+	})
+	b.Run("write-without-mlock", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			tmp_uint64 = bt2.Get(rand.Uint64())
+		}
+	})
+	bt2.Release()
 }

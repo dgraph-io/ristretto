@@ -1,0 +1,60 @@
+
+###############
+bbloom_test.go
+Benchmarks relate to 2**16 OP. --> output/65536 op/ns
+###############
+
+goos: linux
+goarch: amd64
+pkg: github.com/dgraph-io/ristretto/z
+BenchmarkMlock
+Doing with mlock
+Done initilizing.
+BenchmarkMlock/read-with-mlock
+BenchmarkMlock/read-with-mlock-8         	 2241862	       599 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1890760	       631 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1773333	       683 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1745947	       715 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1700990	       721 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1641198	       722 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1638760	       727 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1611594	       810 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1571751	       760 ns/op
+BenchmarkMlock/read-with-mlock-8         	 1553204	       774 ns/op
+BenchmarkMlock/write-with-mlock
+BenchmarkMlock/write-with-mlock-8        	 1934218	       619 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1945861	       625 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1945951	       619 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1936396	       620 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1934661	       614 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1932811	       618 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1907419	       616 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1922271	       625 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1817082	       634 ns/op
+BenchmarkMlock/write-with-mlock-8        	 1920054	       620 ns/op
+Doing without mlock
+Done initilizing.
+BenchmarkMlock/read-without-mlock
+BenchmarkMlock/read-without-mlock-8      	 2241093	       608 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1940103	       645 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1860345	       654 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1738863	       684 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1706145	       712 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1644194	       721 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1645620	       729 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1618777	       757 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1559708	       768 ns/op
+BenchmarkMlock/read-without-mlock-8      	 1550064	       781 ns/op
+BenchmarkMlock/write-without-mlock
+BenchmarkMlock/write-without-mlock-8     	 1922169	       627 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1931366	       628 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1945532	       622 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1946512	       619 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1891970	       624 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1942546	       620 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1944964	       647 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1919668	       613 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1931462	       622 ns/op
+BenchmarkMlock/write-without-mlock-8     	 1941348	       625 ns/op
+PASS
+ok  	github.com/dgraph-io/ristretto/z	77.117s
