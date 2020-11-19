@@ -179,6 +179,9 @@ func ZeroOutNaive(dst []byte, start, end int) {
 func BenchmarkZeroOut(b *testing.B) {
 	for i := 8; i <= 1024; i *= 2 {
 		bs := make([]byte, i)
+		for i := range bs {
+			bs[i] = 255
+		}
 		b.Run(fmt.Sprintf("ZeroOut_%d", i), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < len(bs); j += 8 {
