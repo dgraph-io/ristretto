@@ -137,7 +137,14 @@ func init() {
 
 // ZeroOut zeroes out all the bytes in the range [start, end).
 func ZeroOut(dst []byte, start, end int) {
-	if end-start <= 0 {
+	if start < 0 || start >= len(dst) {
+		return // BAD
+	}
+	if end >= len(dst) {
+		end = len(dst)
+	}
+	n := end - start
+	if n <= 0 {
 		return
 	}
 	buf := dst[start:end]

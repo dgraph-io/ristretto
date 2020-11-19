@@ -17,8 +17,11 @@
 package z
 
 import (
+	"fmt"
 	"math"
 	"testing"
+	"testing/quick"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -104,4 +107,104 @@ func TestZeroOut(t *testing.T) {
 
 	ZeroOut(dst, 0, len(dst))
 	check(dst, 0x00)
+}
+
+func TestZeroOutQC(t *testing.T) {
+	f := func(bs []byte, start, end int) bool {
+		if start < 0 || start >= len(bs) {
+			return true // bad generation
+		}
+		cs := make([]byte, len(bs))
+		copy(cs, bs)
+		ZeroOut(bs, start, end)
+
+		if end >= len(bs) {
+			end = len(bs)
+		}
+		if end-start < 0 {
+			return true // noop
+		}
+		for i := 0; i < len(cs); i++ {
+			if i >= start && i <= end {
+				if bs[i] != 0 {
+					return false
+				}
+				continue
+			}
+			if bs[i] != cs[i] {
+				return false
+			}
+		}
+		return true
+	}
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+//go:linkname zeroout runtime.memclrNoHeapPointers
+func zeroout(ptr unsafe.Pointer, n uintptr)
+
+func ZeroOutLN(dst []byte, start, end int) {
+	if start < 0 || start >= len(dst) {
+		return // BAD
+	}
+	if end >= len(dst) {
+		end = len(dst)
+	}
+	n := end - start
+	if n <= 0 {
+		return
+	}
+	zeroout(unsafe.Pointer(&dst[start]), uintptr(n))
+}
+
+func ZeroOutNaive(dst []byte, start, end int) {
+	if start < 0 || start >= len(dst) {
+		return // BAD
+	}
+	if end >= len(dst) {
+		end = len(dst)
+	}
+	n := end - start
+	if n <= 0 {
+		return
+	}
+	b := dst[start:end]
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func BenchmarkZeroOut(b *testing.B) {
+	for i := 8; i <= 1024; i *= 2 {
+		bs := make([]byte, i)
+		b.Run(fmt.Sprintf("ZeroOut_%d", i), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for j := 0; j < len(bs); j += 8 {
+					for k := j; k < len(bs); k += 8 {
+						ZeroOut(bs, j, k)
+					}
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("ZeroOutLN_%d", i), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for j := 0; j < len(bs); j += 8 {
+					for k := j; k < len(bs); k += 8 {
+						ZeroOutLN(bs, j, k)
+					}
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("ZeroOutNaive_%d", i), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for j := 0; j < len(bs); j += 8 {
+					for k := j; k < len(bs); k += 8 {
+						ZeroOutNaive(bs, j, k)
+					}
+				}
+			}
+		})
+	}
 }
