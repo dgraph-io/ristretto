@@ -143,8 +143,8 @@ func ZeroOut(dst []byte, start, end int) {
 	if end >= len(dst) {
 		end = len(dst)
 	}
-	n := end - start
-	if n <= 0 {
+
+	if end-start <= 0 {
 		return
 	}
 	buf := dst[start:end]
