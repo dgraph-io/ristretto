@@ -126,7 +126,14 @@ func (lc *Closer) SignalAndWait() {
 	lc.Wait()
 }
 
-var zeroBuf = make([]byte, 1024)
+var zeroBuf []byte
+
+func init() {
+	zeroBuf = make([]byte, 1024)
+	for i := 0; i < len(zeroBuf); i++ {
+		zeroBuf[i] = 0x00
+	}
+}
 
 // ZeroOut zeroes out all the bytes in the range [start, end).
 func ZeroOut(dst []byte, start, end int) {
