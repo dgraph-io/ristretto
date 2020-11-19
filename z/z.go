@@ -126,19 +126,20 @@ func (lc *Closer) SignalAndWait() {
 	lc.Wait()
 }
 
-var zeroBuf = make([]byte, 1024)
-
 // ZeroOut zeroes out all the bytes in the range [start, end).
 func ZeroOut(dst []byte, start, end int) {
-	if end-start <= 0 {
+	if start < 0 || start >= len(dst) {
+		return // BAD
+	}
+	if end >= len(dst) {
+		end = len(dst)
+	}
+	n := end - start
+	if n <= 0 {
 		return
 	}
-	buf := dst[start:end]
-	n := copy(buf, zeroBuf)
-	if n < len(zeroBuf) {
-		return
-	}
-	for i := n; i < len(buf); i *= 2 {
-		copy(buf[i:], buf[:i])
+	b := dst[start:end]
+	for i := range b {
+		b[i] = 0
 	}
 }
