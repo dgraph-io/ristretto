@@ -140,6 +140,6 @@ func ZeroOut(dst []byte, start, end int) {
 	}
 	b := dst[start:end]
 	for i := range b {
-		b[i] = 0
+		b[i] = 0x0
 	}
 }
