@@ -30,7 +30,7 @@ import (
 )
 
 // Allocator amortizes the cost of small allocations by allocating memory in
-// bigger chunks.  Internally it uses z.Calloc to allocate memory. Once
+// bigger chunks. Internally it uses z.Calloc to allocate memory. Once
 // allocated, the memory is not moved, so it is safe to use the allocated bytes
 // to unsafe cast them to Go struct pointers. Maintaining a freelist is slow.
 // Instead, Allocator only allocates memory, with the idea that finally we
@@ -76,7 +76,7 @@ func NewAllocator(sz int) *Allocator {
 		buffers: make([][]byte, 32),
 	}
 	l2 := uint64(log2(sz))
-	a.buffers[0] = Calloc(1 << (l2 + 1))
+	a.buffers[0] = make([]byte, 1<<(l2+1))
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -86,9 +86,6 @@ func NewAllocator(sz int) *Allocator {
 
 func (a *Allocator) Reset() {
 	atomic.StoreUint64(&a.compIdx, 0)
-	for _, b := range a.buffers {
-		ZeroOut(b, 0, len(b))
-	}
 }
 
 func PrintAllocators() {
@@ -180,7 +177,6 @@ func (a *Allocator) TrimTo(max int) {
 		if alloc < max {
 			continue
 		}
-		Free(b)
 		a.buffers[i] = nil
 	}
 }
@@ -189,15 +185,6 @@ func (a *Allocator) TrimTo(max int) {
 func (a *Allocator) Release() {
 	if a == nil {
 		return
-	}
-
-	var alloc int
-	for _, b := range a.buffers {
-		if len(b) == 0 {
-			break
-		}
-		alloc += len(b)
-		Free(b)
 	}
 
 	allocsMu.Lock()
@@ -264,7 +251,7 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 		pageSize = maxAlloc
 	}
 
-	buf := Calloc(pageSize)
+	buf := make([]byte, pageSize)
 	assert(len(a.buffers[bufIdx]) == 0)
 	a.buffers[bufIdx] = buf
 }
@@ -298,7 +285,6 @@ func (a *Allocator) Allocate(sz int) []byte {
 			continue
 		}
 		data := buf[posIdx-sz : posIdx]
-		ZeroOut(data, 0, len(data))
 		return data
 	}
 }
@@ -335,10 +321,10 @@ func (p *AllocatorPool) Return(a *Allocator) {
 	if a == nil {
 		return
 	}
-	// if p == nil {
-	a.Release()
-	return
-	// }
+	if p == nil {
+		a.Release()
+		return
+	}
 	a.TrimTo(400 << 20)
 
 	select {
