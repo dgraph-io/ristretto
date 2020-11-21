@@ -76,7 +76,8 @@ func NewAllocator(sz int) *Allocator {
 		buffers: make([][]byte, 32),
 	}
 	l2 := uint64(log2(sz))
-	a.buffers[0] = Calloc(1 << (l2 + 1))
+	// a.buffers[0] = Calloc(1 << (l2 + 1))
+	a.buffers[0] = make([]byte, 1<<(l2+1))
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -85,6 +86,15 @@ func NewAllocator(sz int) *Allocator {
 }
 
 func (a *Allocator) Reset() {
+	if a == nil {
+		return
+	}
+	for _, b := range a.buffers {
+		if len(b) == 0 {
+			break
+		}
+		ZeroOut(b, 0, len(b))
+	}
 	atomic.StoreUint64(&a.compIdx, 0)
 }
 
@@ -177,7 +187,7 @@ func (a *Allocator) TrimTo(max int) {
 		if alloc < max {
 			continue
 		}
-		Free(b)
+		// Free(b)
 		a.buffers[i] = nil
 	}
 }
@@ -194,7 +204,7 @@ func (a *Allocator) Release() {
 			break
 		}
 		alloc += len(b)
-		Free(b)
+		// Free(b)
 	}
 
 	allocsMu.Lock()
@@ -261,7 +271,8 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 		pageSize = maxAlloc
 	}
 
-	buf := Calloc(pageSize)
+	// buf := Calloc(pageSize)
+	buf := make([]byte, pageSize)
 	assert(len(a.buffers[bufIdx]) == 0)
 	a.buffers[bufIdx] = buf
 }
@@ -326,6 +337,7 @@ func (p *AllocatorPool) Get(sz int) *Allocator {
 	default:
 		return NewAllocator(sz)
 	}
+	// return NewAllocator(sz)
 }
 func (p *AllocatorPool) Return(a *Allocator) {
 	if a == nil {
