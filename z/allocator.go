@@ -335,10 +335,10 @@ func (p *AllocatorPool) Return(a *Allocator) {
 	if a == nil {
 		return
 	}
-	if p == nil {
-		a.Release()
-		return
-	}
+	// if p == nil {
+	a.Release()
+	return
+	// }
 	a.TrimTo(400 << 20)
 
 	select {
