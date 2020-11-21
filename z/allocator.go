@@ -87,6 +87,9 @@ func NewAllocator(sz int) *Allocator {
 
 func (a *Allocator) Reset() {
 	atomic.StoreUint64(&a.compIdx, 0)
+	for _, b := range a.buffers {
+		ZeroOut(b, 0, len(b))
+	}
 }
 
 func PrintAllocators() {
@@ -328,10 +331,10 @@ func (p *AllocatorPool) Return(a *Allocator) {
 	if a == nil {
 		return
 	}
-	// if p == nil {
-	a.Release()
-	return
-	// }
+	if p == nil {
+		a.Release()
+		return
+	}
 	a.TrimTo(400 << 20)
 
 	select {
