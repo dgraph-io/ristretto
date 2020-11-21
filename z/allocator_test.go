@@ -115,6 +115,49 @@ func TestAllocateAligned(t *testing.T) {
 	require.True(t, ptr%8 == 0)
 }
 
+func TestAllocatorCorrupt(t *testing.T) {
+	a := NewAllocator(1023)
+	defer a.Release()
+
+	type KV struct {
+		key []byte
+		val []byte
+	}
+	kvsz := int(unsafe.Sizeof(KV{}))
+
+	big := make([]byte, 1024)
+	rand.Read(big)
+
+	N := 1000
+
+	go func() {
+		for i := 0; i < N; i++ {
+			copy(a.Allocate(rand.Intn(10)), big)
+		}
+	}()
+	for i := 0; i < N; i++ {
+		var kvs []*KV
+		for j := 0; j < N; j++ {
+			copy(a.Allocate(rand.Intn(10)), big)
+			kb := a.AllocateAligned(kvsz)
+			kv := (*KV)(unsafe.Pointer(&kb[0]))
+			kv.key = a.Allocate(rand.Intn(1024))
+			copy(kv.key, big)
+
+			kv.val = a.Allocate(rand.Intn(1024))
+			copy(kv.val, big)
+			kvs = append(kvs, kv)
+		}
+		for _, kv := range kvs {
+			sz := len(kv.key) + len(kv.val)
+			if sz > 2048 {
+				t.Fatalf("Size is too high: %d\n", sz)
+			}
+		}
+		a.Reset()
+	}
+}
+
 func TestAllocateConcurrent(t *testing.T) {
 	a := NewAllocator(63)
 	defer a.Release()

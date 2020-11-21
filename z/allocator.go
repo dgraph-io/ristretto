@@ -42,6 +42,7 @@ type Allocator struct {
 	buffers [][]byte
 	Ref     uint64
 	Tag     string
+	inuse   int32
 }
 
 // allocs keeps references to all Allocators, so we can safely discard them later.
@@ -75,6 +76,7 @@ func NewAllocator(sz int) *Allocator {
 	a := &Allocator{
 		Ref:     ref,
 		buffers: make([][]byte, 32),
+		inuse:   1,
 	}
 	l2 := uint64(log2(sz))
 	a.buffers[0] = make([]byte, 1<<(l2+1))
@@ -264,6 +266,7 @@ func (a *Allocator) Allocate(sz int) []byte {
 	if a == nil {
 		return make([]byte, sz)
 	}
+	assert(atomic.LoadInt32(&a.inuse) == 1)
 	if sz > maxAlloc {
 		panic(fmt.Sprintf("Unable to allocate more than %d\n", maxAlloc))
 	}
@@ -294,7 +297,7 @@ func (a *Allocator) Allocate(sz int) []byte {
 				len(data), sz, atomic.LoadUint64(&a.compIdx))
 		}
 		assert(len(data) == sz)
-		ZeroOut(data, 0, len(data))
+		// ZeroOut(data, 0, len(data))
 		return data
 	}
 }
@@ -322,6 +325,7 @@ func (p *AllocatorPool) Get(sz int) *Allocator {
 	select {
 	case alloc := <-p.allocCh:
 		alloc.Reset()
+		assert(atomic.CompareAndSwapInt32(&alloc.inuse, 0, 1))
 		return alloc
 	default:
 		return NewAllocator(sz)
@@ -336,6 +340,7 @@ func (p *AllocatorPool) Return(a *Allocator) {
 		return
 	}
 	a.TrimTo(400 << 20)
+	assert(atomic.CompareAndSwapInt32(&a.inuse, 1, 0))
 
 	select {
 	case p.allocCh <- a:
