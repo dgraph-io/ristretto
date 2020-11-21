@@ -18,6 +18,7 @@ package z
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"strings"
@@ -285,6 +286,12 @@ func (a *Allocator) Allocate(sz int) []byte {
 			continue
 		}
 		data := buf[posIdx-sz : posIdx]
+		if len(data) != sz {
+			log.Fatalf("len(data): %d sz: %d. compIdx: %x",
+				len(data), sz, atomic.LoadUint64(&a.compIdx))
+		}
+		assert(len(data) == sz)
+		ZeroOut(data, 0, len(data))
 		return data
 	}
 }
