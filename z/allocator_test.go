@@ -212,6 +212,30 @@ func TestAllocateConcurrent(t *testing.T) {
 	}
 }
 
+func TestAllocatorPool(t *testing.T) {
+	p := NewAllocatorPool(10)
+	defer p.Release()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			const N = 1000
+			for i := 0; i < N; i++ {
+				a := p.Get(63)
+				for j := 0; j < N; j++ {
+					buf := a.Allocate(16)
+					rand.Read(buf)
+				}
+				p.Return(a)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func BenchmarkAllocate(b *testing.B) {
 	a := NewAllocator(15)
 	b.RunParallel(func(pb *testing.PB) {
