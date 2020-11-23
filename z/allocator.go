@@ -19,6 +19,7 @@ package z
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"math/rand"
 	"strings"
 	"sync"
@@ -29,12 +30,12 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-// Allocator amortizes the cost of small allocations by allocating memory in
-// bigger chunks.  Internally it uses z.Calloc to allocate memory. Once
-// allocated, the memory is not moved, so it is safe to use the allocated bytes
-// to unsafe cast them to Go struct pointers. Maintaining a freelist is slow.
-// Instead, Allocator only allocates memory, with the idea that finally we
-// would just release the entire Allocator.
+// Allocator amortizes the cost of small allocations by allocating memory in bigger chunks. It uses
+// Go memory to make these allocations because when using Calloc and storing Go pointers in there,
+// we see strange crashes -- we suspect these to be some sort of bug in how Go interprets memory.
+// Once allocated, the memory is not moved, so it is safe to use the allocated bytes to unsafe cast
+// them to Go struct pointers. Maintaining a freelist is slow.  Instead, Allocator only allocates
+// memory, with the idea that finally we would just release the entire Allocator.
 type Allocator struct {
 	sync.Mutex
 	compIdx uint64 // Stores bufIdx in 32 MSBs and posIdx in 32 LSBs.
@@ -68,15 +69,21 @@ func NewAllocator(sz int) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
 	// We should not allow a zero sized page because addBufferWithMinSize
 	// will run into an infinite loop trying to double the pagesize.
-	if sz == 0 {
-		sz = smallBufferSize
+	if sz <= 0 {
+		sz = 512
 	}
 	a := &Allocator{
 		Ref:     ref,
 		buffers: make([][]byte, 32),
 	}
+
 	l2 := uint64(log2(sz))
-	a.buffers[0] = Calloc(1 << (l2 + 1))
+	if bits.OnesCount64(uint64(sz)) > 1 {
+		// If l2 is a power of 2, then we can allocate the requested size of data. Otherwise, we
+		// bump up to the next power of 2.
+		l2 += 1
+	}
+	a.buffers[0] = make([]byte, 1<<l2)
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -167,34 +174,10 @@ func (a *Allocator) Allocated() uint64 {
 	return uint64(alloc)
 }
 
-func (a *Allocator) TrimTo(max int) {
-	var alloc int
-	for i, b := range a.buffers {
-		if len(b) == 0 {
-			break
-		}
-		alloc += len(b)
-		if alloc < max {
-			continue
-		}
-		Free(b)
-		a.buffers[i] = nil
-	}
-}
-
 // Release would release the memory back. Remember to make this call to avoid memory leaks.
 func (a *Allocator) Release() {
 	if a == nil {
 		return
-	}
-
-	var alloc int
-	for _, b := range a.buffers {
-		if len(b) == 0 {
-			break
-		}
-		alloc += len(b)
-		Free(b)
 	}
 
 	allocsMu.Lock()
@@ -213,10 +196,6 @@ const nodeAlign = unsafe.Sizeof(uint64(0)) - 1
 func (a *Allocator) AllocateAligned(sz int) []byte {
 	tsz := sz + int(nodeAlign)
 	out := a.Allocate(tsz)
-	// We are reusing allocators. In that case, it's important to zero out the memory allocated
-	// here. We don't always zero it out (in Allocate), because other functions would be immediately
-	// overwriting the allocated slices anyway (see Copy).
-	ZeroOut(out, 0, len(out))
 
 	addr := uintptr(unsafe.Pointer(&out[0]))
 	aligned := (addr + nodeAlign) & ^nodeAlign
@@ -261,7 +240,7 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 		pageSize = maxAlloc
 	}
 
-	buf := Calloc(pageSize)
+	buf := make([]byte, pageSize)
 	assert(len(a.buffers[bufIdx]) == 0)
 	a.buffers[bufIdx] = buf
 }
@@ -296,96 +275,5 @@ func (a *Allocator) Allocate(sz int) []byte {
 		}
 		data := buf[posIdx-sz : posIdx]
 		return data
-	}
-}
-
-type AllocatorPool struct {
-	numGets int64
-	allocCh chan *Allocator
-	closer  *Closer
-}
-
-func NewAllocatorPool(sz int) *AllocatorPool {
-	a := &AllocatorPool{
-		allocCh: make(chan *Allocator, sz),
-		closer:  NewCloser(1),
-	}
-	go a.freeupAllocators()
-	return a
-}
-
-func (p *AllocatorPool) Get(sz int) *Allocator {
-	if p == nil {
-		return NewAllocator(sz)
-	}
-	atomic.AddInt64(&p.numGets, 1)
-	select {
-	case alloc := <-p.allocCh:
-		alloc.Reset()
-		return alloc
-	default:
-		return NewAllocator(sz)
-	}
-}
-func (p *AllocatorPool) Return(a *Allocator) {
-	if a == nil {
-		return
-	}
-	if p == nil {
-		a.Release()
-		return
-	}
-	a.TrimTo(400 << 20)
-
-	select {
-	case p.allocCh <- a:
-		return
-	default:
-		a.Release()
-	}
-}
-
-func (p *AllocatorPool) Release() {
-	if p == nil {
-		return
-	}
-	p.closer.SignalAndWait()
-}
-
-func (p *AllocatorPool) freeupAllocators() {
-	defer p.closer.Done()
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	releaseOne := func() bool {
-		select {
-		case alloc := <-p.allocCh:
-			alloc.Release()
-			return true
-		default:
-			return false
-		}
-	}
-
-	var last int64
-	for {
-		select {
-		case <-p.closer.HasBeenClosed():
-			close(p.allocCh)
-			for alloc := range p.allocCh {
-				alloc.Release()
-			}
-			return
-
-		case <-ticker.C:
-			gets := atomic.LoadInt64(&p.numGets)
-			if gets != last {
-				// Some retrievals were made since the last time. So, let's avoid doing a release.
-				last = gets
-				continue
-			}
-			releaseOne()
-		}
 	}
 }

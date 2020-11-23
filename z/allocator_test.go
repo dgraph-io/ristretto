@@ -50,6 +50,16 @@ func TestAllocate(t *testing.T) {
 	t.Logf("Allocated: %d\n", prev)
 }
 
+func TestAllocateSize(t *testing.T) {
+	a := NewAllocator(1024)
+	require.Equal(t, 1024, len(a.buffers[0]))
+	a.Release()
+
+	b := NewAllocator(1025)
+	require.Equal(t, 2048, len(b.buffers[0]))
+	b.Release()
+}
+
 func TestAllocateReset(t *testing.T) {
 	a := NewAllocator(16)
 	defer a.Release()
@@ -67,21 +77,6 @@ func TestAllocateReset(t *testing.T) {
 	}
 	t.Logf("%s", a)
 	require.Equal(t, prev, a.Allocated())
-}
-
-func TestAllocateTrim(t *testing.T) {
-	a := NewAllocator(16)
-	defer a.Release()
-
-	buf := make([]byte, 128)
-	rand.Read(buf)
-	for i := 0; i < 1000; i++ {
-		a.Copy(buf)
-	}
-
-	N := 2048
-	a.TrimTo(N)
-	require.LessOrEqual(t, int(a.Allocated()), N)
 }
 
 func TestPowTwo(t *testing.T) {
