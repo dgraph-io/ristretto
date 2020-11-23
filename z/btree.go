@@ -84,14 +84,15 @@ func NewTree(fname string, maxSz, mlockSz int) *Tree {
 	}
 	t := &Tree{
 		mf:       mf,
-		data:     make([]byte, 64<<20),
+		data:     make([]byte, 64<<10),
 		nextPage: 1,
 		mlockSz:  mlockSz,
 	}
-	// Have atleast 64 MBs in memory always.
+	// Have atleast 64 KBs in memory always.
 	if t.mlockSz < cap(t.data) {
 		t.mlockSz = cap(t.data)
 	}
+	t.truncate(int64(pageSize))
 	t.initRootNode()
 	return t
 }
@@ -156,17 +157,17 @@ func (t *Tree) newNode(bit uint64) node {
 	grow := func(start int) {
 		end := start + pageSize
 		// Double the size of file if current buffer is insufficient
-		if end < t.mlockSz {
-			sz := cap(t.data)
-			if end > sz {
-				tmp := make([]byte, len(t.data), sz*2)
-				copy(tmp, t.data)
-				t.data = tmp
-			}
-		} else {
+		if start >= t.mlockSz {
 			sz := len(t.mf.Data)
 			if end-t.mlockSz > sz {
 				t.truncate(int64(2 * sz))
+			}
+		} else {
+			sz := cap(t.data)
+			if end > sz {
+				tmp := make([]byte, cap(t.data), sz*2)
+				copy(tmp, t.data)
+				t.data = tmp[:cap(tmp)]
 			}
 		}
 	}
@@ -211,7 +212,7 @@ func (t *Tree) node(pid uint64) node {
 		return nil
 	}
 	start := pageSize * int(pid)
-	if start+pageSize < t.mlockSz {
+	if start+pageSize <= t.mlockSz {
 		return node(BytesToUint64Slice(t.data[start : start+pageSize]))
 	}
 	return getNode(t.mf.Data[start-t.mlockSz : start+pageSize-t.mlockSz])

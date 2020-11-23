@@ -38,7 +38,7 @@ func setPageSize(sz int) {
 }
 
 func TestTree(t *testing.T) {
-	bt := NewTree("", 1<<20, 1<<20)
+	bt := NewTree("", 1<<20, 1<<30)
 
 	N := uint64(256 * 256)
 	for i := uint64(1); i < N; i++ {
