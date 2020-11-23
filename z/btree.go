@@ -38,12 +38,14 @@ var (
 // Tree represents the structure for custom mmaped B+ tree.
 // It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
-	mf       *MmapFile
-	data     []byte
-	nextPage uint64
-	freePage uint64
-	stats    stats
-	mlockSz  int
+	mf           *MmapFile
+	leaves       []byte
+	internals    []byte
+	nextPage     uint64
+	nextInternal uint64
+	freePage     uint64
+	stats        stats
+	mlockSz      int
 }
 
 type stats struct {
@@ -83,14 +85,16 @@ func NewTree(fname string, maxSz, mlockSz int) *Tree {
 		check(err)
 	}
 	t := &Tree{
-		mf:       mf,
-		data:     make([]byte, 64<<10),
-		nextPage: 1,
-		mlockSz:  mlockSz,
+		mf:           mf,
+		leaves:       make([]byte, 64<<10),
+		internals:    make([]byte, 64<<10),
+		nextPage:     1,
+		nextInternal: 1,
+		mlockSz:      mlockSz,
 	}
 	// Have atleast 64 KBs in memory always.
-	if t.mlockSz < cap(t.data) {
-		t.mlockSz = cap(t.data)
+	if t.mlockSz < cap(t.leaves) {
+		t.mlockSz = cap(t.leaves)
 	}
 	t.truncate(int64(pageSize))
 	t.initRootNode()
@@ -107,10 +111,12 @@ func (t *Tree) truncate(toSz int64) {
 // Reset resets the tree and truncates the mmap file.
 func (t *Tree) Reset() {
 	*t = Tree{
-		mf:       t.mf,
-		data:     make([]byte, 64<<20),
-		nextPage: 1,
-		mlockSz:  t.mlockSz,
+		mf:           t.mf,
+		leaves:       make([]byte, 64<<10),
+		internals:    make([]byte, 64<<10),
+		nextInternal: 1,
+		nextPage:     1,
+		mlockSz:      t.mlockSz,
 	}
 	t.truncate(int64(pageSize))
 	t.initRootNode()
@@ -128,13 +134,14 @@ type TreeStats struct {
 
 // Stats returns stats about the tree.
 func (t *Tree) Stats() TreeStats {
-	occ := float64(t.stats.numLeafKeys+t.stats.numIntKeys) / float64(int(t.nextPage-1)*maxKeys)
+	numPages := int(t.nextPage + t.nextInternal - 2)
+	occ := float64(t.stats.numLeafKeys+t.stats.numIntKeys) / float64(numPages*maxKeys)
 	return TreeStats{
 		NextPage:     int(t.nextPage),
-		NumNodes:     int(t.nextPage - 1),
+		NumNodes:     numPages,
 		NumLeafNodes: t.stats.numLeaf,
 		NumLeafKeys:  t.stats.numLeafKeys,
-		Bytes:        int(t.nextPage-1) * pageSize,
+		Bytes:        numPages * pageSize,
 		Occupancy:    occ * 100,
 		FreePages:    t.stats.numFree,
 	}
@@ -163,35 +170,48 @@ func (t *Tree) newNode(bit uint64) node {
 				t.truncate(int64(2 * sz))
 			}
 		} else {
-			sz := cap(t.data)
+			sz := cap(t.leaves)
 			if end > sz {
-				tmp := make([]byte, cap(t.data), sz*2)
-				copy(tmp, t.data)
-				t.data = tmp[:cap(tmp)]
+				tmp := make([]byte, cap(t.leaves), sz*2)
+				copy(tmp, t.leaves)
+				t.leaves = tmp[:cap(tmp)]
 			}
 		}
 	}
 
 	var pageId uint64
-	if t.freePage > 0 {
-		assert(t.stats.numFree > 0)
-		t.stats.numFree--
-		pageId = t.freePage
+	var n node
+	if bit&bitLeaf > 0 {
+		if t.freePage > 0 {
+			assert(t.stats.numFree > 0)
+			t.stats.numFree--
+			pageId = t.freePage
+		} else {
+			pageId = t.nextPage
+			t.nextPage++
+			offset := int(pageId) * pageSize
+			grow(offset)
+		}
+		pageId |= bitLeaf
+		n = t.node(pageId)
+		if t.freePage > 0 {
+			t.freePage = n.uint64(0)
+		}
+		t.stats.numLeaf++
 	} else {
-		pageId = t.nextPage
-		t.nextPage++
-		offset := int(pageId) * pageSize
-		grow(offset)
-	}
-	n := t.node(pageId)
-	if t.freePage > 0 {
-		t.freePage = n.uint64(0)
+		pageId = t.nextInternal
+		offset := int(t.nextInternal) * pageSize
+		sz := cap(t.internals)
+		if offset+pageSize > sz {
+			tmp := make([]byte, cap(t.internals), sz*2)
+			copy(tmp, t.internals)
+			t.internals = tmp[:cap(tmp)]
+		}
+		t.nextInternal++
+		n = t.node(pageId)
 	}
 	zeroOut(n)
 	n.setBit(bit)
-	if bit&bitLeaf > 0 {
-		t.stats.numLeaf++
-	}
 	n.setAt(keyOffset(maxKeys), pageId)
 	return n
 }
@@ -211,9 +231,14 @@ func (t *Tree) node(pid uint64) node {
 	if pid == 0 {
 		return nil
 	}
-	start := pageSize * int(pid)
+	if pid&bitLeaf == 0 {
+		start := pageSize * int(pid)
+		return node(BytesToUint64Slice(t.internals[start : start+pageSize]))
+	}
+	// Clear out the extra meta stored with pageID
+	start := pageSize * int(pid^bitLeaf)
 	if start+pageSize <= t.mlockSz {
-		return node(BytesToUint64Slice(t.data[start : start+pageSize]))
+		return node(BytesToUint64Slice(t.leaves[start : start+pageSize]))
 	}
 	return getNode(t.mf.Data[start-t.mlockSz : start+pageSize-t.mlockSz])
 }

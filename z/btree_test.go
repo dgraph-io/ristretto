@@ -96,7 +96,7 @@ func TestTreeReset(t *testing.T) {
 
 	stats := bt.Stats()
 	// Verify the tree stats.
-	require.Equal(t, 3, stats.NextPage)
+	require.Equal(t, 2, stats.NextPage)
 	require.Equal(t, 2, stats.NumNodes)
 	require.Equal(t, 1, stats.NumLeafKeys)
 	require.Equal(t, 1, stats.NumLeafKeys)
