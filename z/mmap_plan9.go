@@ -42,11 +42,3 @@ func madvise(b []byte, readahead bool) error {
 func msync(b []byte) error {
 	return syscall.EPLAN9
 }
-
-func mlock(b []byte) error {
-	return syscall.EPLAN9
-}
-
-func munlock(b []byte) error {
-	return syscall.EPLAN9
-}

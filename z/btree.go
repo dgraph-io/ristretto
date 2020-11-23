@@ -39,16 +39,18 @@ var (
 // It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
 	mf       *MmapFile
+	data     []byte
 	nextPage uint64
 	freePage uint64
+	stats    stats
+	mlockSz  int
+}
 
-	// for stats
+type stats struct {
 	numFree     int
 	numLeaf     int
 	numLeafKeys int
 	numIntKeys  int
-
-	mlockSz int
 }
 
 // Release the memory allocated to tree.
@@ -82,34 +84,34 @@ func NewTree(fname string, maxSz, mlockSz int) *Tree {
 	}
 	t := &Tree{
 		mf:       mf,
+		data:     make([]byte, 64<<20),
 		nextPage: 1,
 		mlockSz:  mlockSz,
 	}
-	check(Madvise(t.mf.Data, false))
-	check(Mlock(t.mf.Data, t.mlockSz))
+	// Have atleast 64 MBs in memory always.
+	if t.mlockSz < cap(t.data) {
+		t.mlockSz = cap(t.data)
+	}
 	t.initRootNode()
 	return t
 }
 
 func (t *Tree) truncate(toSz int64) {
-	check(Munlock(t.mf.Data, t.mlockSz))
 	check(t.mf.Truncate(toSz))
 	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
 	// TODO: Do some benchmark to figure out if this helps.
 	check(Madvise(t.mf.Data, false))
-	check(Mlock(t.mf.Data, t.mlockSz))
 }
 
-// Reset resets the tree and truncates it to maxSz.
-func (t *Tree) Reset(maxSz int) {
+// Reset resets the tree and truncates the mmap file.
+func (t *Tree) Reset() {
 	*t = Tree{
 		mf:       t.mf,
+		data:     make([]byte, 64<<20),
 		nextPage: 1,
+		mlockSz:  t.mlockSz,
 	}
-	if maxSz < pageSize {
-		maxSz = pageSize
-	}
-	t.truncate(int64(maxSz))
+	t.truncate(int64(pageSize))
 	t.initRootNode()
 }
 
@@ -125,15 +127,15 @@ type TreeStats struct {
 
 // Stats returns stats about the tree.
 func (t *Tree) Stats() TreeStats {
-	occ := float64(t.numLeafKeys+t.numIntKeys) / float64(int(t.nextPage-1)*maxKeys)
+	occ := float64(t.stats.numLeafKeys+t.stats.numIntKeys) / float64(int(t.nextPage-1)*maxKeys)
 	return TreeStats{
 		NextPage:     int(t.nextPage),
 		NumNodes:     int(t.nextPage - 1),
-		NumLeafNodes: t.numLeaf,
-		NumLeafKeys:  t.numLeafKeys,
+		NumLeafNodes: t.stats.numLeaf,
+		NumLeafKeys:  t.stats.numLeafKeys,
 		Bytes:        int(t.nextPage-1) * pageSize,
 		Occupancy:    occ * 100,
-		FreePages:    t.numFree,
+		FreePages:    t.stats.numFree,
 	}
 }
 
@@ -151,20 +153,34 @@ func BytesToUint64Slice(b []byte) []uint64 {
 }
 
 func (t *Tree) newNode(bit uint64) node {
+	grow := func(start int) {
+		end := start + pageSize
+		// Double the size of file if current buffer is insufficient
+		if end < t.mlockSz {
+			sz := cap(t.data)
+			if end > sz {
+				tmp := make([]byte, len(t.data), sz*2)
+				copy(tmp, t.data)
+				t.data = tmp
+			}
+		} else {
+			sz := len(t.mf.Data)
+			if end-t.mlockSz > sz {
+				t.truncate(int64(2 * sz))
+			}
+		}
+	}
+
 	var pageId uint64
 	if t.freePage > 0 {
-		assert(t.numFree > 0)
-		t.numFree--
+		assert(t.stats.numFree > 0)
+		t.stats.numFree--
 		pageId = t.freePage
 	} else {
 		pageId = t.nextPage
 		t.nextPage++
 		offset := int(pageId) * pageSize
-		sz := len(t.mf.Data)
-		// Double the size of file if current buffer is insufficient.
-		if offset+pageSize > sz {
-			t.truncate(int64(2 * sz))
-		}
+		grow(offset)
 	}
 	n := t.node(pageId)
 	if t.freePage > 0 {
@@ -173,7 +189,7 @@ func (t *Tree) newNode(bit uint64) node {
 	zeroOut(n)
 	n.setBit(bit)
 	if bit&bitLeaf > 0 {
-		t.numLeaf++
+		t.stats.numLeaf++
 	}
 	n.setAt(keyOffset(maxKeys), pageId)
 	return n
@@ -195,7 +211,10 @@ func (t *Tree) node(pid uint64) node {
 		return nil
 	}
 	start := pageSize * int(pid)
-	return getNode(t.mf.Data[start : start+pageSize])
+	if start+pageSize < t.mlockSz {
+		return node(BytesToUint64Slice(t.data[start : start+pageSize]))
+	}
+	return getNode(t.mf.Data[start-t.mlockSz : start+pageSize-t.mlockSz])
 }
 
 // Set sets the key-value pair in the tree.
@@ -207,7 +226,7 @@ func (t *Tree) Set(k, v uint64) {
 	if root.isFull() {
 		// All the keys from the root node are moved to its new children and the new root gets
 		// 2 keys.
-		t.numIntKeys += 2
+		t.stats.numIntKeys += 2
 
 		right := t.split(1)
 		left := t.newNode(root.bits())
@@ -232,7 +251,7 @@ func (t *Tree) set(pid, k, v uint64) node {
 	n := t.node(pid)
 	if n.isLeaf() {
 		if !n.set(k, v) {
-			t.numLeafKeys++
+			t.stats.numLeafKeys++
 		}
 		return n
 	}
@@ -244,7 +263,7 @@ func (t *Tree) set(pid, k, v uint64) node {
 	}
 	// If no key at idx.
 	if n.key(idx) == 0 {
-		t.numIntKeys++
+		t.stats.numIntKeys++
 		n.setAt(keyOffset(idx), k)
 		n.setNumKeys(n.numKeys() + 1)
 	}
@@ -265,7 +284,7 @@ func (t *Tree) set(pid, k, v uint64) node {
 
 		// When a node is split, the keys from right half of child gets moved to nn, and the max key
 		// from left half is inserted into parent (i.e. n).
-		t.numIntKeys++
+		t.stats.numIntKeys++
 
 		nn := t.split(child.pageID())
 		// Re-read n and child as the underlying buffer for tree might have changed during split.
@@ -313,9 +332,9 @@ func (t *Tree) DeleteBelow(ts uint64) {
 
 func (t *Tree) compact(n node, ts uint64) int {
 	if n.isLeaf() {
-		t.numLeafKeys -= n.numKeys()
+		t.stats.numLeafKeys -= n.numKeys()
 		rem := n.compact(ts)
-		t.numLeafKeys += rem
+		t.stats.numLeafKeys += rem
 		return rem
 	}
 	// Not leaf.
@@ -331,8 +350,8 @@ func (t *Tree) compact(n node, ts uint64) int {
 			t.freePage = childID
 			n.setAt(valOffset(i), 0)
 			// A free page is created and the internal node is
-			t.numFree++
-			t.numIntKeys--
+			t.stats.numFree++
+			t.stats.numIntKeys--
 		}
 	}
 	// We use ts=1 here because we want to delete all the keys whose value is 0, which means they no

@@ -94,13 +94,3 @@ func msync(b []byte) error {
 	// TODO: Figure out how to do msync on Windows.
 	return nil
 }
-
-func mlock(b []byte) error {
-	// Do Nothing. We don’t care about this setting on Windows
-	return nil
-}
-
-func munlock(b []byte) error {
-	// Do Nothing. We don’t care about this setting on Windows
-	return nil
-}

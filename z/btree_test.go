@@ -92,7 +92,7 @@ func TestTreeReset(t *testing.T) {
 	}
 
 	// Truncate it to small size that is less than pageSize.
-	bt.Reset(1 << 10)
+	bt.Reset()
 
 	stats := bt.Stats()
 	// Verify the tree stats.
