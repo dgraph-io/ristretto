@@ -79,6 +79,9 @@ func NewAllocator(sz int) *Allocator {
 }
 
 func (a *Allocator) init(sz int) {
+	if len(a.buffers[0]) > 0 {
+		return
+	}
 	// We should not allow a zero sized page because addBufferWithMinSize
 	// will run into an infinite loop trying to double the pagesize.
 	if sz == 0 {
