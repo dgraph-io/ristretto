@@ -66,31 +66,26 @@ func init() {
 // NewAllocator creates an allocator starting with the given size.
 func NewAllocator(sz int) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
+	// We should not allow a zero sized page because addBufferWithMinSize
+	// will run into an infinite loop trying to double the pagesize.
+	if sz == 0 {
+		sz = smallBufferSize
+	}
 	a := &Allocator{
 		Ref:     ref,
 		buffers: make([][]byte, 32),
 	}
+	l2 := uint64(log2(sz))
+	a.buffers[0] = Calloc(1 << (l2 + 1))
 
-	a.init(sz)
 	allocsMu.Lock()
 	allocs[ref] = a
 	allocsMu.Unlock()
 	return a
 }
 
-func (a *Allocator) init(sz int) {
-	// We should not allow a zero sized page because addBufferWithMinSize
-	// will run into an infinite loop trying to double the pagesize.
-	if sz == 0 {
-		sz = smallBufferSize
-	}
-	l2 := uint64(log2(sz))
-	a.buffers[0] = Calloc(1 << (l2 + 1))
-}
-
-func (a *Allocator) Reset(sz int) {
+func (a *Allocator) Reset() {
 	atomic.StoreUint64(&a.compIdx, 0)
-	a.init(sz)
 }
 
 func PrintAllocators() {
@@ -326,7 +321,7 @@ func (p *AllocatorPool) Get(sz int) *Allocator {
 	atomic.AddInt64(&p.numGets, 1)
 	select {
 	case alloc := <-p.allocCh:
-		alloc.Reset(sz)
+		alloc.Reset()
 		return alloc
 	default:
 		return NewAllocator(sz)
