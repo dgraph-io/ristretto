@@ -179,10 +179,11 @@ func (a *Allocator) TrimTo(max int) {
 		if len(b) == 0 {
 			break
 		}
-		alloc += len(b)
 		if alloc < max {
+			alloc += len(b)
 			continue
 		}
+		alloc += len(b)
 		Free(b)
 		a.buffers[i] = nil
 	}
