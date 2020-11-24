@@ -19,6 +19,7 @@ package z
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"math/rand"
 	"strings"
 	"sync"
@@ -68,15 +69,18 @@ func NewAllocator(sz int) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
 	// We should not allow a zero sized page because addBufferWithMinSize
 	// will run into an infinite loop trying to double the pagesize.
-	if sz == 0 {
-		sz = smallBufferSize
+	if sz < 512 {
+		sz = 512
 	}
 	a := &Allocator{
 		Ref:     ref,
 		buffers: make([][]byte, 32),
 	}
 	l2 := uint64(log2(sz))
-	a.buffers[0] = Calloc(1 << (l2 + 1))
+	if bits.OnesCount64(uint64(sz)) > 1 {
+		l2 += 1
+	}
+	a.buffers[0] = Calloc(1 << l2)
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -91,11 +95,13 @@ func (a *Allocator) Reset() {
 func PrintAllocators() {
 	allocsMu.Lock()
 	tags := make(map[string]uint64)
+	num := make(map[string]int)
 	for _, ac := range allocs {
 		tags[ac.Tag] += ac.Allocated()
+		num[ac.Tag] += 1
 	}
 	for tag, sz := range tags {
-		fmt.Printf("Allocator Tag: %s Size: %s\n", tag, humanize.IBytes(sz))
+		fmt.Printf("Allocator Tag: %s Num: %d Size: %s\n", tag, num[tag], humanize.IBytes(sz))
 	}
 	allocsMu.Unlock()
 }
