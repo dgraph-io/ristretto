@@ -59,6 +59,7 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 
 var (
 	dummyCloserChan <-chan struct{}
+	tmpDir          string
 )
 
 // Closer holds the two things we need to close a goroutine and wait for it to
@@ -69,6 +70,11 @@ type Closer struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// SetTmpDir sets the temporary directory for the temporary buffers.
+func SetTmpDir(dir string) {
+	tmpDir = dir
 }
 
 // NewCloser constructs a new Closer, with an initial count on the WaitGroup.

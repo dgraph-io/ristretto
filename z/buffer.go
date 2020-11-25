@@ -132,7 +132,9 @@ func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir string) (*Buffer, e
 	if maxSz == 0 {
 		maxSz = math.MaxInt32
 	}
-
+	if len(dir) == 0 {
+		dir = tmpDir
+	}
 	b := &Buffer{
 		offset:  padding, // Use 8 bytes of padding so that the elements are aligned.
 		curSz:   sz,
