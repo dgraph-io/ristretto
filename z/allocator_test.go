@@ -18,6 +18,8 @@ package z
 
 import (
 	"math/rand"
+	"sort"
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -46,6 +48,16 @@ func TestAllocate(t *testing.T) {
 	t.Logf("%s", a)
 	require.Equal(t, int(prev), int(a.Allocated()))
 	t.Logf("Allocated: %d\n", prev)
+}
+
+func TestAllocateSize(t *testing.T) {
+	a := NewAllocator(1024)
+	require.Equal(t, 1024, len(a.buffers[0]))
+	a.Release()
+
+	b := NewAllocator(1025)
+	require.Equal(t, 2048, len(b.buffers[0]))
+	b.Release()
 }
 
 func TestAllocateReset(t *testing.T) {
@@ -111,6 +123,60 @@ func TestAllocateAligned(t *testing.T) {
 	out = a.AllocateAligned(3)
 	ptr = uintptr(unsafe.Pointer(&out[0]))
 	require.True(t, ptr%8 == 0)
+}
+
+func TestAllocateConcurrent(t *testing.T) {
+	a := NewAllocator(63)
+	defer a.Release()
+
+	N := 10240
+	M := 16
+	var wg sync.WaitGroup
+
+	m := make(map[uintptr]struct{})
+	mu := new(sync.Mutex)
+	for i := 0; i < M; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var bufs []uintptr
+			for j := 0; j < N; j++ {
+				buf := a.Allocate(16)
+				require.Equal(t, 16, len(buf))
+				bufs = append(bufs, uintptr(unsafe.Pointer(&buf[0])))
+			}
+
+			mu.Lock()
+			for _, b := range bufs {
+				if _, ok := m[b]; ok {
+					t.Fatalf("Did not expect to see the same ptr")
+				}
+				m[b] = struct{}{}
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	t.Logf("Size of allocator: %v. Allocator: %s\n", a.Size(), a)
+
+	require.Equal(t, N*M, len(m))
+	var sorted []uintptr
+	for ptr := range m {
+		sorted = append(sorted, ptr)
+	}
+
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
+
+	var last uintptr
+	for _, ptr := range sorted {
+		if ptr-last < 16 {
+			t.Fatalf("Should not have less than 16: %v %v\n", ptr, last)
+		}
+		// fmt.Printf("ptr [%d]: %x %d\n", i, ptr, ptr-last)
+		last = ptr
+	}
 }
 
 func BenchmarkAllocate(b *testing.B) {

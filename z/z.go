@@ -59,6 +59,7 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 
 var (
 	dummyCloserChan <-chan struct{}
+	tmpDir          string
 )
 
 // Closer holds the two things we need to close a goroutine and wait for it to
@@ -69,6 +70,11 @@ type Closer struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// SetTmpDir sets the temporary directory for the temporary buffers.
+func SetTmpDir(dir string) {
+	tmpDir = dir
 }
 
 // NewCloser constructs a new Closer, with an initial count on the WaitGroup.
@@ -126,19 +132,19 @@ func (lc *Closer) SignalAndWait() {
 	lc.Wait()
 }
 
-var zeroBuf = make([]byte, 1024)
-
 // ZeroOut zeroes out all the bytes in the range [start, end).
 func ZeroOut(dst []byte, start, end int) {
+	if start < 0 || start >= len(dst) {
+		return // BAD
+	}
+	if end >= len(dst) {
+		end = len(dst)
+	}
 	if end-start <= 0 {
 		return
 	}
-	buf := dst[start:end]
-	n := copy(buf, zeroBuf)
-	if n < len(zeroBuf) {
-		return
-	}
-	for i := n; i < len(buf); i *= 2 {
-		copy(buf[i:], buf[:i])
+	b := dst[start:end]
+	for i := range b {
+		b[i] = 0x0
 	}
 }

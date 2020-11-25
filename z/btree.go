@@ -64,7 +64,7 @@ func (t *Tree) Release() {
 
 func createFile(maxSz int, fname string) (*MmapFile, error) {
 	if fname == "" {
-		fd, err := ioutil.TempFile("", "btree")
+		fd, err := ioutil.TempFile(tmpDir, "btree")
 		check(err)
 		return OpenMmapFileUsing(fd, maxSz, true)
 	}
