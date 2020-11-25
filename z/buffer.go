@@ -89,6 +89,14 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 	return buf, err
 }
 
+func BufferFrom(data []byte) *Buffer {
+	return &Buffer{
+		offset:  0,
+		buf:     data,
+		bufType: UseInvalid,
+	}
+}
+
 func (b *Buffer) doMmap() error {
 	curBuf := b.buf
 	fd, err := ioutil.TempFile(b.dir, "buffer")
@@ -218,6 +226,8 @@ func (b *Buffer) Grow(n int) {
 			log.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
 				b.fd.Name(), b.curSz, err)
 		}
+	default:
+		panic("Invalid bufType")
 	}
 }
 
