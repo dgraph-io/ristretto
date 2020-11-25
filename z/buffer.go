@@ -29,8 +29,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const padding = 8
-
 // Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
 //
 // In UseCalloc mode, z.Calloc is used to allocate memory, which depending upon how the code is
@@ -41,6 +39,7 @@ const padding = 8
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
+	padding       uint64
 	offset        uint64
 	buf           []byte
 	curSz         int
@@ -91,7 +90,8 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 
 func BufferFrom(data []byte) *Buffer {
 	return &Buffer{
-		offset:  0,
+		offset:  uint64(len(data)),
+		padding: 0,
 		buf:     data,
 		bufType: UseInvalid,
 	}
@@ -136,7 +136,8 @@ func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir string) (*Buffer, e
 		dir = tmpDir
 	}
 	b := &Buffer{
-		offset:  padding, // Use 8 bytes of padding so that the elements are aligned.
+		padding: 8,
+		offset:  8, // Use 8 bytes of padding so that the elements are aligned.
 		curSz:   sz,
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
@@ -171,13 +172,13 @@ func (b *Buffer) LenWithPadding() int {
 // LenNoPadding would return the number of bytes written to the buffer so far
 // (without the padding).
 func (b *Buffer) LenNoPadding() int {
-	return int(atomic.LoadUint64(&b.offset) - padding)
+	return int(atomic.LoadUint64(&b.offset) - b.padding)
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
 	off := atomic.LoadUint64(&b.offset)
-	return b.buf[padding:off]
+	return b.buf[b.padding:off]
 }
 
 func (b *Buffer) AutoMmapAfter(size int) {
@@ -266,7 +267,7 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
-func (b *Buffer) StartOffset() int { return padding }
+func (b *Buffer) StartOffset() int { return int(b.padding) }
 
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
@@ -274,9 +275,15 @@ func (b *Buffer) WriteSlice(slice []byte) {
 }
 
 func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
+	if b.IsEmpty() {
+		return nil
+	}
 	slice, next := []byte{}, b.StartOffset()
-	for next != 0 {
+	for next >= 0 {
 		slice, next = b.Slice(next)
+		if len(slice) == 0 {
+			continue
+		}
 		if err := f(slice); err != nil {
 			return err
 		}
@@ -297,7 +304,7 @@ func (s *sortHelper) sortSmall(start, end int) {
 	s.tmp.Reset()
 	s.small = s.small[:0]
 	next := start
-	for next != 0 && next < end {
+	for next >= 0 && next < end {
 		s.small = append(s.small, next)
 		_, next = s.b.Slice(next)
 	}
@@ -405,7 +412,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 
 	var offsets []int
 	next, count := start, 0
-	for next != 0 && next < end {
+	for next >= 0 && next < end {
 		if count%1024 == 0 {
 			offsets = append(offsets, next)
 		}
@@ -443,7 +450,7 @@ func rawSlice(buf []byte) []byte {
 // Slice would return the slice written at offset.
 func (b *Buffer) Slice(offset int) ([]byte, int) {
 	if offset >= int(b.offset) {
-		return nil, 0
+		return nil, -1
 	}
 
 	sz := binary.BigEndian.Uint32(b.buf[offset:])
@@ -451,7 +458,7 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 	next := start + int(sz)
 	res := b.buf[start:next]
 	if next >= int(b.offset) {
-		next = 0
+		next = -1
 	}
 	return res, next
 }
@@ -460,7 +467,7 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 func (b *Buffer) SliceOffsets() []int {
 	next := b.StartOffset()
 	var offsets []int
-	for next != 0 {
+	for next >= 0 {
 		offsets = append(offsets, next)
 		_, next = b.Slice(next)
 	}
