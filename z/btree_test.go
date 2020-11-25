@@ -96,14 +96,12 @@ func TestTreeReset(t *testing.T) {
 
 	stats := bt.Stats()
 	// Verify the tree stats.
-	require.Equal(t, 3, stats.NextPage)
-	require.Equal(t, 2, stats.NumNodes)
-	require.Equal(t, 1, stats.NumLeafKeys)
+	require.Equal(t, 2, stats.NumPages)
 	require.Equal(t, 1, stats.NumLeafKeys)
 	require.Equal(t, 2*pageSize, stats.Bytes)
-	expectedOcc := float64(2) * 100 / float64(stats.NumNodes*maxKeys)
+	expectedOcc := float64(1) * 100 / float64(2*maxKeys)
 	require.InDelta(t, expectedOcc, stats.Occupancy, 0.01)
-	require.Zero(t, stats.FreePages)
+	require.Zero(t, stats.NumPagesFree)
 	// Check if we can reinsert the data.
 	mp := make(map[uint64]uint64)
 	for i := 0; i < N; i++ {
@@ -135,7 +133,7 @@ func TestTreeCycle(t *testing.T) {
 	stats := bt.Stats()
 	t.Logf("stats: %+v\n", stats)
 	require.LessOrEqual(t, stats.Occupancy, 1.0)
-	require.GreaterOrEqual(t, stats.FreePages, int(float64(stats.NextPage)*0.95))
+	require.GreaterOrEqual(t, stats.NumPagesFree, int(float64(stats.NumPages)*0.95))
 }
 
 func TestOccupancyRatio(t *testing.T) {
@@ -147,8 +145,9 @@ func TestOccupancyRatio(t *testing.T) {
 	bt := NewTree("", 1<<20)
 	defer bt.Release()
 
-	expectedRatio := float64(1) * 100 / float64(maxKeys)
+	expectedRatio := float64(1) * 100 / float64(2*maxKeys) // 2 because we'll have 2 pages.
 	stats := bt.Stats()
+	t.Logf("Expected ratio: %.2f. MaxKeys: %d. Stats: %+v\n", expectedRatio, maxKeys, stats)
 	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	for i := uint64(1); i <= 3; i++ {
 		bt.Set(i, i)
@@ -156,15 +155,17 @@ func TestOccupancyRatio(t *testing.T) {
 	// Tree structure will be:
 	//    [2,Max,_,_]
 	//  [1,2,_,_]  [3,Max,_,_]
-	expectedRatio = float64(6) * 100 / float64(3*maxKeys)
+	expectedRatio = float64(4) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
+	t.Logf("Expected ratio: %.2f. MaxKeys: %d. Stats: %+v\n", expectedRatio, maxKeys, stats)
 	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 	bt.DeleteBelow(2)
 	// Tree structure will be:
 	//    [2,Max,_]
 	//  [2,_,_,_]  [3,Max,_,_]
-	expectedRatio = float64(5) * 100 / float64(3*maxKeys)
+	expectedRatio = float64(3) * 100 / float64(3*maxKeys)
 	stats = bt.Stats()
+	t.Logf("Expected ratio: %.2f. MaxKeys: %d. Stats: %+v\n", expectedRatio, maxKeys, stats)
 	require.InDelta(t, expectedRatio, stats.Occupancy, 0.01)
 }
 
@@ -288,7 +289,7 @@ func BenchmarkRead(b *testing.B) {
 		bt.Set(k, k)
 	}
 	stats := bt.Stats()
-	fmt.Printf("Num pages: %d Size: %s\n", stats.NumNodes,
+	fmt.Printf("Num pages: %d Size: %s\n", stats.NumPages,
 		humanize.IBytes(uint64(stats.Bytes)))
 	fmt.Println("Writes done.")
 
