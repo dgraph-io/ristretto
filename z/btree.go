@@ -63,7 +63,7 @@ func (t *Tree) initRootNode() {
 	// This is the root node.
 	t.newNode(0)
 	// This acts as the rightmost pointer (all the keys are <= this key).
-	t.Set(absoluteMax, 0)
+	t.setRightmost(absoluteMax, 0)
 }
 
 // NewTree returns a memory mapped B+ tree with given filename.
@@ -200,7 +200,7 @@ func (t *Tree) Set(k, v uint64) {
 	if k == math.MaxUint64 || k == 0 {
 		panic("Error setting zero or MaxUint64")
 	}
-	root := t.set(1, k, v)
+	root := t.set(1, k, v, false)
 	if root.isFull() {
 		right := t.split(1)
 		left := t.newNode(root.bits())
@@ -221,10 +221,13 @@ func (t *Tree) Set(k, v uint64) {
 
 // For internal nodes, they contain <key, ptr>.
 // where all entries <= key are stored in the corresponding ptr.
-func (t *Tree) set(pid, k, v uint64) node {
+func (t *Tree) set(pid, k, v uint64, isRightmost bool) node {
 	n := t.node(pid)
 	if n.isLeaf() {
-		return n.set(k, v)
+		if !isRightmost {
+			return n.setAsLeaf(k, v)
+		}
+		return n.setRightmostLeaf(k, v)
 	}
 
 	// This is an internal node.
@@ -243,7 +246,7 @@ func (t *Tree) set(pid, k, v uint64) node {
 		n = t.node(pid)
 		n.setAt(valOffset(idx), child.pageID())
 	}
-	child = t.set(child.pageID(), k, v)
+	child = t.set(child.pageID(), k, v, isRightmost)
 	// Re-read n as the underlying buffer for tree might have changed during set.
 	n = t.node(pid)
 	if child.isFull() {
@@ -263,6 +266,30 @@ func (t *Tree) set(pid, k, v uint64) node {
 		n.set(nn.maxKey(), nn.pageID())
 	}
 	return n
+}
+
+// setRightmost sets the key-value pair in the tree.
+func (t *Tree) setRightmost(k, v uint64) {
+	if k == math.MaxUint64 || k == 0 {
+		panic("Error setting zero or MaxUint64")
+	}
+	root := t.set(1, k, v, true)
+	if root.isFull() {
+		right := t.split(1)
+		left := t.newNode(root.bits())
+		// Re-read the root as the underlying buffer for tree might have changed during split.
+		root = t.node(1)
+		copy(left[:keyOffset(maxKeys)], root)
+		left.setNumKeys(root.numKeys())
+
+		// reset the root node.
+		zeroOut(root[:keyOffset(maxKeys)])
+		root.setNumKeys(0)
+
+		// set the pointers for left and right child in the root node.
+		root.set(left.maxKey(), left.pageID())
+		root.set(right.maxKey(), right.pageID())
+	}
 }
 
 // Get looks for key and returns the corresponding value.
@@ -377,7 +404,7 @@ func (t *Tree) split(pid uint64) node {
 	nn := t.newNode(n.bits())
 	// Re-read n as the underlying buffer for tree might have changed during newNode.
 	n = t.node(pid)
-	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys)]
+	rightHalf := n[keyOffset(maxKeys/2):keyOffset(maxKeys-1)]
 	copy(nn, rightHalf)
 	nn.setNumKeys(maxKeys - maxKeys/2)
 
@@ -494,28 +521,6 @@ func (n node) search(k uint64) int {
 		return N
 	}
 	return int(simd.Search(n[:2*N], k))
-	// lo, hi := 0, N
-	// // Reduce the search space using binary seach and then do linear search.
-	// for hi-lo > 32 {
-	// 	mid := (hi + lo) / 2
-	// 	km := n.key(mid)
-	// 	if k == km {
-	// 		return mid
-	// 	}
-	// 	if k > km {
-	// 		// key is greater than the key at mid, so move right.
-	// 		lo = mid + 1
-	// 	} else {
-	// 		// else move left.
-	// 		hi = mid
-	// 	}
-	// }
-	// for i := lo; i <= hi; i++ {
-	// 	if ki := n.key(i); ki >= k {
-	// 		return i
-	// 	}
-	// }
-	// return N
 }
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()
@@ -591,6 +596,21 @@ func (n node) set(k, v uint64) node {
 		return n
 	}
 	panic("shouldn't reach here")
+}
+
+func (n node) setAsLeaf(k, v uint64) node {
+	idx := n.numKeys()
+	n.setAt(keyOffset(idx), k)
+	n.setAt(valOffset(idx), v)
+	n.setNumKeys(n.numKeys() + 1)
+	return n
+}
+func (n node) setRightmostLeaf(k, v uint64) node {
+	idx := maxKeys - 1
+	n.setAt(keyOffset(idx), k)
+	n.setAt(valOffset(idx), v)
+	n.setNumKeys(n.numKeys() + 1)
+	return n
 }
 
 func (n node) iterate(fn func(node, int)) {
