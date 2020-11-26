@@ -24,6 +24,7 @@ import (
 	"os"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z/simd"
 	"github.com/dustin/go-humanize"
@@ -38,7 +39,7 @@ func setPageSize(sz int) {
 }
 
 func TestTree(t *testing.T) {
-	bt := NewTree("", 1<<20)
+	bt := NewTree()
 
 	N := uint64(256 * 256)
 	for i := uint64(1); i < N; i++ {
@@ -59,8 +60,7 @@ func TestTree(t *testing.T) {
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		bt := NewTree("", 1<<20)
-		defer bt.Release()
+		bt := NewTree()
 
 		N := uint64(1 << 20)
 		mp := make(map[uint64]uint64)
@@ -83,8 +83,7 @@ func TestTreeBasic(t *testing.T) {
 }
 
 func TestTreeReset(t *testing.T) {
-	bt := NewTree("", 1<<20)
-	defer bt.Release()
+	bt := NewTree()
 	N := 1 << 10
 	val := rand.Uint64()
 	for i := 0; i < N; i++ {
@@ -92,7 +91,7 @@ func TestTreeReset(t *testing.T) {
 	}
 
 	// Truncate it to small size that is less than pageSize.
-	bt.Reset(1 << 10)
+	bt.Reset()
 
 	stats := bt.Stats()
 	// Verify the tree stats.
@@ -115,8 +114,7 @@ func TestTreeReset(t *testing.T) {
 }
 
 func TestTreeCycle(t *testing.T) {
-	bt := NewTree("", 1<<20)
-	defer bt.Release()
+	bt := NewTree()
 	val := uint64(0)
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 1e6+i*1e4; j++ {
@@ -142,8 +140,7 @@ func TestOccupancyRatio(t *testing.T) {
 	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
 
-	bt := NewTree("", 1<<20)
-	defer bt.Release()
+	bt := NewTree()
 
 	expectedRatio := float64(1) * 100 / float64(2*maxKeys) // 2 because we'll have 2 pages.
 	stats := bt.Stats()
@@ -239,6 +236,51 @@ func TestNodeCompact(t *testing.T) {
 	require.Equal(t, uint64(127), n.maxKey())
 }
 
+func BenchmarkPurge(b *testing.B) {
+	N := 16 << 20
+	b.Run("go-mem", func(b *testing.B) {
+		m := make(map[uint64]uint64)
+		for i := 0; i < N; i++ {
+			m[rand.Uint64()] = uint64(i)
+		}
+	})
+
+	b.Run("btree", func(b *testing.B) {
+		start := time.Now()
+		bt := NewTree()
+		for i := 0; i < N; i++ {
+			bt.Set(rand.Uint64(), uint64(i))
+		}
+		b.Logf("Populate took: %s. stats: %+v\n", time.Since(start), bt.Stats())
+
+		start = time.Now()
+		before := bt.Stats()
+		bt.DeleteBelow(uint64(N - 1<<20))
+		after := bt.Stats()
+		b.Logf("Purge took: %s. Before: %+v After: %+v\n", time.Since(start), before, after)
+	})
+}
+
+// func TestPurge(t *testing.T) {
+// 	bt := NewTree("", 10<<30)
+// 	defer bt.Release()
+
+// 	t.Logf("Populating Go Map")
+// 	start := time.Now()
+// 	t.Logf("Populating took: %s\n", time.Since(start).Round(time.Millisecond))
+
+// 	t.Logf("Populating Btree")
+// 	start = time.Now()
+// 	t.Logf("Populating took: %s\n", time.Since(start).Round(time.Millisecond))
+
+// 	t.Logf("Starting purge.")
+// 	t.Logf("Stats: %+v\n", bt.Stats())
+// 	start = time.Now()
+// 	bt.DeleteBelow(uint64(N))
+// 	t.Logf("Purge took: %s\n", time.Since(start).Round(time.Millisecond))
+// 	t.Logf("Stats: %+v\n", bt.Stats())
+// }
+
 func BenchmarkWrite(b *testing.B) {
 	b.Run("map", func(b *testing.B) {
 		mp := make(map[uint64]uint64)
@@ -248,8 +290,7 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		bt := NewTree("", 1<<30)
-		defer bt.Release()
+		bt := NewTree()
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			k := rand.Uint64()
@@ -282,8 +323,7 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	bt := NewTree("", 1<<30)
-	defer bt.Release()
+	bt := NewTree()
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1
 		bt.Set(k, k)

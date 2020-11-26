@@ -18,7 +18,6 @@ package z
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"reflect"
@@ -33,31 +32,16 @@ var (
 	maxKeys     = (pageSize / 16) - 1
 	oneThird    = int(float64(maxKeys) / 3)
 	absoluteMax = uint64(math.MaxUint64 - 1)
+	minSize     = 64 << 20
 )
 
 // Tree represents the structure for custom mmaped B+ tree.
 // It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
-	mf       *MmapFile
+	data     []byte
 	nextPage uint64
 	freePage uint64
 	stats    TreeStats
-}
-
-// Release the memory allocated to tree.
-func (t *Tree) Release() {
-	if t != nil && t.mf != nil {
-		check(t.mf.Delete())
-	}
-}
-
-func createFile(maxSz int, fname string) (*MmapFile, error) {
-	if fname == "" {
-		fd, err := ioutil.TempFile(tmpDir, "btree")
-		check(err)
-		return OpenMmapFileUsing(fd, maxSz, true)
-	}
-	return OpenMmapFile(fname, os.O_RDWR|os.O_CREATE, maxSz)
 }
 
 func (t *Tree) initRootNode() {
@@ -68,40 +52,29 @@ func (t *Tree) initRootNode() {
 }
 
 // NewTree returns a memory mapped B+ tree with given filename.
-func NewTree(fname string, maxSz int) *Tree {
-	mf, err := createFile(maxSz, fname)
-	if err != NewFile {
-		check(err)
-	}
-	// Tell kernel that we'd be reading pages in random order, so don't do read ahead.
-	check(Madvise(mf.Data, false))
-
-	t := &Tree{
-		mf:       mf,
-		nextPage: 1,
-	}
-	t.initRootNode()
+func NewTree() *Tree {
+	t := &Tree{}
+	t.Reset()
 	return t
 }
 
 // Reset resets the tree and truncates it to maxSz.
-func (t *Tree) Reset(maxSz int) {
+func (t *Tree) Reset() {
 	t.nextPage = 1
 	t.freePage = 0
-	if maxSz < pageSize {
-		maxSz = pageSize
-	}
-	check(t.mf.Truncate(int64(maxSz)))
+	t.data = make([]byte, minSize)
 	t.stats = TreeStats{}
 	t.initRootNode()
 }
 
 type TreeStats struct {
+	Allocated    int     // Derived.
 	Bytes        int     // Derived.
 	NumLeafKeys  int     // Calculated.
 	NumPages     int     // Derived.
 	NumPagesFree int     // Calculated.
 	Occupancy    float64 // Derived.
+	PageSize     int     // Derived.
 }
 
 // Stats returns stats about the tree.
@@ -109,9 +82,11 @@ func (t *Tree) Stats() TreeStats {
 	numPages := int(t.nextPage - 1)
 	out := TreeStats{
 		Bytes:        numPages * pageSize,
+		Allocated:    cap(t.data),
 		NumLeafKeys:  t.stats.NumLeafKeys,
 		NumPages:     numPages,
 		NumPagesFree: t.stats.NumPagesFree,
+		PageSize:     pageSize,
 	}
 	out.Occupancy = 100.0 * float64(out.NumLeafKeys) / float64(maxKeys*numPages)
 	return out
@@ -139,10 +114,11 @@ func (t *Tree) newNode(bit uint64) node {
 		pageId = t.nextPage
 		t.nextPage++
 		offset := int(pageId) * pageSize
-		sz := len(t.mf.Data)
-		// Double the size of file if current buffer is insufficient.
-		if offset+pageSize > sz {
-			check(t.mf.Truncate(int64(2 * sz)))
+		// Double the size if current buffer is insufficient.
+		if offset+pageSize > len(t.data) {
+			out := make([]byte, 2*len(t.data))
+			copy(out, t.data)
+			t.data = out
 		}
 	}
 	n := t.node(pageId)
@@ -171,7 +147,7 @@ func (t *Tree) node(pid uint64) node {
 		return nil
 	}
 	start := pageSize * int(pid)
-	return getNode(t.mf.Data[start : start+pageSize])
+	return getNode(t.data[start : start+pageSize])
 }
 
 // Set sets the key-value pair in the tree.
