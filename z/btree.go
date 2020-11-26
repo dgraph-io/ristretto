@@ -32,7 +32,7 @@ var (
 	maxKeys     = (pageSize / 16) - 1
 	oneThird    = int(float64(maxKeys) / 3)
 	absoluteMax = uint64(math.MaxUint64 - 1)
-	minSize     = 64 << 20
+	minSize     = 1 << 20
 )
 
 // Tree represents the structure for custom mmaped B+ tree.
