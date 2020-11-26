@@ -261,26 +261,6 @@ func BenchmarkPurge(b *testing.B) {
 	})
 }
 
-// func TestPurge(t *testing.T) {
-// 	bt := NewTree("", 10<<30)
-// 	defer bt.Release()
-
-// 	t.Logf("Populating Go Map")
-// 	start := time.Now()
-// 	t.Logf("Populating took: %s\n", time.Since(start).Round(time.Millisecond))
-
-// 	t.Logf("Populating Btree")
-// 	start = time.Now()
-// 	t.Logf("Populating took: %s\n", time.Since(start).Round(time.Millisecond))
-
-// 	t.Logf("Starting purge.")
-// 	t.Logf("Stats: %+v\n", bt.Stats())
-// 	start = time.Now()
-// 	bt.DeleteBelow(uint64(N))
-// 	t.Logf("Purge took: %s\n", time.Since(start).Round(time.Millisecond))
-// 	t.Logf("Stats: %+v\n", bt.Stats())
-// }
-
 func BenchmarkWrite(b *testing.B) {
 	b.Run("map", func(b *testing.B) {
 		mp := make(map[uint64]uint64)
