@@ -74,7 +74,7 @@ func NewAllocator(sz int) *Allocator {
 	}
 	a := &Allocator{
 		Ref:     ref,
-		buffers: make([][]byte, 32),
+		buffers: make([][]byte, 64),
 	}
 	l2 := uint64(log2(sz))
 	if bits.OnesCount64(uint64(sz)) > 1 {
