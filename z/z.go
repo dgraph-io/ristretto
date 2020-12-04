@@ -143,8 +143,9 @@ func ZeroOut(dst []byte, start, end int) {
 	if end-start <= 0 {
 		return
 	}
-	b := dst[start:end]
-	for i := range b {
-		b[i] = 0x0
-	}
+	Memclr(dst[start:end])
+	// b := dst[start:end]
+	// for i := range b {
+	// 	b[i] = 0x0
+	// }
 }
