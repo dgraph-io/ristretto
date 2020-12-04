@@ -95,6 +95,7 @@ func TestBufferWrite(t *testing.T) {
 
 func TestBufferAutoMmap(t *testing.T) {
 	buf := NewBuffer(1 << 20)
+	defer buf.Release()
 	buf.AutoMmapAfter(64 << 20)
 
 	N := 128 << 10
@@ -252,6 +253,7 @@ func TestBufferSort(t *testing.T) {
 // Test that the APIs returns the expected offsets.
 func TestBufferPadding(t *testing.T) {
 	buf := NewBuffer(1 << 10)
+	defer buf.Release()
 	sz := rand.Int31n(100)
 
 	writeOffset := buf.AllocateOffset(int(sz))
