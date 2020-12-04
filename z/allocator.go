@@ -90,6 +90,12 @@ func NewAllocator(sz int) *Allocator {
 
 func (a *Allocator) Reset() {
 	atomic.StoreUint64(&a.compIdx, 0)
+	for _, b := range a.buffers {
+		if len(b) == 0 {
+			return
+		}
+		Memclr(b)
+	}
 }
 
 func PrintAllocators() {

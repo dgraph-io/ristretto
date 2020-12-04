@@ -85,6 +85,7 @@ func TestCalloc(t *testing.T) {
 		t.Skipf("Not using jemalloc. Skipping test.")
 	}
 	Free(buf)
+	require.Equal(t, int64(0), NumAllocBytes())
 
 	buf1 := Calloc(128)
 	require.Equal(t, int64(128), NumAllocBytes())
