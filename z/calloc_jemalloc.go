@@ -13,12 +13,16 @@ package z
 */
 import "C"
 import (
+	"bytes"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/dustin/go-humanize"
 )
 
 // The go:linkname directives provides backdoor access to private functions in
@@ -48,6 +52,11 @@ type dalloc struct {
 // Enabled via 'leak' build flag.
 var dallocsMu sync.Mutex
 var dallocs map[unsafe.Pointer]*dalloc
+
+func init() {
+	// By initializing dallocs, we can start tracking allocations and deallocations via z.Calloc.
+	dallocs = make(map[unsafe.Pointer]*dalloc)
+}
 
 func Calloc(n int) []byte {
 	if n == 0 {
@@ -123,20 +132,25 @@ func Free(b []byte) {
 	}
 }
 
-func PrintLeaks() {
+func Leaks() string {
 	if dallocs == nil {
-		fmt.Println("Leak detection disabled. Enable with 'leak' build flag.")
-		return
+		return "Leak detection disabled. Enable with 'leak' build flag."
 	}
 	dallocsMu.Lock()
 	defer dallocsMu.Unlock()
 	if len(dallocs) == 0 {
-		fmt.Println("NO leaks found.")
-		return
+		return "NO leaks found."
 	}
+	m := make(map[string]int)
 	for _, da := range dallocs {
-		fmt.Printf("LEAK: %d at file: %s %d\n", da.sz, da.f, da.no)
+		m[da.f+":"+strconv.Itoa(da.no)] += da.sz
 	}
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "Allocations:\n")
+	for f, sz := range m {
+		fmt.Fprintf(&buf, "%s at file: %s\n", humanize.IBytes(uint64(sz)), f)
+	}
+	return buf.String()
 }
 
 // ReadMemStats populates stats with JE Malloc statistics.

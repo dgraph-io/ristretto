@@ -17,6 +17,7 @@
 package z
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"math/bits"
@@ -92,7 +93,7 @@ func (a *Allocator) Reset() {
 	atomic.StoreUint64(&a.compIdx, 0)
 }
 
-func PrintAllocators() {
+func Allocators() string {
 	allocsMu.Lock()
 	tags := make(map[string]uint64)
 	num := make(map[string]int)
@@ -100,10 +101,13 @@ func PrintAllocators() {
 		tags[ac.Tag] += ac.Allocated()
 		num[ac.Tag] += 1
 	}
+
+	var buf bytes.Buffer
 	for tag, sz := range tags {
-		fmt.Printf("Allocator Tag: %s Num: %d Size: %s\n", tag, num[tag], humanize.IBytes(sz))
+		fmt.Fprintf(&buf, "Tag: %s Num: %d Size: %s . ", tag, num[tag], humanize.IBytes(sz))
 	}
 	allocsMu.Unlock()
+	return buf.String()
 }
 
 func (a *Allocator) String() string {

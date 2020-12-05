@@ -27,7 +27,7 @@ func CallocNoRef(n int) []byte {
 // Free does not do anything in this mode.
 func Free(b []byte) {}
 
-func PrintLeaks() {}
+func Leaks() string { return "Leaks: Using Go memory" }
 func StatsPrint() {
 	fmt.Println("Using Go memory")
 }
