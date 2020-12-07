@@ -115,7 +115,7 @@ func memory() {
 
 	fmt.Printf("[%d] Current Memory: %s. Increase? %v, MemStats [Active: %s, Allocated: %s,"+
 		" Resident: %s, Retained: %s]\n",
-		counter, humanize.IBytes(uint64(z.NumAllocBytes())), increase,
+		counter, humanize.IBytes(uint64(curMem)), increase,
 		humanize.IBytes(js.Active), humanize.IBytes(js.Allocated),
 		humanize.IBytes(js.Resident), humanize.IBytes(js.Retained))
 }
