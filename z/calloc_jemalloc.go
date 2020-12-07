@@ -158,6 +158,10 @@ func ReadMemStats(stats *MemStats) {
 	if stats == nil {
 		return
 	}
+	// Call an epoch mallclt to refresh the stats data as mentioned in the docs.
+	// http://jemalloc.net/jemalloc.3.html#epoch
+	// Note: This epoch mallctl is as expensive as a malloc call. It takes up the
+	// malloc_mutex_lock.
 	epoch := 1
 	sz := unsafe.Sizeof(&epoch)
 	C.je_mallctl(
