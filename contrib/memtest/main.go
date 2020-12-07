@@ -33,6 +33,7 @@ import (
 	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/dustin/go-humanize"
 )
 
 type S struct {
@@ -109,8 +110,16 @@ func memory() {
 			counter++
 		}
 	}
-	fmt.Printf("[%d] Current Memory: %05.2f G. Increase? %v\n",
-		counter, float64(curMem)/float64(1<<30), increase)
+	var js z.MemStats
+	z.ReadMemStats(&js)
+
+	fmt.Printf("[%d] Current Memory: %s. Increase? %v, MemStats [Active: %s, Allocated: %s,"+
+		" Resident%s, Retained: %s]\n",
+		counter,
+		humanize.IBytes(uint64(z.NumAllocBytes())),
+		increase,
+		humanize.IBytes(js.Active), humanize.IBytes(js.Allocated),
+		humanize.IBytes(js.Resident), humanize.IBytes(js.Retained))
 }
 
 func viaLL() {

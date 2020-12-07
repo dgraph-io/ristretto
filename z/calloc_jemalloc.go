@@ -158,6 +158,14 @@ func ReadMemStats(stats *MemStats) {
 	if stats == nil {
 		return
 	}
+	epoch := 1
+	sz := unsafe.Sizeof(&epoch)
+	C.je_mallctl(
+		(C.CString)("epoch"),
+		unsafe.Pointer(&epoch),
+		(*C.size_t)(unsafe.Pointer(&sz)),
+		unsafe.Pointer(&epoch),
+		(C.size_t)(unsafe.Sizeof(epoch)))
 	stats.Allocated = fetchStat("stats.allocated")
 	stats.Active = fetchStat("stats.active")
 	stats.Resident = fetchStat("stats.resident")
