@@ -9,4 +9,6 @@ package z
 const (
 	// MaxArrayLen is a safe maximum length for slices on this architecture.
 	MaxArrayLen = 1<<50 - 1
+	// MaxBufferSize is the size of virtually unlimited buffer on this architecture.
+	MaxBufferSize = 256 << 30
 )
