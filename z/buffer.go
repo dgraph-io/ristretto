@@ -73,7 +73,7 @@ const smallBufferSize = 64
 
 // NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
 func NewBuffer(sz int) *Buffer {
-	buf, err := NewBufferWithDir(sz, 256<<30, UseCalloc, "")
+	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "")
 	if err != nil {
 		log.Fatalf("while creating buffer: %v", err)
 	}
