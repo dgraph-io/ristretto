@@ -17,6 +17,7 @@
 package z
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -85,6 +86,7 @@ func TestCalloc(t *testing.T) {
 		t.Skipf("Not using jemalloc. Skipping test.")
 	}
 	Free(buf)
+	require.Equal(t, int64(0), NumAllocBytes())
 
 	buf1 := Calloc(128)
 	require.Equal(t, int64(128), NumAllocBytes())
@@ -97,7 +99,7 @@ func TestCalloc(t *testing.T) {
 	// _ = buf2
 	Free(buf2)
 	require.Equal(t, int64(0), NumAllocBytes())
-	PrintLeaks()
+	fmt.Println(Leaks())
 
 	// Double free would panic when debug mode is enabled in jemalloc.
 	// Free(buf2)
