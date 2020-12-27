@@ -279,10 +279,10 @@ func (p *defaultPolicy) UpdateMaxCost(maxCost int64) {
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
-	keyCosts map[uint64]int64
 	maxCost  int64
 	used     int64
 	metrics  *Metrics
+	keyCosts map[uint64]int64
 }
 
 func newSampledLFU(maxCost int64) *sampledLFU {
