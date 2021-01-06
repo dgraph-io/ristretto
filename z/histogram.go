@@ -149,3 +149,25 @@ func (histogram *HistogramData) String() string {
 	b.WriteString(" --\n")
 	return b.String()
 }
+
+// Percentile returns the percentile value for the histogram.
+// value of p should be between [0.0-1.0]
+func (histogram *HistogramData) Percentile(p float64) float64 {
+	if histogram.Count == 0 {
+		// if no data return the minimum range
+		return histogram.Bounds[0]
+	}
+
+	pval := int64(float64(histogram.Count) * p)
+	for i, v := range histogram.CountPerBucket {
+		pval = pval - v
+		if pval <= 0 {
+			if i == len(histogram.Bounds) {
+				break
+			}
+			return histogram.Bounds[i]
+		}
+	}
+	// default return should be the max range
+	return histogram.Bounds[len(histogram.Bounds) - 1]
+}
