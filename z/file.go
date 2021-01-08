@@ -175,6 +175,9 @@ func (m *MmapFile) Delete() error {
 	if err := m.Fd.Truncate(0); err != nil {
 		return fmt.Errorf("while truncate file: %s, error: %v\n", m.Fd.Name(), err)
 	}
+	if err := m.Fd.Close(); err != nil {
+		return fmt.Errorf("while close file: %s, error: %v\n", m.Fd.Name(), err)
+	}
 	return os.Remove(m.Fd.Name())
 }
 
