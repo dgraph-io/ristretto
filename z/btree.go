@@ -114,9 +114,14 @@ func (t *Tree) newNode(bit uint64) node {
 		pageId = t.nextPage
 		t.nextPage++
 		offset := int(pageId) * pageSize
-		// Double the size if current buffer is insufficient.
+		// Double the size with an upper cap of 1GB, if current buffer is insufficient.
 		if offset+pageSize > len(t.data) {
-			out := make([]byte, 2*len(t.data))
+			const oneGB = 1 << 30
+			newSz := 2 * len(t.data)
+			if newSz > len(t.data)+oneGB {
+				newSz = len(t.data) + oneGB
+			}
+			out := make([]byte, newSz)
 			copy(out, t.data)
 			t.data = out
 		}
