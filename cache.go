@@ -78,6 +78,9 @@ type Cache struct {
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items.
 	Metrics *Metrics
+	// keySaver contains the saved keys as string representation only if
+	// EnableKeySaver is set in Config, nil otherwise
+	keySaver *ClearKey
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -132,6 +135,11 @@ type Config struct {
 	// cost passed to set is not using bytes as units. Keep in mind that setting
 	// this to true will increase the memory usage.
 	IgnoreInternalCost bool
+	// EnableKeySaver allow user to save current keys and retrieve them later
+	// for profiling, make stats or expose them through an API.
+	// The saved keys are plain text instead of the hashed key to allow API
+	// exposition.
+	EnableKeySaver bool
 }
 
 type itemFlag byte
@@ -198,6 +206,9 @@ func NewCache(config *Config) (*Cache, error) {
 	if config.Metrics {
 		cache.collectMetrics()
 	}
+	if config.EnableKeySaver {
+		cache.enableKeySaver()
+	}
 	// NOTE: benchmarks seem to show that performance decreases the more
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
@@ -233,6 +244,15 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return value, ok
 }
 
+// ListKeys return the saved keys in the keySaver property only if this one is
+// enabled. Otherwise it returns an empty array
+func (c *Cache) ListKeys() []string {
+	if c == nil || c.keySaver == nil {
+		return []string{}
+	}
+	return c.keySaver.ListKeys()
+}
+
 // Set attempts to add the key-value item to the cache. If it returns false,
 // then the Set was dropped and the key-value item isn't added to the cache. If
 // it returns true, there's still a chance it could be dropped by the policy if
@@ -253,6 +273,10 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
 	if c == nil || c.isClosed || key == nil {
 		return false
+	}
+
+	if c.keySaver != nil {
+		c.keySaver.AddKey(fmt.Sprintf("%v", key))
 	}
 
 	var expiration int64
@@ -303,6 +327,11 @@ func (c *Cache) Del(key interface{}) {
 	if c == nil || c.isClosed || key == nil {
 		return
 	}
+
+	if c.keySaver != nil {
+		c.keySaver.DelKey(fmt.Sprintf("%v", key))
+	}
+
 	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
 	_, prev := c.store.Del(keyHash, conflictHash)
@@ -541,6 +570,10 @@ func newMetrics() *Metrics {
 		}
 	}
 	return s
+}
+
+func (c *Cache) enableKeySaver() {
+	c.keySaver = NewClearKey()
 }
 
 func (p *Metrics) add(t metricType, hash, delta uint64) {
