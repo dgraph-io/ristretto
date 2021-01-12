@@ -38,7 +38,7 @@ var (
 
 type itemCallback func(*Item)
 
-const itemSize = int64(unsafe.Sizeof(storeItem{}))
+const itemSize = int64(unsafe.Sizeof(storeItem{})) // skipcq: GSC-G103
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance

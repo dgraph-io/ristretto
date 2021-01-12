@@ -865,3 +865,34 @@ func newTestCache() (*Cache, error) {
 		Metrics:     true,
 	})
 }
+
+func TestCache_ListKeys(t *testing.T) {
+	newKey := "newKey"
+
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.True(t, c.keySaver == nil)
+	require.True(t, len(c.ListKeys()) == 0)
+	c.SetWithTTL(newKey, 1, 1, 10 * time.Second)
+	require.True(t, len(c.ListKeys()) == 0)
+
+	c, err = NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+		EnableKeySaver:     true,
+	})
+	require.NoError(t, err)
+	require.True(t, c.keySaver != nil)
+
+	c.keySaver.AddKey(newKey)
+	require.True(t, len(c.ListKeys()) == 1)
+	c.keySaver.DelKey("nonexistent")
+	require.True(t, len(c.ListKeys()) == 1)
+	c.keySaver.DelKey(newKey)
+	require.True(t, len(c.ListKeys()) == 0)
+	c.SetWithTTL(newKey, 1, 1, 10 * time.Second)
+	require.True(t, len(c.ListKeys()) == 1)
+}
