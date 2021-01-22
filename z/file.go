@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 )
@@ -60,7 +60,7 @@ func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 	}
 
 	if fileSize == 0 {
-		dir, _ := path.Split(filename)
+		dir, _ := filepath.Split(filename)
 		go SyncDir(dir)
 	}
 	return &MmapFile{
