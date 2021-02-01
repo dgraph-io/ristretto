@@ -153,11 +153,14 @@ func (histogram *HistogramData) String() string {
 // Percentile returns the percentile value for the histogram.
 // value of p should be between [0.0-1.0]
 func (histogram *HistogramData) Percentile(p float64) float64 {
+	if histogram == nil {
+		return 0
+	}
+
 	if histogram.Count == 0 {
 		// if no data return the minimum range
 		return histogram.Bounds[0]
 	}
-
 	pval := int64(float64(histogram.Count) * p)
 	for i, v := range histogram.CountPerBucket {
 		pval = pval - v
@@ -169,5 +172,18 @@ func (histogram *HistogramData) Percentile(p float64) float64 {
 		}
 	}
 	// default return should be the max range
-	return histogram.Bounds[len(histogram.Bounds) - 1]
+	return histogram.Bounds[len(histogram.Bounds)-1]
+}
+
+// Clear reset the histogram. Helpful in situations where we need to reset the metrics
+func (histogram *HistogramData) Clear() {
+	if histogram == nil {
+		return
+	}
+
+	histogram.Count = 0
+	histogram.CountPerBucket = make([]int64, len(histogram.Bounds)+1)
+	histogram.Sum = 0
+	histogram.Max = 0
+	histogram.Min = math.MaxInt64
 }
