@@ -81,7 +81,8 @@ func NewAllocator(sz int) *Allocator {
 	if bits.OnesCount64(uint64(sz)) > 1 {
 		l2 += 1
 	}
-	a.buffers[0] = Calloc(1 << l2)
+	// a.buffers[0] = Calloc(1 << l2)
+	a.buffers[0] = make([]byte, 1<<l2)
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -271,7 +272,8 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 		pageSize = maxAlloc
 	}
 
-	buf := Calloc(pageSize)
+	// buf := Calloc(pageSize)
+	buf := make([]byte, pageSize)
 	assert(len(a.buffers[bufIdx]) == 0)
 	a.buffers[bufIdx] = buf
 }
