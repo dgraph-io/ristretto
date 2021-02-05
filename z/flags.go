@@ -71,6 +71,11 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 	return sf
 }
 
+func (sf *SuperFlag) Has(opt string) bool {
+	val := sf.GetString(opt)
+	return val != ""
+}
+
 func (sf *SuperFlag) GetBool(opt string) bool {
 	val := sf.GetString(opt)
 	if val == "" {
