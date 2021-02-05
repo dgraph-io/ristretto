@@ -33,6 +33,7 @@ func NewSuperFlag(flag string) *SuperFlag {
 		m: parseFlag(flag),
 	}
 }
+
 func (sf *SuperFlag) String() string {
 	if sf == nil {
 		return ""
@@ -43,6 +44,7 @@ func (sf *SuperFlag) String() string {
 	}
 	return strings.Join(kvs, "; ")
 }
+
 func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 	if sf == nil {
 		sf = &SuperFlag{
@@ -68,6 +70,12 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 	}
 	return sf
 }
+
+func (sf *SuperFlag) Has(opt string) bool {
+	val := sf.GetString(opt)
+	return val != ""
+}
+
 func (sf *SuperFlag) GetBool(opt string) bool {
 	val := sf.GetString(opt)
 	if val == "" {
@@ -82,6 +90,37 @@ func (sf *SuperFlag) GetBool(opt string) bool {
 	}
 	return b
 }
+
+func (sf *SuperFlag) GetFloat64(opt string) float64 {
+	val := sf.GetString(opt)
+	if val == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		err = errors.Wrapf(err,
+			"Unable to parse %s as float64 for key: %s. Options: %s\n",
+			val, opt, sf)
+		log.Fatalf("%+v", err)
+	}
+	return f
+}
+
+func (sf *SuperFlag) GetInt64(opt string) int64 {
+	val := sf.GetString(opt)
+	if val == "" {
+		return 0
+	}
+	i, err := strconv.ParseInt(val, 0, 64)
+	if err != nil {
+		err = errors.Wrapf(err,
+			"Unable to parse %s as int64 for key: %s. Options: %s\n",
+			val, opt, sf)
+		log.Fatalf("%+v", err)
+	}
+	return i
+}
+
 func (sf *SuperFlag) GetUint64(opt string) uint64 {
 	val := sf.GetString(opt)
 	if val == "" {
@@ -96,6 +135,7 @@ func (sf *SuperFlag) GetUint64(opt string) uint64 {
 	}
 	return u
 }
+
 func (sf *SuperFlag) GetUint32(opt string) uint32 {
 	val := sf.GetString(opt)
 	if val == "" {
@@ -110,6 +150,7 @@ func (sf *SuperFlag) GetUint32(opt string) uint32 {
 	}
 	return uint32(u)
 }
+
 func (sf *SuperFlag) GetString(opt string) string {
 	if sf == nil {
 		return ""
