@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -74,6 +75,26 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 func (sf *SuperFlag) Has(opt string) bool {
 	val := sf.GetString(opt)
 	return val != ""
+}
+
+func (sf *SuperFlag) GetDuration(opt string) time.Duration {
+	val := sf.GetString(opt)
+	if val == "" {
+		return time.Duration(0)
+	}
+	if strings.Contains(val, "d") {
+		val = strings.Replace(val, "d", "", 1)
+		days, err := strconv.ParseUint(val, 0, 64)
+		if err != nil {
+			return time.Duration(0)
+		}
+		return time.Hour * 24 * time.Duration(days)
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return time.Duration(0)
+	}
+	return d
 }
 
 func (sf *SuperFlag) GetBool(opt string) bool {
