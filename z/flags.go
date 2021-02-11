@@ -82,8 +82,9 @@ func (sf *SuperFlag) GetDuration(opt string) time.Duration {
 	if val == "" {
 		return time.Duration(0)
 	}
-	if strings.Contains(val, "d") {
+	if strings.ContainsAny(val, "dD") {
 		val = strings.Replace(val, "d", "", 1)
+		val = strings.Replace(val, "D", "", 1)
 		days, err := strconv.ParseUint(val, 0, 64)
 		if err != nil {
 			return time.Duration(0)
