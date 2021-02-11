@@ -82,14 +82,7 @@ func (sf *SuperFlag) GetDuration(opt string) time.Duration {
 	if val == "" {
 		return time.Duration(0)
 	}
-	if strings.Contains(val, "h") {
-		val = strings.Replace(val, "h", "", 1)
-		hours, err := strconv.ParseUint(val, 0, 64)
-		if err != nil {
-			return time.Duration(0)
-		}
-		return time.Hour * time.Duration(hours)
-	} else if strings.Contains(val, "d") {
+	if strings.Contains(val, "d") {
 		val = strings.Replace(val, "d", "", 1)
 		days, err := strconv.ParseUint(val, 0, 64)
 		if err != nil {
