@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 )
@@ -60,7 +60,7 @@ func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 	}
 
 	if fileSize == 0 {
-		dir, _ := path.Split(filename)
+		dir, _ := filepath.Split(filename)
 		go SyncDir(dir)
 	}
 	return &MmapFile{
@@ -174,6 +174,9 @@ func (m *MmapFile) Delete() error {
 	m.Data = nil
 	if err := m.Fd.Truncate(0); err != nil {
 		return fmt.Errorf("while truncate file: %s, error: %v\n", m.Fd.Name(), err)
+	}
+	if err := m.Fd.Close(); err != nil {
+		return fmt.Errorf("while close file: %s, error: %v\n", m.Fd.Name(), err)
 	}
 	return os.Remove(m.Fd.Name())
 }
