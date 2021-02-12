@@ -279,6 +279,12 @@ func (p *defaultPolicy) UpdateMaxCost(maxCost int64) {
 
 // sampledLFU is an eviction helper storing key-cost pairs.
 type sampledLFU struct {
+	// NOTE: align maxCost to 64-bit boundary for use with atomic.
+	// As per https://golang.org/pkg/sync/atomic/: "On ARM, x86-32,
+	// and 32-bit MIPS, it is the caller’s responsibility to arrange
+	// for 64-bit alignment of 64-bit words accessed atomically.
+	// The first word in a variable or in an allocated struct, array,
+	// or slice can be relied upon to be 64-bit aligned."
 	maxCost  int64
 	used     int64
 	metrics  *Metrics
