@@ -3,12 +3,68 @@ package z
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 )
+
+// SuperFlagHelp makes it really easy to generate command line `--help` output for a SuperFlag. For
+// example:
+//
+//	const flagDefaults = `enabled=true; path=some/path;`
+//
+//  var help string = z.NewSuperFlagHelp(flagDefaults).
+//		Flag("enabled", "Turns on <something>.").
+//		Flag("path", "The path to <something>.").
+//      Flag("another", "Not present in defaults, but still included.").
+//		String()
+//
+// The `help` string would then contain:
+//
+//	enabled=true; Turns on <something>.
+//	path=some/path; The path to <something>.
+//	another=; Not present in defaults, but still included.
+//
+// All flags are sorted alphabetically for consistent `--help` output. Flags with default values are
+// placed at the top, and everything else goes under.
+type SuperFlagHelp struct {
+	defaults *SuperFlag
+	flags    map[string]string
+}
+
+func NewSuperFlagHelp(defaults string) *SuperFlagHelp {
+	return &SuperFlagHelp{
+		defaults: NewSuperFlag(defaults),
+		flags:    make(map[string]string, 0),
+	}
+}
+
+func (h *SuperFlagHelp) Flag(name, description string) *SuperFlagHelp {
+	h.flags[name] = description
+	return h
+}
+
+func (h *SuperFlagHelp) String() string {
+	defaultLines := make([]string, 0)
+	otherLines := make([]string, 0)
+	for name, help := range h.flags {
+		val, found := h.defaults.m[name]
+		line := fmt.Sprintf("%s=%s; %s\n", name, val, help)
+		if found {
+			defaultLines = append(defaultLines, line)
+		} else {
+			otherLines = append(otherLines, line)
+		}
+	}
+	sort.Strings(defaultLines)
+	sort.Strings(otherLines)
+	return strings.Join(defaultLines, "") +
+		//		"---\n" +
+		strings.Join(otherLines, "")
+}
 
 func parseFlag(flag string) map[string]string {
 	kvm := make(map[string]string)
