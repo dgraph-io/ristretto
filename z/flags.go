@@ -16,7 +16,7 @@ import (
 //
 //	const flagDefaults = `enabled=true; path=some/path;`
 //
-//  var help string = z.NewSuperFlagHelp(flagDefaults).
+//	var help string = z.NewSuperFlagHelp(flagDefaults).
 //		Flag("enabled", "Turns on <something>.").
 //		Flag("path", "The path to <something>.").
 //		Flag("another", "Not present in defaults, but still included.").
