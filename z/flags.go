@@ -19,7 +19,7 @@ import (
 //  var help string = z.NewSuperFlagHelp(flagDefaults).
 //		Flag("enabled", "Turns on <something>.").
 //		Flag("path", "The path to <something>.").
-//      Flag("another", "Not present in defaults, but still included.").
+//		Flag("another", "Not present in defaults, but still included.").
 //		String()
 //
 // The `help` string would then contain:
