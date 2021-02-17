@@ -31,6 +31,7 @@ import (
 // All flags are sorted alphabetically for consistent `--help` output. Flags with default values are
 // placed at the top, and everything else goes under.
 type SuperFlagHelp struct {
+	head     string
 	defaults *SuperFlag
 	flags    map[string]string
 }
@@ -40,6 +41,11 @@ func NewSuperFlagHelp(defaults string) *SuperFlagHelp {
 		defaults: NewSuperFlag(defaults),
 		flags:    make(map[string]string, 0),
 	}
+}
+
+func (h *SuperFlagHelp) Head(head string) *SuperFlagHelp {
+	h.head = head
+	return h
 }
 
 func (h *SuperFlagHelp) Flag(name, description string) *SuperFlagHelp {
@@ -52,7 +58,7 @@ func (h *SuperFlagHelp) String() string {
 	otherLines := make([]string, 0)
 	for name, help := range h.flags {
 		val, found := h.defaults.m[name]
-		line := fmt.Sprintf("%s=%s; %s\n", name, val, help)
+		line := fmt.Sprintf("    %s=%s; %s\n", name, val, help)
 		if found {
 			defaultLines = append(defaultLines, line)
 		} else {
@@ -61,9 +67,9 @@ func (h *SuperFlagHelp) String() string {
 	}
 	sort.Strings(defaultLines)
 	sort.Strings(otherLines)
-	return strings.Join(defaultLines, "") +
-		//		"---\n" +
-		strings.Join(otherLines, "")
+	dls := strings.Join(defaultLines, "")
+	ols := strings.Join(otherLines, "")
+	return h.head + "\n" + dls + ols[:len(ols)-1] // remove last newline
 }
 
 func parseFlag(flag string) map[string]string {
