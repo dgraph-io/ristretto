@@ -18,7 +18,11 @@ package ristretto
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
+
+	"github.com/zhangyunhao116/skipmap"
 )
 
 // TODO: Do we need this to be a separate struct from Item?
@@ -114,25 +118,25 @@ func (sm *shardedMap) Clear(onEvict itemCallback) {
 }
 
 type lockedMap struct {
-	sync.RWMutex
-	data map[uint64]storeItem
-	em   *expirationMap
+	_data unsafe.Pointer // *skipmap.Uint64Map
+	mu    sync.Mutex
+
+	em *expirationMap
 }
 
 func newLockedMap(em *expirationMap) *lockedMap {
 	return &lockedMap{
-		data: make(map[uint64]storeItem),
-		em:   em,
+		_data: unsafe.Pointer(skipmap.NewUint64()),
+		em:    em,
 	}
 }
 
 func (m *lockedMap) get(key, conflict uint64) (interface{}, bool) {
-	m.RLock()
-	item, ok := m.data[key]
-	m.RUnlock()
+	val, ok := m.data().Load(key)
 	if !ok {
 		return nil, false
 	}
+	item := val.(storeItem)
 	if conflict != 0 && (conflict != item.conflict) {
 		return nil, false
 	}
@@ -145,9 +149,8 @@ func (m *lockedMap) get(key, conflict uint64) (interface{}, bool) {
 }
 
 func (m *lockedMap) Expiration(key uint64) int64 {
-	m.RLock()
-	defer m.RUnlock()
-	return m.data[key].expiration
+	val, _ := m.data().Load(key)
+	return val.(storeItem).expiration
 }
 
 func (m *lockedMap) Set(i *Item) {
@@ -156,11 +159,10 @@ func (m *lockedMap) Set(i *Item) {
 		return
 	}
 
-	m.Lock()
-	defer m.Unlock()
-	item, ok := m.data[i.Key]
+	val, ok := m.data().Load(i.Key)
 
 	if ok {
+		item := val.(storeItem)
 		// The item existed already. We need to check the conflict key and reject the
 		// update if they do not match. Only after that the expiration map is updated.
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
@@ -173,23 +175,21 @@ func (m *lockedMap) Set(i *Item) {
 		m.em.add(i.Key, i.Conflict, i.Expiration)
 	}
 
-	m.data[i.Key] = storeItem{
+	m.data().Store(i.Key, storeItem{
 		key:        i.Key,
 		conflict:   i.Conflict,
 		value:      i.Value,
 		expiration: i.Expiration,
-	}
+	})
 }
 
 func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
-	m.Lock()
-	item, ok := m.data[key]
+	val, ok := m.data().Load(key)
 	if !ok {
-		m.Unlock()
 		return 0, nil
 	}
+	item := val.(storeItem)
 	if conflict != 0 && (conflict != item.conflict) {
-		m.Unlock()
 		return 0, nil
 	}
 
@@ -197,46 +197,49 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 		m.em.del(key, item.expiration)
 	}
 
-	delete(m.data, key)
-	m.Unlock()
+	m.data().Delete(key)
 	return item.conflict, item.value
 }
 
 func (m *lockedMap) Update(newItem *Item) (interface{}, bool) {
-	m.Lock()
-	item, ok := m.data[newItem.Key]
+	val, ok := m.data().Load(newItem.Key)
 	if !ok {
-		m.Unlock()
 		return nil, false
 	}
+	item := val.(storeItem)
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
-		m.Unlock()
 		return nil, false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
-	m.data[newItem.Key] = storeItem{
+	m.data().Store(newItem.Key, storeItem{
 		key:        newItem.Key,
 		conflict:   newItem.Conflict,
 		value:      newItem.Value,
 		expiration: newItem.Expiration,
-	}
-
-	m.Unlock()
+	})
 	return item.value, true
 }
 
 func (m *lockedMap) Clear(onEvict itemCallback) {
-	m.Lock()
 	i := &Item{}
 	if onEvict != nil {
-		for _, si := range m.data {
+		m.data().Range(func(_ uint64, value interface{}) bool {
+			si := value.(storeItem)
 			i.Key = si.key
 			i.Conflict = si.conflict
 			i.Value = si.value
 			onEvict(i)
-		}
+			return true
+		})
 	}
-	m.data = make(map[uint64]storeItem)
-	m.Unlock()
+	m.setdata(skipmap.NewUint64())
+}
+
+func (m *lockedMap) data() *skipmap.Uint64Map {
+	return (*skipmap.Uint64Map)(atomic.LoadPointer(&m._data))
+}
+
+func (m *lockedMap) setdata(mp *skipmap.Uint64Map) {
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&m._data)), unsafe.Pointer(mp))
 }

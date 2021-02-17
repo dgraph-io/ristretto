@@ -119,13 +119,11 @@ func TestStoreUpdate(t *testing.T) {
 
 func TestStoreCollision(t *testing.T) {
 	s := newShardedMap()
-	s.shards[1].Lock()
-	s.shards[1].data[1] = storeItem{
+	s.shards[1].data().Store(1, storeItem{
 		key:      1,
 		conflict: 0,
 		value:    1,
-	}
-	s.shards[1].Unlock()
+	})
 	val, ok := s.Get(1, 1)
 	require.False(t, ok)
 	require.Nil(t, val)
