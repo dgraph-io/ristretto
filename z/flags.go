@@ -69,7 +69,15 @@ func (h *SuperFlagHelp) String() string {
 	sort.Strings(otherLines)
 	dls := strings.Join(defaultLines, "")
 	ols := strings.Join(otherLines, "")
-	return h.head + "\n" + dls + ols[:len(ols)-1] // remove last newline
+	if len(ols) == 0 {
+		// remove last newline
+		dls = dls[:len(dls)-1]
+	}
+	// remove last newline
+	if len(ols) > 1 {
+		ols = ols[:len(ols)-1]
+	}
+	return h.head + "\n" + dls + ols
 }
 
 func parseFlag(flag string) map[string]string {
