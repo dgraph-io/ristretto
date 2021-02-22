@@ -69,12 +69,12 @@ func (h *SuperFlagHelp) String() string {
 	sort.Strings(otherLines)
 	dls := strings.Join(defaultLines, "")
 	ols := strings.Join(otherLines, "")
-	if len(ols) == 0 {
+	if len(h.defaults.m) == 0 && len(ols) == 0 {
 		// remove last newline
 		dls = dls[:len(dls)-1]
 	}
 	// remove last newline
-	if len(ols) > 1 {
+	if len(h.defaults.m) == 0 && len(ols) > 1 {
 		ols = ols[:len(ols)-1]
 	}
 	return h.head + "\n" + dls + ols
