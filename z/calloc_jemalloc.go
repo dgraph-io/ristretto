@@ -89,11 +89,13 @@ func Calloc(n int) []byte {
 		var pc [50]uintptr
 		n := runtime.Callers(2, pc[:])
 		frames := runtime.CallersFrames(pc[:n])
-		for {
-			frame, more := frames.Next()
-			if !more {
-				break
-			}
+		more := true
+		var frame runtime.Frame
+		for more {
+			// more will be false, when there are no frames, though the frame
+			// will be valid value in that case. In this way we will analyze
+			// the frame and exit the loop at the same time.
+			frame, more = frames.Next()
 			if strings.Contains(frame.File, "/ristretto") {
 				continue
 			}
