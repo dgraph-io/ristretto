@@ -86,19 +86,21 @@ func Calloc(n int) []byte {
 
 	if dallocs != nil {
 		// If leak detection is enabled.
-		for i := 1; ; i++ {
-			_, f, l, ok := runtime.Caller(i)
-			if !ok {
+		var pc [50]uintptr
+		n := runtime.Callers(2, pc[:])
+		frames := runtime.CallersFrames(pc[:n])
+		for {
+			frame, more := frames.Next()
+			if !more {
 				break
 			}
-			if strings.Contains(f, "/ristretto") {
+			if strings.Contains(frame.File, "/ristretto") {
 				continue
 			}
-
 			dallocsMu.Lock()
 			dallocs[uptr] = &dalloc{
-				f:  f,
-				no: l,
+				f:  frame.File,
+				no: frame.Line,
 				sz: n,
 			}
 			dallocsMu.Unlock()
