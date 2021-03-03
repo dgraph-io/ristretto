@@ -10,7 +10,7 @@ import (
 
 // Defined in node.go.
 func init() {
-	alloc = z.NewAllocator(10 << 20)
+	alloc = z.NewAllocator(10 << 20, "demo")
 }
 
 func newNode(val int) *node {

@@ -801,7 +801,7 @@ func TestRistrettoCalloc(t *testing.T) {
 			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for i := 0; i < 10000; i++ {
 				k := rd.Intn(10000)
-				v := z.Calloc(256)
+				v := z.Calloc(256, "test")
 				rd.Read(v)
 				if !r.Set(k, v, 256) {
 					z.Free(v)
@@ -841,7 +841,7 @@ func TestRistrettoCallocTTL(t *testing.T) {
 			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for i := 0; i < 10000; i++ {
 				k := rd.Intn(10000)
-				v := z.Calloc(256)
+				v := z.Calloc(256, "test")
 				rd.Read(v)
 				if !r.SetWithTTL(k, v, 256, time.Second) {
 					z.Free(v)

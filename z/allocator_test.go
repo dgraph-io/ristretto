@@ -27,7 +27,7 @@ import (
 )
 
 func TestAllocate(t *testing.T) {
-	a := NewAllocator(1024)
+	a := NewAllocator(1024, "test")
 	defer a.Release()
 
 	check := func() {
@@ -51,17 +51,17 @@ func TestAllocate(t *testing.T) {
 }
 
 func TestAllocateSize(t *testing.T) {
-	a := NewAllocator(1024)
+	a := NewAllocator(1024, "test")
 	require.Equal(t, 1024, len(a.buffers[0]))
 	a.Release()
 
-	b := NewAllocator(1025)
+	b := NewAllocator(1025, "test")
 	require.Equal(t, 2048, len(b.buffers[0]))
 	b.Release()
 }
 
 func TestAllocateReset(t *testing.T) {
-	a := NewAllocator(16)
+	a := NewAllocator(16, "test")
 	defer a.Release()
 
 	buf := make([]byte, 128)
@@ -80,7 +80,7 @@ func TestAllocateReset(t *testing.T) {
 }
 
 func TestAllocateTrim(t *testing.T) {
-	a := NewAllocator(16)
+	a := NewAllocator(16, "test")
 	defer a.Release()
 
 	buf := make([]byte, 128)
@@ -108,7 +108,7 @@ func TestPowTwo(t *testing.T) {
 }
 
 func TestAllocateAligned(t *testing.T) {
-	a := NewAllocator(1024)
+	a := NewAllocator(1024, "test")
 	defer a.Release()
 
 	a.Allocate(1)
@@ -126,7 +126,7 @@ func TestAllocateAligned(t *testing.T) {
 }
 
 func TestAllocateConcurrent(t *testing.T) {
-	a := NewAllocator(63)
+	a := NewAllocator(63, "test")
 	defer a.Release()
 
 	N := 10240
@@ -180,7 +180,7 @@ func TestAllocateConcurrent(t *testing.T) {
 }
 
 func BenchmarkAllocate(b *testing.B) {
-	a := NewAllocator(15)
+	a := NewAllocator(15, "test")
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			buf := a.Allocate(1)

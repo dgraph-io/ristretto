@@ -2,7 +2,7 @@
 // of this source code is governed by a BSD-style license that can be found in
 // the LICENSE file.
 
-// +build jemalloc
+// +build !jemalloc
 
 package z
 
@@ -15,9 +15,6 @@ import "C"
 import (
 	"bytes"
 	"fmt"
-	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -44,12 +41,10 @@ func throw(s string)
 // Compile Go program with `go build -tags=jemalloc` to enable this.
 
 type dalloc struct {
-	f  string
-	no int
+	t  string
 	sz int
 }
 
-// Enabled via 'leak' build flag.
 var dallocsMu sync.Mutex
 var dallocs map[unsafe.Pointer]*dalloc
 
@@ -58,7 +53,7 @@ func init() {
 	dallocs = make(map[unsafe.Pointer]*dalloc)
 }
 
-func Calloc(n int) []byte {
+func Calloc(n int, tag string) []byte {
 	if n == 0 {
 		return make([]byte, 0)
 	}
@@ -82,32 +77,16 @@ func Calloc(n int) []byte {
 		// it cannot allocate memory.
 		throw("out of memory")
 	}
-	uptr := unsafe.Pointer(ptr)
 
+	uptr := unsafe.Pointer(ptr)
 	if dallocs != nil {
 		// If leak detection is enabled.
-		var pc [50]uintptr
-		n := runtime.Callers(2, pc[:])
-		frames := runtime.CallersFrames(pc[:n])
-		more := true
-		var frame runtime.Frame
-		for more {
-			// more will be false, when there are no frames, though the frame
-			// will be valid value in that case. In this way we will analyze
-			// the frame and exit the loop at the same time.
-			frame, more = frames.Next()
-			if strings.Contains(frame.File, "/ristretto") {
-				continue
-			}
-			dallocsMu.Lock()
-			dallocs[uptr] = &dalloc{
-				f:  frame.File,
-				no: frame.Line,
-				sz: n,
-			}
-			dallocsMu.Unlock()
-			break
+		dallocsMu.Lock()
+		dallocs[uptr] = &dalloc{
+			t:  tag,
+			sz: n,
 		}
+		dallocsMu.Unlock()
 	}
 	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
@@ -115,8 +94,8 @@ func Calloc(n int) []byte {
 }
 
 // CallocNoRef does the exact same thing as Calloc with jemalloc enabled.
-func CallocNoRef(n int) []byte {
-	return Calloc(n)
+func CallocNoRef(n int, tag string) []byte {
+	return Calloc(n, tag)
 }
 
 // Free frees the specified slice.
@@ -147,7 +126,7 @@ func Leaks() string {
 	}
 	m := make(map[string]int)
 	for _, da := range dallocs {
-		m[da.f+":"+strconv.Itoa(da.no)] += da.sz
+		m[da.t] += da.sz
 	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "Allocations:\n")
@@ -189,7 +168,7 @@ func fetchStat(s string) uint64 {
 		unsafe.Pointer(&out),             // Variable to store the output.
 		(*C.size_t)(unsafe.Pointer(&sz)), // Size of the output variable.
 		nil,                              // Input variable used to set a value.
-		0)                                // Size of the input variable.
+		0) // Size of the input variable.
 	return out
 }
 
