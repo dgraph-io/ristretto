@@ -18,13 +18,10 @@ func TestFlag(t *testing.T) {
 	// bool-key and int-key should not be overwritten. Only other-key should be set.
 	sf.MergeAndCheckDefault(def)
 
-	/* TODO
-	c := func() {
-		// Has a typo.
+	require.Panics(t, func() {
+		// typo
 		NewSuperFlag("boolo-key=true").MergeAndCheckDefault(def)
-	}
-	require.Panics(t, c)
-	*/
+	})
 
 	require.Equal(t, true, sf.GetBool("bool-key"))
 	require.Equal(t, uint64(5), sf.GetUint64("int-key"))
