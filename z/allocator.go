@@ -333,6 +333,7 @@ func (p *AllocatorPool) Get(sz int, tag string) *Allocator {
 	select {
 	case alloc := <-p.allocCh:
 		alloc.Reset()
+		alloc.Tag = tag
 		return alloc
 	default:
 		return NewAllocator(sz, tag)

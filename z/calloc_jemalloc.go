@@ -79,15 +79,12 @@ func Calloc(n int, tag string) []byte {
 	}
 
 	uptr := unsafe.Pointer(ptr)
-	if dallocs != nil {
-		// If leak detection is enabled.
-		dallocsMu.Lock()
-		dallocs[uptr] = &dalloc{
-			t:  tag,
-			sz: n,
-		}
-		dallocsMu.Unlock()
+	dallocsMu.Lock()
+	dallocs[uptr] = &dalloc{
+		t:  tag,
+		sz: n,
 	}
+	dallocsMu.Unlock()
 	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
 	return (*[MaxArrayLen]byte)(uptr)[:n:n]
@@ -105,13 +102,9 @@ func Free(b []byte) {
 		ptr := unsafe.Pointer(&b[0])
 		C.je_free(ptr)
 		atomic.AddInt64(&numBytes, -int64(sz))
-
-		if dallocs != nil {
-			// If leak detection is enabled.
-			dallocsMu.Lock()
-			delete(dallocs, ptr)
-			dallocsMu.Unlock()
-		}
+		dallocsMu.Lock()
+		delete(dallocs, ptr)
+		dallocsMu.Unlock()
 	}
 }
 
