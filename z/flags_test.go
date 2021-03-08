@@ -32,3 +32,10 @@ func TestFlag(t *testing.T) {
 	require.Equal(t, time.Hour*12, sf.GetDuration("duration-hours"))
 	require.Equal(t, time.Hour*24*30, sf.GetDuration("duration-days"))
 }
+
+func TestFlagDefault(t *testing.T) {
+	def := `one=false; two=; three=;`
+	f := NewSuperFlag(`one=true; two=4;`).MergeAndCheckDefault(def)
+	require.Equal(t, true, f.GetBool("one"))
+	require.Equal(t, int64(4), f.GetInt64("two"))
+}
