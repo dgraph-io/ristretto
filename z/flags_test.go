@@ -1,6 +1,9 @@
 package z
 
 import (
+	"fmt"
+	"os/user"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -34,4 +37,45 @@ func TestFlag(t *testing.T) {
 	require.Equal(t, time.Minute*15, sf.GetDuration("duration-minutes"))
 	require.Equal(t, time.Hour*12, sf.GetDuration("duration-hours"))
 	require.Equal(t, time.Hour*24*30, sf.GetDuration("duration-days"))
+}
+
+func TestGetPath(t *testing.T) {
+
+	usr, err := user.Current()
+	require.NoError(t, err)
+	homeDir := usr.HomeDir
+
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{
+			"/home/user/file.txt",
+			"/home/user/file.txt",
+		},
+		{
+			"~/file.txt",
+			filepath.Join(homeDir, "file.txt"),
+		},
+		{
+			"~/abc/../file.txt",
+			filepath.Join(homeDir, "file.txt"),
+		},
+		{
+			"~/",
+			homeDir,
+		},
+	}
+
+	get := func(p string) string {
+		opt := fmt.Sprintf("file=%s", p)
+		sf := NewSuperFlag(opt)
+		return sf.GetPath("file")
+	}
+
+	for _, tc := range tests {
+		actual := get(tc.path)
+		require.Equalf(t, tc.expected, actual, "Filed on testcase: %s", tc.path)
+	}
+
 }

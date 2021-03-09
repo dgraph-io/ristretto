@@ -3,6 +3,8 @@ package z
 import (
 	"fmt"
 	"log"
+	"os/user"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -249,4 +251,35 @@ func (sf *SuperFlag) GetString(opt string) string {
 		return ""
 	}
 	return sf.m[opt]
+}
+
+func (sf *SuperFlag) GetPath(opt string) string {
+	p := sf.GetString(opt)
+	path, err := expandPath(p)
+	if err != nil {
+		log.Fatalf("Failed to get path: %+v", err)
+	}
+	return path
+}
+
+// expandPath expands the paths containing ~ to /home/user. It also computes the ablosule path
+// from the relative paths. For example: ~/abc/../cef will be transformed to /home/user/cef.
+func expandPath(path string) (string, error) {
+	if len(path) == 0 {
+		return "", nil
+	}
+	if path[0] == '~' {
+		usr, err := user.Current()
+		if err != nil {
+			return "", errors.Wrap(err, "Failed to get the home directory of the user")
+		}
+		path = filepath.Join(usr.HomeDir, path[1:])
+	}
+
+	var err error
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to generate absolute path")
+	}
+	return path, nil
 }
