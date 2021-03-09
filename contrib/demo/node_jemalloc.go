@@ -9,7 +9,7 @@ import (
 )
 
 func newNode(val int) *node {
-	b := z.Calloc(nodeSz)
+	b := z.Calloc(nodeSz, "demo")
 	n := (*node)(unsafe.Pointer(&b[0]))
 	n.val = val
 	return n

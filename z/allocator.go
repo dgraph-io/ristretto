@@ -66,7 +66,7 @@ func init() {
 }
 
 // NewAllocator creates an allocator starting with the given size.
-func NewAllocator(sz int) *Allocator {
+func NewAllocator(sz int, tag string) *Allocator {
 	ref := atomic.AddUint64(&allocRef, 1)
 	// We should not allow a zero sized page because addBufferWithMinSize
 	// will run into an infinite loop trying to double the pagesize.
@@ -76,12 +76,13 @@ func NewAllocator(sz int) *Allocator {
 	a := &Allocator{
 		Ref:     ref,
 		buffers: make([][]byte, 64),
+		Tag:     tag,
 	}
 	l2 := uint64(log2(sz))
 	if bits.OnesCount64(uint64(sz)) > 1 {
 		l2 += 1
 	}
-	a.buffers[0] = Calloc(1 << l2)
+	a.buffers[0] = Calloc(1<<l2, a.Tag)
 
 	allocsMu.Lock()
 	allocs[ref] = a
@@ -271,7 +272,7 @@ func (a *Allocator) addBufferAt(bufIdx, minSz int) {
 		pageSize = maxAlloc
 	}
 
-	buf := Calloc(pageSize)
+	buf := Calloc(pageSize, a.Tag)
 	assert(len(a.buffers[bufIdx]) == 0)
 	a.buffers[bufIdx] = buf
 }
@@ -324,17 +325,18 @@ func NewAllocatorPool(sz int) *AllocatorPool {
 	return a
 }
 
-func (p *AllocatorPool) Get(sz int) *Allocator {
+func (p *AllocatorPool) Get(sz int, tag string) *Allocator {
 	if p == nil {
-		return NewAllocator(sz)
+		return NewAllocator(sz, tag)
 	}
 	atomic.AddInt64(&p.numGets, 1)
 	select {
 	case alloc := <-p.allocCh:
 		alloc.Reset()
+		alloc.Tag = tag
 		return alloc
 	default:
-		return NewAllocator(sz)
+		return NewAllocator(sz, tag)
 	}
 }
 func (p *AllocatorPool) Return(a *Allocator) {

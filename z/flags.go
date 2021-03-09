@@ -126,7 +126,6 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 		return sf
 	}
 	src := parseFlag(flag)
-	/* TODO: better way to do this? maybe don't panic
 	numKeys := len(sf.m)
 	for k := range src {
 		if _, ok := sf.m[k]; ok {
@@ -134,10 +133,8 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 		}
 	}
 	if numKeys != 0 {
-		msg := fmt.Sprintf("Found invalid options in %s. Valid options: %v", sf, flag)
-		panic(msg)
+		panic(fmt.Sprintf("Found invalid options in %s. Valid options: %v", sf, flag))
 	}
-	*/
 	for k, v := range src {
 		if _, ok := sf.m[k]; !ok {
 			sf.m[k] = v
