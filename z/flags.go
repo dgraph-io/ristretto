@@ -54,30 +54,13 @@ func (h *SuperFlagHelp) Flag(name, description string) *SuperFlagHelp {
 }
 
 func (h *SuperFlagHelp) String() string {
-	defaultLines := make([]string, 0)
-	otherLines := make([]string, 0)
+	lines := make([]string, 0)
 	for name, help := range h.flags {
-		val, found := h.defaults.m[name]
-		line := fmt.Sprintf("    %s=%s; %s\n", name, val, help)
-		if found {
-			defaultLines = append(defaultLines, line)
-		} else {
-			otherLines = append(otherLines, line)
-		}
+		val, _ := h.defaults.m[name]
+		lines = append(lines, fmt.Sprintf("    %s=%s; %s\n", name, val, help))
 	}
-	sort.Strings(defaultLines)
-	sort.Strings(otherLines)
-	dls := strings.Join(defaultLines, "")
-	ols := strings.Join(otherLines, "")
-	if len(h.defaults.m) == 0 && len(ols) == 0 {
-		// remove last newline
-		dls = dls[:len(dls)-1]
-	}
-	// remove last newline
-	if len(h.defaults.m) == 0 && len(ols) > 1 {
-		ols = ols[:len(ols)-1]
-	}
-	return h.head + "\n" + dls + ols
+	sort.Strings(lines)
+	return h.head + "\n" + strings.Join(lines, "")
 }
 
 func parseFlag(flag string) map[string]string {
