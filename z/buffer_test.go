@@ -38,7 +38,7 @@ func TestBuffer(t *testing.T) {
 			var bytesBuffer bytes.Buffer // This is just for verifying result.
 			bytesBuffer.Grow(512)
 
-			cBuffer, err := NewBufferWith(512, 4<<30, btype)
+			cBuffer, err := NewBufferWith(512, 4<<30, btype, "test")
 			require.Nil(t, err)
 			defer cBuffer.Release()
 
@@ -71,7 +71,7 @@ func TestBufferWrite(t *testing.T) {
 			var wb [128]byte
 			rand.Read(wb[:])
 
-			cb, err := NewBufferWith(32, 4<<30, btype)
+			cb, err := NewBufferWith(32, 4<<30, btype, "test")
 			require.Nil(t, err)
 			defer cb.Release()
 
@@ -94,7 +94,7 @@ func TestBufferWrite(t *testing.T) {
 }
 
 func TestBufferAutoMmap(t *testing.T) {
-	buf := NewBuffer(1 << 20)
+	buf := NewBuffer(1 << 20, "test")
 	defer buf.Release()
 	buf.AutoMmapAfter(64 << 20)
 
@@ -124,7 +124,7 @@ func TestBufferAutoMmap(t *testing.T) {
 }
 
 func TestBufferSimpleSort(t *testing.T) {
-	buf := NewBuffer(1 << 20)
+	buf := NewBuffer(1 << 20, "test")
 	defer buf.Release()
 	for i := 0; i < 25600; i++ {
 		b := buf.SliceAllocate(4)
@@ -154,7 +154,7 @@ func TestBufferSlice(t *testing.T) {
 	for btype := UseCalloc; btype < UseInvalid; btype++ {
 		name := fmt.Sprintf("Using mode %s", btype)
 		t.Run(name, func(t *testing.T) {
-			buf, err := NewBufferWith(0, 0, btype)
+			buf, err := NewBufferWith(0, 0, btype, "test")
 			require.Nil(t, err)
 			defer buf.Release()
 
@@ -209,7 +209,7 @@ func TestBufferSort(t *testing.T) {
 	for btype := UseCalloc; btype < UseInvalid; btype++ {
 		name := fmt.Sprintf("Using mode %s", btype)
 		t.Run(name, func(t *testing.T) {
-			buf, err := NewBufferWith(0, 0, btype)
+			buf, err := NewBufferWith(0, 0, btype, "test")
 			require.Nil(t, err)
 			defer buf.Release()
 
@@ -252,7 +252,7 @@ func TestBufferSort(t *testing.T) {
 
 // Test that the APIs returns the expected offsets.
 func TestBufferPadding(t *testing.T) {
-	buf := NewBuffer(1 << 10)
+	buf := NewBuffer(1 << 10, "test")
 	defer buf.Release()
 	sz := rand.Int31n(100)
 

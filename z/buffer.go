@@ -48,6 +48,7 @@ type Buffer struct {
 	bufType       BufferType
 	autoMmapAfter int
 	dir           string
+	tag           string
 }
 
 type BufferType int
@@ -72,8 +73,8 @@ const (
 const smallBufferSize = 64
 
 // NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
-func NewBuffer(sz int) *Buffer {
-	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "")
+func NewBuffer(sz int, tag string) *Buffer {
+	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "", tag)
 	if err != nil {
 		log.Fatalf("while creating buffer: %v", err)
 	}
@@ -83,8 +84,8 @@ func NewBuffer(sz int) *Buffer {
 // NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
 // exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
 // used. Buffer can't be used without initialization via NewBuffer.
-func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
-	buf, err := NewBufferWithDir(sz, maxSz, bufType, "")
+func NewBufferWith(sz, maxSz int, bufType BufferType, tag string) (*Buffer, error) {
+	buf, err := NewBufferWithDir(sz, maxSz, bufType, "", tag)
 	return buf, err
 }
 
@@ -125,7 +126,7 @@ func (b *Buffer) doMmap() error {
 // not exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults
 // would be used. Buffer can't be used without initialization via NewBuffer. The buffer is created
 // inside dir. The caller should take care of existence of dir.
-func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir string) (*Buffer, error) {
+func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir, tag string) (*Buffer, error) {
 	if sz == 0 {
 		sz = smallBufferSize
 	}
@@ -142,11 +143,12 @@ func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir string) (*Buffer, e
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
 		dir:     dir,
+		tag:     tag,
 	}
 
 	switch bufType {
 	case UseCalloc:
-		b.buf = Calloc(sz)
+		b.buf = Calloc(sz, b.tag)
 	case UseMmap:
 		if err := b.doMmap(); err != nil {
 			return nil, err
@@ -219,7 +221,7 @@ func (b *Buffer) Grow(n int) {
 			check(b.doMmap())
 
 		} else {
-			newBuf := Calloc(b.curSz)
+			newBuf := Calloc(b.curSz, b.tag)
 			copy(newBuf, b.buf[:b.offset])
 			Free(b.buf)
 			b.buf = newBuf
@@ -430,7 +432,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		b:       b,
 		less:    less,
 		small:   make([]int, 0, 1024),
-		tmp:     NewBuffer(szTmp),
+		tmp:     NewBuffer(szTmp, b.tag),
 	}
 	defer s.tmp.Release()
 

@@ -14,12 +14,12 @@ import (
 // (eg: build without jemalloc tag).
 
 // Calloc allocates a slice of size n.
-func Calloc(n int) []byte {
+func Calloc(n int, tag string) []byte {
 	return make([]byte, n)
 }
 
 // CallocNoRef will not give you memory back without jemalloc.
-func CallocNoRef(n int) []byte {
+func CallocNoRef(n int, tag string) []byte {
 	// We do the add here just to stay compatible with a corresponding Free call.
 	return nil
 }
