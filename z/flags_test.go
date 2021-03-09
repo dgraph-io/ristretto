@@ -79,6 +79,6 @@ func TestGetPath(t *testing.T) {
 
 	for _, tc := range tests {
 		actual := get(tc.path)
-		require.Equalf(t, tc.expected, actual, "Filed on testcase: %s", tc.path)
+		require.Equalf(t, tc.expected, actual, "Failed on testcase: %s", tc.path)
 	}
 }
