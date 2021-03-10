@@ -80,19 +80,23 @@ func (h *SuperFlagHelp) String() string {
 	return h.head + "\n" + dls + ols
 }
 
-func parseFlag(flag string) map[string]string {
+func parseFlag(flag string) (map[string]string, error) {
 	kvm := make(map[string]string)
 	for _, kv := range strings.Split(flag, ";") {
 		if strings.TrimSpace(kv) == "" {
 			continue
 		}
+		// For a non-empty separator, 0 < len(splits) ≤ 2.
 		splits := strings.SplitN(kv, "=", 2)
 		k := strings.TrimSpace(splits[0])
+		if len(splits) < 2 {
+			return nil, fmt.Errorf("superflag: missing value for '%s' in flag: %s", k, flag)
+		}
 		k = strings.ToLower(k)
 		k = strings.ReplaceAll(k, "_", "-")
 		kvm[k] = strings.TrimSpace(splits[1])
 	}
-	return kvm
+	return kvm, nil
 }
 
 type SuperFlag struct {
@@ -100,16 +104,26 @@ type SuperFlag struct {
 }
 
 func NewSuperFlag(flag string) *SuperFlag {
-	return &SuperFlag{
-		m: parseFlag(flag),
+	sf, err := newSuperFlagImpl(flag)
+	if err != nil {
+		log.Fatal(err)
 	}
+	return sf
+}
+
+func newSuperFlagImpl(flag string) (*SuperFlag, error) {
+	m, err := parseFlag(flag)
+	if err != nil {
+		return nil, err
+	}
+	return &SuperFlag{m}, nil
 }
 
 func (sf *SuperFlag) String() string {
 	if sf == nil {
 		return ""
 	}
-	var kvs []string
+	kvs := make([]string, 0, len(sf.m))
 	for k, v := range sf.m {
 		kvs = append(kvs, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -117,13 +131,27 @@ func (sf *SuperFlag) String() string {
 }
 
 func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
-	if sf == nil {
-		sf = &SuperFlag{
-			m: parseFlag(flag),
-		}
-		return sf
+	sf, err := sf.mergeAndCheckDefaultImpl(flag)
+	if err != nil {
+		log.Fatal(err)
 	}
-	src := parseFlag(flag)
+	return sf
+}
+
+func (sf *SuperFlag) mergeAndCheckDefaultImpl(flag string) (*SuperFlag, error) {
+	if sf == nil {
+		m, err := parseFlag(flag)
+		if err != nil {
+			return nil, err
+		}
+		return &SuperFlag{m}, nil
+	}
+
+	src, err := parseFlag(flag)
+	if err != nil {
+		return nil, err
+	}
+
 	numKeys := len(sf.m)
 	for k := range src {
 		if _, ok := sf.m[k]; ok {
@@ -131,14 +159,14 @@ func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 		}
 	}
 	if numKeys != 0 {
-		panic(fmt.Sprintf("Found invalid options in %s. Valid options: %v", sf, flag))
+		return nil, fmt.Errorf("superflag: found invalid options in flag: %s.\nvalid options: %v", sf, flag)
 	}
 	for k, v := range src {
 		if _, ok := sf.m[k]; !ok {
 			sf.m[k] = v
 		}
 	}
-	return sf
+	return sf, nil
 }
 
 func (sf *SuperFlag) Has(opt string) bool {
