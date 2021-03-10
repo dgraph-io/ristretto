@@ -3,6 +3,7 @@ package z
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -265,7 +266,7 @@ func expandPath(path string) (string, error) {
 	if len(path) == 0 {
 		return "", nil
 	}
-	if path[0] == '~' && (len(path) == 1 || path[1] == '/') {
+	if path[0] == '~' && (len(path) == 1 || os.IsPathSeparator(path[1])) {
 		usr, err := user.Current()
 		if err != nil {
 			return "", errors.Wrap(err, "Failed to get the home directory of the user")
