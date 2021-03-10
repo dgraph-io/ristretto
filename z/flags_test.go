@@ -1,6 +1,10 @@
 package z
 
 import (
+	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -36,4 +40,50 @@ func TestFlagDefault(t *testing.T) {
 	f := NewSuperFlag(`one=true; two=4;`).MergeAndCheckDefault(def)
 	require.Equal(t, true, f.GetBool("one"))
 	require.Equal(t, int64(4), f.GetInt64("two"))
+}
+
+func TestGetPath(t *testing.T) {
+
+	usr, err := user.Current()
+	require.NoError(t, err)
+	homeDir := usr.HomeDir
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{
+			"/home/user/file.txt",
+			"/home/user/file.txt",
+		},
+		{
+			"~/file.txt",
+			filepath.Join(homeDir, "file.txt"),
+		},
+		{
+			"~/abc/../file.txt",
+			filepath.Join(homeDir, "file.txt"),
+		},
+		{
+			"~/",
+			homeDir,
+		},
+		{
+			"~filename",
+			filepath.Join(cwd, "~filename"),
+		},
+	}
+
+	get := func(p string) string {
+		opt := fmt.Sprintf("file=%s", p)
+		sf := NewSuperFlag(opt)
+		return sf.GetPath("file")
+	}
+
+	for _, tc := range tests {
+		actual := get(tc.path)
+		require.Equalf(t, tc.expected, actual, "Failed on testcase: %s", tc.path)
+	}
 }
