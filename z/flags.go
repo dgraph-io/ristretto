@@ -259,13 +259,13 @@ func (sf *SuperFlag) GetPath(opt string) string {
 	return path
 }
 
-// expandPath expands the paths containing ~ to /home/user. It also computes the ablosule path
+// expandPath expands the paths containing ~ to /home/user. It also computes the absolute path
 // from the relative paths. For example: ~/abc/../cef will be transformed to /home/user/cef.
 func expandPath(path string) (string, error) {
 	if len(path) == 0 {
 		return "", nil
 	}
-	if path[0] == '~' {
+	if path[0] == '~' && (len(path) == 1 || path[1] == '/') {
 		usr, err := user.Current()
 		if err != nil {
 			return "", errors.Wrap(err, "Failed to get the home directory of the user")

@@ -2,6 +2,7 @@ package z
 
 import (
 	"fmt"
+	"os"
 	"os/user"
 	"path/filepath"
 	"testing"
@@ -48,6 +49,8 @@ func TestGetPath(t *testing.T) {
 	usr, err := user.Current()
 	require.NoError(t, err)
 	homeDir := usr.HomeDir
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 
 	tests := []struct {
 		path     string
@@ -68,6 +71,10 @@ func TestGetPath(t *testing.T) {
 		{
 			"~/",
 			homeDir,
+		},
+		{
+			"~filename",
+			filepath.Join(cwd, "~filename"),
 		},
 	}
 
