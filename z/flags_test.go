@@ -74,6 +74,18 @@ func TestGetPath(t *testing.T) {
 			"~filename",
 			filepath.Join(cwd, "~filename"),
 		},
+		{
+			"./filename",
+			filepath.Join(cwd, "filename"),
+		},
+		{
+			"",
+			"",
+		},
+		{
+			"./",
+			cwd,
+		},
 	}
 
 	get := func(p string) string {
