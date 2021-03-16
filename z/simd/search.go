@@ -1,4 +1,4 @@
-// +build 386 arm armbe arm64 mips mipsle mips64p32 mips64p32le ppc ppc64 ppc64le sparc
+// +build !amd64
 
 /*
  * Copyright 2020 Dgraph Labs, Inc. and Contributors
