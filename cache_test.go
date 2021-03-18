@@ -715,6 +715,36 @@ func init() {
 	bucketDurationSecs = 1
 }
 
+func TestBlockOnShutdown(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     false,
+	})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			c.Wait()
+		}
+		close(done)
+	}()
+
+	for i := 0; i < 10; i++ {
+		c.Clear()
+	}
+
+	select {
+	case <-done:
+		// We're OK
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out while waiting on cache")
+	}
+}
+
 // Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
