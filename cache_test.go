@@ -715,7 +715,7 @@ func init() {
 	bucketDurationSecs = 1
 }
 
-func TestBlockOnShutdown(t *testing.T) {
+func TestBlockOnClear(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
@@ -723,6 +723,7 @@ func TestBlockOnShutdown(t *testing.T) {
 		Metrics:     false,
 	})
 	require.NoError(t, err)
+	defer c.Close()
 
 	done := make(chan struct{})
 
