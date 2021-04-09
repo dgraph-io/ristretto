@@ -34,6 +34,17 @@ func HistogramBounds(minExponent, maxExponent uint32) []float64 {
 	return bounds
 }
 
+func Fibonacci(num int) []float64 {
+	assert(num > 4)
+	bounds := make([]float64, num)
+	bounds[0] = 1
+	bounds[1] = 2
+	for i := 2; i < num; i++ {
+		bounds[i] = bounds[i-1] + bounds[i-2]
+	}
+	return bounds
+}
+
 // HistogramData stores the information needed to represent the sizes of the keys and values
 // as a histogram.
 type HistogramData struct {
@@ -116,10 +127,13 @@ func (histogram *HistogramData) String() string {
 	b.WriteString("\n -- Histogram: \n")
 	b.WriteString(fmt.Sprintf("Min value: %d \n", histogram.Min))
 	b.WriteString(fmt.Sprintf("Max value: %d \n", histogram.Max))
-	b.WriteString(fmt.Sprintf("Mean: %.2f \n", histogram.Mean()))
 	b.WriteString(fmt.Sprintf("Count: %d \n", histogram.Count))
+	b.WriteString(fmt.Sprintf("50p: %.2f \n", histogram.Percentile(0.5)))
+	b.WriteString(fmt.Sprintf("75p: %.2f \n", histogram.Percentile(0.75)))
+	b.WriteString(fmt.Sprintf("90p: %.2f \n", histogram.Percentile(0.90)))
 
 	numBounds := len(histogram.Bounds)
+	var cum float64
 	for index, count := range histogram.CountPerBucket {
 		if count == 0 {
 			continue
@@ -131,8 +145,9 @@ func (histogram *HistogramData) String() string {
 		if index == len(histogram.CountPerBucket)-1 {
 			lowerBound := uint64(histogram.Bounds[numBounds-1])
 			page := float64(count*100) / float64(histogram.Count)
-			b.WriteString(fmt.Sprintf("[%s, %s) %d %.2f%% \n",
-				humanize.IBytes(lowerBound), "infinity", count, page))
+			cum += page
+			b.WriteString(fmt.Sprintf("[%s, %s) %d %.2f%% %.2f%%\n",
+				humanize.IBytes(lowerBound), "infinity", count, page, cum))
 			continue
 		}
 
@@ -143,8 +158,9 @@ func (histogram *HistogramData) String() string {
 		}
 
 		page := float64(count*100) / float64(histogram.Count)
-		b.WriteString(fmt.Sprintf("[%s, %s) %d %.2f%% \n",
-			humanize.IBytes(lowerBound), humanize.IBytes(upperBound), count, page))
+		cum += page
+		b.WriteString(fmt.Sprintf("[%d, %d) %d %.2f%% %.2f%%\n",
+			lowerBound, upperBound, count, page, cum))
 	}
 	b.WriteString(" --\n")
 	return b.String()
