@@ -20,12 +20,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"os"
 	"sort"
 	"sync/atomic"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -76,7 +76,7 @@ const smallBufferSize = 64
 func NewBuffer(sz int, tag string) *Buffer {
 	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "", tag)
 	if err != nil {
-		log.Fatalf("while creating buffer: %v", err)
+		glog.Fatalf("while creating buffer: %v", err)
 	}
 	return buf
 }
@@ -154,7 +154,7 @@ func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir, tag string) (*Buff
 			return nil, err
 		}
 	default:
-		log.Fatalf("Invalid bufType: %q\n", bufType)
+		glog.Fatalf("Invalid bufType: %q\n", bufType)
 	}
 
 	b.buf[0] = 0x00
@@ -228,7 +228,7 @@ func (b *Buffer) Grow(n int) {
 		}
 	case UseMmap:
 		if err := b.fd.Truncate(int64(b.curSz)); err != nil {
-			log.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
+			glog.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
 				b.fd.Name(), b.curSz, err)
 		}
 	default:
@@ -326,12 +326,12 @@ func (s *sortHelper) sortSmall(start, end int) {
 
 func assert(b bool) {
 	if !b {
-		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
+		glog.Fatalf("%+v", errors.Errorf("Assertion failure"))
 	}
 }
 func check(err error) {
 	if err != nil {
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 }
 func check2(_ interface{}, err error) {

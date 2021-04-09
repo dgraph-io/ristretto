@@ -3,7 +3,7 @@
 package main
 
 import (
-	"log"
+	"glog"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -14,7 +14,7 @@ func NumAllocBytes() int64   { return z.NumAllocBytes() }
 
 func check() {
 	if buf := z.CallocNoRef(1, "memtest"); len(buf) == 0 {
-		log.Fatalf("Not using manual memory management. Compile with jemalloc.")
+		glog.Fatalf("Not using manual memory management. Compile with jemalloc.")
 	} else {
 		z.Free(buf)
 	}
@@ -23,5 +23,5 @@ func check() {
 }
 
 func init() {
-	log.Printf("USING JEMALLOC")
+	glog.Printf("USING JEMALLOC")
 }

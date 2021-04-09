@@ -5,7 +5,6 @@ package main
 // #include <stdlib.h>
 import "C"
 import (
-	"log"
 	"reflect"
 	"sync/atomic"
 	"unsafe"
@@ -41,5 +40,5 @@ func NumAllocBytes() int64 { return atomic.LoadInt64(&numbytes) }
 func check() {}
 
 func init() {
-	log.Printf("USING CALLOC")
+	glog.Printf("USING CALLOC")
 }

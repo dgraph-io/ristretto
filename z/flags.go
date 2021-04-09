@@ -2,7 +2,6 @@ package z
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -109,7 +109,7 @@ type SuperFlag struct {
 func NewSuperFlag(flag string) *SuperFlag {
 	sf, err := newSuperFlagImpl(flag)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	return sf
 }
@@ -136,7 +136,7 @@ func (sf *SuperFlag) String() string {
 func (sf *SuperFlag) MergeAndCheckDefault(flag string) *SuperFlag {
 	sf, err := sf.mergeAndCheckDefaultImpl(flag)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	return sf
 }
@@ -207,7 +207,7 @@ func (sf *SuperFlag) GetBool(opt string) bool {
 		err = errors.Wrapf(err,
 			"Unable to parse %s as bool for key: %s. Options: %s\n",
 			val, opt, sf)
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 	return b
 }
@@ -222,7 +222,7 @@ func (sf *SuperFlag) GetFloat64(opt string) float64 {
 		err = errors.Wrapf(err,
 			"Unable to parse %s as float64 for key: %s. Options: %s\n",
 			val, opt, sf)
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 	return f
 }
@@ -237,7 +237,7 @@ func (sf *SuperFlag) GetInt64(opt string) int64 {
 		err = errors.Wrapf(err,
 			"Unable to parse %s as int64 for key: %s. Options: %s\n",
 			val, opt, sf)
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 	return i
 }
@@ -252,7 +252,7 @@ func (sf *SuperFlag) GetUint64(opt string) uint64 {
 		err = errors.Wrapf(err,
 			"Unable to parse %s as uint64 for key: %s. Options: %s\n",
 			val, opt, sf)
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 	return u
 }
@@ -267,7 +267,7 @@ func (sf *SuperFlag) GetUint32(opt string) uint32 {
 		err = errors.Wrapf(err,
 			"Unable to parse %s as uint32 for key: %s. Options: %s\n",
 			val, opt, sf)
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 	return uint32(u)
 }
@@ -283,7 +283,7 @@ func (sf *SuperFlag) GetPath(opt string) string {
 	p := sf.GetString(opt)
 	path, err := expandPath(p)
 	if err != nil {
-		log.Fatalf("Failed to get path: %+v", err)
+		glog.Fatalf("Failed to get path: %+v", err)
 	}
 	return path
 }
