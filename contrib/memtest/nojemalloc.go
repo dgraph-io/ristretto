@@ -5,10 +5,11 @@ package main
 // #include <stdlib.h>
 import "C"
 import (
-	"log"
 	"reflect"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 func Calloc(size int) []byte {
@@ -41,5 +42,5 @@ func NumAllocBytes() int64 { return atomic.LoadInt64(&numbytes) }
 func check() {}
 
 func init() {
-	log.Printf("USING CALLOC")
+	glog.Infof("USING CALLOC")
 }
