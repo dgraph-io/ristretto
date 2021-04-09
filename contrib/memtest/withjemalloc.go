@@ -3,9 +3,8 @@
 package main
 
 import (
-	"glog"
-
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/google/glog"
 )
 
 func Calloc(size int) []byte { return z.Calloc(size, "memtest") }
@@ -23,5 +22,5 @@ func check() {
 }
 
 func init() {
-	glog.Printf("USING JEMALLOC")
+	glog.Infof("USING JEMALLOC")
 }
