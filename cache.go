@@ -34,6 +34,9 @@ import (
 var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
+
+	defaultBufferItems     int64 = 64
+	defaultNumCountersMult int64 = 10
 )
 
 type itemCallback func(*Item)
@@ -82,15 +85,6 @@ type Cache struct {
 
 // Config is passed to NewCache for creating new Cache instances.
 type Config struct {
-	// NumCounters determines the number of counters (keys) to keep that hold
-	// access frequency information. It's generally a good idea to have more
-	// counters than the max cache capacity, as this will improve eviction
-	// accuracy and subsequent hit ratios.
-	//
-	// For example, if you expect your cache to hold 1,000,000 items when full,
-	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
-	// keeping 10,000,000 counters would require 5MB of memory.
-	NumCounters int64
 	// MaxCost can be considered as the cache capacity, in whatever units you
 	// choose to use.
 	//
@@ -100,10 +94,21 @@ type Config struct {
 	// eviction process will take care of making room for the new item and not
 	// overflowing the MaxCost value.
 	MaxCost int64
+	// NumCounters determines the number of counters (keys) to keep that hold
+	// access frequency information. It's generally a good idea to have more
+	// counters than the max cache capacity, as this will improve eviction
+	// accuracy and subsequent hit ratios.
+	//
+	// Defaults to 10*MaxCost if unset.
+	//
+	// For example, if you expect your cache to hold 1,000,000 items when full,
+	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
+	// keeping 10,000,000 counters would require 5MB of memory.
+	NumCounters int64
 	// BufferItems determines the size of Get buffers.
 	//
-	// Unless you have a rare use case, using `64` as the BufferItems value
-	// results in good performance.
+	// Defaults to `64` if unset. Unless you have a rare use case, using
+	// this default results in good performance.
 	BufferItems int64
 	// Metrics determines whether cache statistics are kept during the cache's
 	// lifetime. There *is* some overhead to keeping statistics, so you should
@@ -155,14 +160,18 @@ type Item struct {
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
 func NewCache(config *Config) (*Cache, error) {
-	switch {
-	case config.NumCounters == 0:
-		return nil, errors.New("NumCounters can't be zero")
-	case config.MaxCost == 0:
+	if config.MaxCost == 0 {
 		return nil, errors.New("MaxCost can't be zero")
-	case config.BufferItems == 0:
-		return nil, errors.New("BufferItems can't be zero")
 	}
+
+	if config.NumCounters == 0 {
+		config.NumCounters = config.MaxCost * defaultNumCountersMult // sensible default
+	}
+
+	if config.BufferItems == 0 {
+		config.BufferItems = defaultBufferItems
+	}
+
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
 		store:              newStore(),
