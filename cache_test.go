@@ -715,6 +715,37 @@ func init() {
 	bucketDurationSecs = 1
 }
 
+func TestBlockOnClear(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     false,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			c.Wait()
+		}
+		close(done)
+	}()
+
+	for i := 0; i < 10; i++ {
+		c.Clear()
+	}
+
+	select {
+	case <-done:
+		// We're OK
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out while waiting on cache")
+	}
+}
+
 // Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
@@ -801,7 +832,7 @@ func TestRistrettoCalloc(t *testing.T) {
 			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for i := 0; i < 10000; i++ {
 				k := rd.Intn(10000)
-				v := z.Calloc(256)
+				v := z.Calloc(256, "test")
 				rd.Read(v)
 				if !r.Set(k, v, 256) {
 					z.Free(v)
@@ -841,7 +872,7 @@ func TestRistrettoCallocTTL(t *testing.T) {
 			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for i := 0; i < 10000; i++ {
 				k := rd.Intn(10000)
-				v := z.Calloc(256)
+				v := z.Calloc(256, "test")
 				rd.Read(v)
 				if !r.SetWithTTL(k, v, 256, time.Second) {
 					z.Free(v)

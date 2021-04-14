@@ -23,9 +23,10 @@ package z
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"math"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 // helper
@@ -59,7 +60,7 @@ func NewBloomFilter(params ...float64) (bloomfilter *Bloom) {
 			entries, locs = uint64(params[0]), uint64(params[1])
 		}
 	} else {
-		log.Fatal("usage: New(float64(number_of_entries), float64(number_of_hashlocations))" +
+		glog.Fatal("usage: New(float64(number_of_entries), float64(number_of_hashlocations))" +
 			" i.e. New(float64(1000), float64(3)) or New(float64(number_of_entries)," +
 			" float64(number_of_hashlocations)) i.e. New(float64(1000), float64(0.03))")
 	}
@@ -204,7 +205,7 @@ func (bl Bloom) JSONMarshal() []byte {
 	}
 	data, err := json.Marshal(bloomImEx)
 	if err != nil {
-		log.Fatal("json.Marshal failed: ", err)
+		glog.Fatal("json.Marshal failed: ", err)
 	}
 	return data
 }

@@ -13,11 +13,13 @@ package z
 */
 import "C"
 import (
+	"bytes"
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/dustin/go-humanize"
 )
 
 // The go:linkname directives provides backdoor access to private functions in
@@ -39,16 +41,19 @@ func throw(s string)
 // Compile Go program with `go build -tags=jemalloc` to enable this.
 
 type dalloc struct {
-	pc uintptr
-	no int
+	t  string
 	sz int
 }
 
-// Enabled via 'leak' build flag.
 var dallocsMu sync.Mutex
 var dallocs map[unsafe.Pointer]*dalloc
 
-func Calloc(n int) []byte {
+func init() {
+	// By initializing dallocs, we can start tracking allocations and deallocations via z.Calloc.
+	dallocs = make(map[unsafe.Pointer]*dalloc)
+}
+
+func Calloc(n int, tag string) []byte {
 	if n == 0 {
 		return make([]byte, 0)
 	}
@@ -72,29 +77,22 @@ func Calloc(n int) []byte {
 		// it cannot allocate memory.
 		throw("out of memory")
 	}
-	uptr := unsafe.Pointer(ptr)
 
-	if dallocs != nil {
-		// If leak detection is enabled.
-		pc, _, l, ok := runtime.Caller(1)
-		if ok {
-			dallocsMu.Lock()
-			dallocs[uptr] = &dalloc{
-				pc: pc,
-				no: l,
-				sz: n,
-			}
-			dallocsMu.Unlock()
-		}
+	uptr := unsafe.Pointer(ptr)
+	dallocsMu.Lock()
+	dallocs[uptr] = &dalloc{
+		t:  tag,
+		sz: n,
 	}
+	dallocsMu.Unlock()
 	atomic.AddInt64(&numBytes, int64(n))
 	// Interpret the C pointer as a pointer to a Go array, then slice.
 	return (*[MaxArrayLen]byte)(uptr)[:n:n]
 }
 
 // CallocNoRef does the exact same thing as Calloc with jemalloc enabled.
-func CallocNoRef(n int) []byte {
-	return Calloc(n)
+func CallocNoRef(n int, tag string) []byte {
+	return Calloc(n, tag)
 }
 
 // Free frees the specified slice.
@@ -104,31 +102,31 @@ func Free(b []byte) {
 		ptr := unsafe.Pointer(&b[0])
 		C.je_free(ptr)
 		atomic.AddInt64(&numBytes, -int64(sz))
-
-		if dallocs != nil {
-			// If leak detection is enabled.
-			dallocsMu.Lock()
-			delete(dallocs, ptr)
-			dallocsMu.Unlock()
-		}
+		dallocsMu.Lock()
+		delete(dallocs, ptr)
+		dallocsMu.Unlock()
 	}
 }
 
-func PrintLeaks() {
+func Leaks() string {
 	if dallocs == nil {
-		fmt.Println("Leak detection disabled. Enable with 'leak' build flag.")
-		return
+		return "Leak detection disabled. Enable with 'leak' build flag."
 	}
 	dallocsMu.Lock()
 	defer dallocsMu.Unlock()
 	if len(dallocs) == 0 {
-		fmt.Println("NO leaks found.")
-		return
+		return "NO leaks found."
 	}
+	m := make(map[string]int)
 	for _, da := range dallocs {
-		pname := runtime.FuncForPC(da.pc).Name()
-		fmt.Printf("LEAK: %d at func: %s %d\n", da.sz, pname, da.no)
+		m[da.t] += da.sz
 	}
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "Allocations:\n")
+	for f, sz := range m {
+		fmt.Fprintf(&buf, "%s at file: %s\n", humanize.IBytes(uint64(sz)), f)
+	}
+	return buf.String()
 }
 
 // ReadMemStats populates stats with JE Malloc statistics.
@@ -136,6 +134,18 @@ func ReadMemStats(stats *MemStats) {
 	if stats == nil {
 		return
 	}
+	// Call an epoch mallclt to refresh the stats data as mentioned in the docs.
+	// http://jemalloc.net/jemalloc.3.html#epoch
+	// Note: This epoch mallctl is as expensive as a malloc call. It takes up the
+	// malloc_mutex_lock.
+	epoch := 1
+	sz := unsafe.Sizeof(&epoch)
+	C.je_mallctl(
+		(C.CString)("epoch"),
+		unsafe.Pointer(&epoch),
+		(*C.size_t)(unsafe.Pointer(&sz)),
+		unsafe.Pointer(&epoch),
+		(C.size_t)(unsafe.Sizeof(epoch)))
 	stats.Allocated = fetchStat("stats.allocated")
 	stats.Active = fetchStat("stats.active")
 	stats.Resident = fetchStat("stats.resident")
@@ -151,7 +161,7 @@ func fetchStat(s string) uint64 {
 		unsafe.Pointer(&out),             // Variable to store the output.
 		(*C.size_t)(unsafe.Pointer(&sz)), // Size of the output variable.
 		nil,                              // Input variable used to set a value.
-		0)                                // Size of the input variable.
+		0) // Size of the input variable.
 	return out
 }
 

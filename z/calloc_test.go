@@ -17,6 +17,7 @@
 package z
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func BenchmarkAllocation(b *testing.B) {
 			r := rand.New(source)
 			for pb.Next() {
 				sz := r.Intn(100) << 10
-				x := Calloc(sz)
+				x := Calloc(sz, "test")
 				r.Read(x)
 				Free(x)
 			}
@@ -80,15 +81,16 @@ func TestCalloc(t *testing.T) {
 	// JE_MALLOC_CONF="abort:true,tcache:false"
 
 	StatsPrint()
-	buf := CallocNoRef(1)
+	buf := CallocNoRef(1, "test")
 	if len(buf) == 0 {
 		t.Skipf("Not using jemalloc. Skipping test.")
 	}
 	Free(buf)
+	require.Equal(t, int64(0), NumAllocBytes())
 
-	buf1 := Calloc(128)
+	buf1 := Calloc(128, "test")
 	require.Equal(t, int64(128), NumAllocBytes())
-	buf2 := Calloc(128)
+	buf2 := Calloc(128, "test")
 	require.Equal(t, int64(256), NumAllocBytes())
 
 	Free(buf1)
@@ -97,7 +99,7 @@ func TestCalloc(t *testing.T) {
 	// _ = buf2
 	Free(buf2)
 	require.Equal(t, int64(0), NumAllocBytes())
-	PrintLeaks()
+	fmt.Println(Leaks())
 
 	// Double free would panic when debug mode is enabled in jemalloc.
 	// Free(buf2)

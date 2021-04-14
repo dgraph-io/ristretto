@@ -20,11 +20,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"os"
 	"sort"
+	"sync/atomic"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -38,13 +39,16 @@ import (
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
+	padding       uint64
+	offset        uint64
 	buf           []byte
-	offset        int
 	curSz         int
 	maxSz         int
 	fd            *os.File
 	bufType       BufferType
 	autoMmapAfter int
+	dir           string
+	tag           string
 }
 
 type BufferType int
@@ -68,18 +72,35 @@ const (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-// Newbuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
-func NewBuffer(sz int) *Buffer {
-	buf, err := NewBufferWith(sz, 256<<30, UseCalloc)
+// NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
+func NewBuffer(sz int, tag string) *Buffer {
+	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "", tag)
 	if err != nil {
-		log.Fatalf("while creating buffer: %v", err)
+		glog.Fatalf("while creating buffer: %v", err)
 	}
 	return buf
 }
 
+// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
+// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
+// used. Buffer can't be used without initialization via NewBuffer.
+func NewBufferWith(sz, maxSz int, bufType BufferType, tag string) (*Buffer, error) {
+	buf, err := NewBufferWithDir(sz, maxSz, bufType, "", tag)
+	return buf, err
+}
+
+func BufferFrom(data []byte) *Buffer {
+	return &Buffer{
+		offset:  uint64(len(data)),
+		padding: 0,
+		buf:     data,
+		bufType: UseInvalid,
+	}
+}
+
 func (b *Buffer) doMmap() error {
 	curBuf := b.buf
-	fd, err := ioutil.TempFile("", "buffer")
+	fd, err := ioutil.TempFile(b.dir, "buffer")
 	if err != nil {
 		return err
 	}
@@ -92,7 +113,7 @@ func (b *Buffer) doMmap() error {
 		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), b.maxSz)
 	}
 	if len(curBuf) > 0 {
-		assert(b.offset == copy(buf, curBuf[:b.offset]))
+		assert(int(b.offset) == copy(buf, curBuf[:b.offset]))
 		Free(curBuf)
 	}
 	b.buf = buf
@@ -101,33 +122,39 @@ func (b *Buffer) doMmap() error {
 	return nil
 }
 
-// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
-// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
-// used. Buffer can't be used without initialization via NewBuffer.
-func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
+// NewBufferWithDir would allocate a buffer of size sz upfront, with the total size of the buffer
+// not exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults
+// would be used. Buffer can't be used without initialization via NewBuffer. The buffer is created
+// inside dir. The caller should take care of existence of dir.
+func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir, tag string) (*Buffer, error) {
 	if sz == 0 {
 		sz = smallBufferSize
 	}
 	if maxSz == 0 {
 		maxSz = math.MaxInt32
 	}
-
+	if len(dir) == 0 {
+		dir = tmpDir
+	}
 	b := &Buffer{
-		offset:  1,
+		padding: 8,
+		offset:  8, // Use 8 bytes of padding so that the elements are aligned.
 		curSz:   sz,
 		maxSz:   maxSz,
 		bufType: UseCalloc, // by default.
+		dir:     dir,
+		tag:     tag,
 	}
 
 	switch bufType {
 	case UseCalloc:
-		b.buf = Calloc(sz)
+		b.buf = Calloc(sz, b.tag)
 	case UseMmap:
 		if err := b.doMmap(); err != nil {
 			return nil, err
 		}
 	default:
-		log.Fatalf("Invalid bufType: %q\n", bufType)
+		glog.Fatalf("Invalid bufType: %q\n", bufType)
 	}
 
 	b.buf[0] = 0x00
@@ -135,17 +162,25 @@ func NewBufferWith(sz, maxSz int, bufType BufferType) (*Buffer, error) {
 }
 
 func (b *Buffer) IsEmpty() bool {
-	return b.offset == 1
+	return int(b.offset) == b.StartOffset()
 }
 
-// Len would return the number of bytes written to the buffer so far.
-func (b *Buffer) Len() int {
-	return b.offset
+// LenWithPadding would return the number of bytes written to the buffer so far
+// plus the padding at the start of the buffer.
+func (b *Buffer) LenWithPadding() int {
+	return int(atomic.LoadUint64(&b.offset))
+}
+
+// LenNoPadding would return the number of bytes written to the buffer so far
+// (without the padding).
+func (b *Buffer) LenNoPadding() int {
+	return int(atomic.LoadUint64(&b.offset) - b.padding)
 }
 
 // Bytes would return all the written bytes as a slice.
 func (b *Buffer) Bytes() []byte {
-	return b.buf[1:b.offset]
+	off := atomic.LoadUint64(&b.offset)
+	return b.buf[b.padding:off]
 }
 
 func (b *Buffer) AutoMmapAfter(size int) {
@@ -161,11 +196,11 @@ func (b *Buffer) Grow(n int) {
 	if b.buf == nil {
 		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.maxSz-b.offset < n {
+	if b.maxSz-int(b.offset) < n {
 		panic(fmt.Sprintf("Buffer max size exceeded: %d."+
 			" Offset: %d. Grow: %d", b.maxSz, b.offset, n))
 	}
-	if b.curSz-b.offset > n {
+	if b.curSz-int(b.offset) > n {
 		return
 	}
 
@@ -186,16 +221,18 @@ func (b *Buffer) Grow(n int) {
 			check(b.doMmap())
 
 		} else {
-			newBuf := Calloc(b.curSz)
+			newBuf := Calloc(b.curSz, b.tag)
 			copy(newBuf, b.buf[:b.offset])
 			Free(b.buf)
 			b.buf = newBuf
 		}
 	case UseMmap:
 		if err := b.fd.Truncate(int64(b.curSz)); err != nil {
-			log.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
+			glog.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
 				b.fd.Name(), b.curSz, err)
 		}
+	default:
+		panic("Invalid bufType")
 	}
 }
 
@@ -205,16 +242,16 @@ func (b *Buffer) Grow(n int) {
 func (b *Buffer) Allocate(n int) []byte {
 	b.Grow(n)
 	off := b.offset
-	b.offset += n
-	return b.buf[off:b.offset]
+	b.offset += uint64(n)
+	return b.buf[off:int(b.offset)]
 }
 
 // AllocateOffset works the same way as allocate, but instead of returning a byte slice, it returns
 // the offset of the allocation.
 func (b *Buffer) AllocateOffset(n int) int {
 	b.Grow(n)
-	b.offset += n
-	return b.offset - n
+	b.offset += uint64(n)
+	return int(b.offset) - n
 }
 
 func (b *Buffer) writeLen(sz int) {
@@ -232,15 +269,23 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
+func (b *Buffer) StartOffset() int { return int(b.padding) }
+
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
 	copy(dst, slice)
 }
 
 func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
-	slice, next := []byte{}, 1
-	for next != 0 {
+	if b.IsEmpty() {
+		return nil
+	}
+	slice, next := []byte{}, b.StartOffset()
+	for next >= 0 {
 		slice, next = b.Slice(next)
+		if len(slice) == 0 {
+			continue
+		}
 		if err := f(slice); err != nil {
 			return err
 		}
@@ -261,7 +306,7 @@ func (s *sortHelper) sortSmall(start, end int) {
 	s.tmp.Reset()
 	s.small = s.small[:0]
 	next := start
-	for next != 0 && next < end {
+	for next >= 0 && next < end {
 		s.small = append(s.small, next)
 		_, next = s.b.Slice(next)
 	}
@@ -281,12 +326,12 @@ func (s *sortHelper) sortSmall(start, end int) {
 
 func assert(b bool) {
 	if !b {
-		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
+		glog.Fatalf("%+v", errors.Errorf("Assertion failure"))
 	}
 }
 func check(err error) {
 	if err != nil {
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 }
 func check2(_ interface{}, err error) {
@@ -357,7 +402,7 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 
 // SortSlice is like SortSliceBetween but sorting over the entire buffer.
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
-	b.SortSliceBetween(1, b.offset, less)
+	b.SortSliceBetween(b.StartOffset(), int(b.offset), less)
 }
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
@@ -369,7 +414,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 
 	var offsets []int
 	next, count := start, 0
-	for next != 0 && next < end {
+	for next >= 0 && next < end {
 		if count%1024 == 0 {
 			offsets = append(offsets, next)
 		}
@@ -387,7 +432,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		b:       b,
 		less:    less,
 		small:   make([]int, 0, 1024),
-		tmp:     NewBuffer(szTmp),
+		tmp:     NewBuffer(szTmp, b.tag),
 	}
 	defer s.tmp.Release()
 
@@ -406,25 +451,25 @@ func rawSlice(buf []byte) []byte {
 
 // Slice would return the slice written at offset.
 func (b *Buffer) Slice(offset int) ([]byte, int) {
-	if offset >= b.offset {
-		return nil, 0
+	if offset >= int(b.offset) {
+		return nil, -1
 	}
 
 	sz := binary.BigEndian.Uint32(b.buf[offset:])
 	start := offset + 4
 	next := start + int(sz)
 	res := b.buf[start:next]
-	if next >= b.offset {
-		next = 0
+	if next >= int(b.offset) {
+		next = -1
 	}
 	return res, next
 }
 
 // SliceOffsets is an expensive function. Use sparingly.
 func (b *Buffer) SliceOffsets() []int {
-	next := 1
+	next := b.StartOffset()
 	var offsets []int
-	for next != 0 {
+	for next >= 0 {
 		offsets = append(offsets, next)
 		_, next = b.Slice(next)
 	}
@@ -442,13 +487,13 @@ func (b *Buffer) Data(offset int) []byte {
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.Grow(len(p))
 	n = copy(b.buf[b.offset:], p)
-	b.offset += n
+	b.offset += uint64(n)
 	return n, nil
 }
 
 // Reset would reset the buffer to be reused.
 func (b *Buffer) Reset() {
-	b.offset = 1
+	b.offset = uint64(b.StartOffset())
 }
 
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
