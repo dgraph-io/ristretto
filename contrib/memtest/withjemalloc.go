@@ -4,7 +4,7 @@ package main
 
 import (
 	"github.com/dgraph-io/ristretto/z"
-	"github.com/google/glog"
+	"github.com/golang/glog"
 )
 
 func Calloc(size int) []byte { return z.Calloc(size, "memtest") }
