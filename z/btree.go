@@ -308,6 +308,32 @@ func (t *Tree) Iterate(fn func(node)) {
 	t.iterate(root, fn)
 }
 
+// IterateKV iterates through all keys and values in the tree.
+// If newVal is non-zero, it will be set in the tree.
+func (t *Tree) IterateKV(f func(key, val uint64) (newVal uint64)) {
+	t.Iterate(func(n node) {
+		// Only leaf nodes contain keys.
+		if !n.isLeaf() {
+			return
+		}
+
+		for i := 0; i < n.numKeys(); i++ {
+			key := n.key(i)
+			val := n.val(i)
+
+			// A zero value here means that this is a bogus entry.
+			if val == 0 {
+				continue
+			}
+
+			newVal := f(key, val)
+			if newVal != 0 {
+				n.setAt(valOffset(i), newVal)
+			}
+		}
+	})
+}
+
 func (t *Tree) print(n node, parentID uint64) {
 	n.print(parentID)
 	if n.isLeaf() {
