@@ -60,7 +60,10 @@ func newStore() store {
 	return newShardedMap()
 }
 
-const numShards uint64 = 256
+const (
+	numShards uint64 = 256
+	shardMask uint64 = numShards - 1
+)
 
 type shardedMap struct {
 	shards    []*lockedMap
@@ -79,28 +82,26 @@ func newShardedMap() *shardedMap {
 }
 
 func (sm *shardedMap) Get(key, conflict uint64) (interface{}, bool) {
-	return sm.shards[key%numShards].get(key, conflict)
+	return sm.shards[key&shardMask].get(key, conflict)
 }
 
 func (sm *shardedMap) Expiration(key uint64) int64 {
-	return sm.shards[key%numShards].Expiration(key)
+	return sm.shards[key&shardMask].Expiration(key)
 }
 
 func (sm *shardedMap) Set(i *Item) {
 	if i == nil {
-		// If item is nil make this Set a no-op.
 		return
 	}
-
-	sm.shards[i.Key%numShards].Set(i)
+	sm.shards[i.Key&shardMask].Set(i)
 }
 
 func (sm *shardedMap) Del(key, conflict uint64) (uint64, interface{}) {
-	return sm.shards[key%numShards].Del(key, conflict)
+	return sm.shards[key&shardMask].Del(key, conflict)
 }
 
 func (sm *shardedMap) Update(newItem *Item) (interface{}, bool) {
-	return sm.shards[newItem.Key%numShards].Update(newItem)
+	return sm.shards[newItem.Key&shardMask].Update(newItem)
 }
 
 func (sm *shardedMap) Cleanup(policy policy, onEvict itemCallback) {
