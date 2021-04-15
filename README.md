@@ -50,6 +50,7 @@ Ristretto is production ready. See [Projects using Ristretto](#projects-using-ri
 		* [Mixed](#Mixed)
 		* [Read](#Read)
 		* [Write](#Write)
+* [Projects using Ristretto](#projects-using-ristretto)
 * [FAQ](#FAQ)
 
 ## Usage
