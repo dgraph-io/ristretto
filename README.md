@@ -26,7 +26,7 @@ cache in [Dgraph][].
 
 ## Status
 
-Ristretto is usable but still under active development. We expect it to be production ready in the near future.
+Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ristretto).
 
 ## Table of Contents
 
@@ -50,6 +50,7 @@ Ristretto is usable but still under active development. We expect it to be produ
 		* [Mixed](#Mixed)
 		* [Read](#Read)
 		* [Write](#Write)
+* [Projects using Ristretto](#projects-using-ristretto)
 * [FAQ](#FAQ)
 
 ## Usage
@@ -197,6 +198,14 @@ of RAM.
 <p align="center">
 	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Write%20(Zipfian).svg">
 </p>
+
+## Projects Using Ristretto
+
+Below is a list of known projects that use Ristretto:
+
+- [Badger](https://github.com/dgraph-io/badger) - Embeddable key-value DB in Go
+- [Dgraph](https://github.com/dgraph-io/dgraph) - Horizontally scalable and distributed GraphQL database with a graph backend
+- [Vitess](https://github.com/vitessio/vitess) - database clustering system for horizontal scaling of MySQL
 
 ## FAQ
 
