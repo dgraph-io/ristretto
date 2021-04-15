@@ -134,6 +134,35 @@ func TestTreeCycle(t *testing.T) {
 	require.GreaterOrEqual(t, stats.NumPagesFree, int(float64(stats.NumPages)*0.95))
 }
 
+func TestTreeIterateKV(t *testing.T) {
+	bt := NewTree()
+
+	// Set entries: (i, i*10)
+	const n = uint64(1 << 20)
+	for i := uint64(1); i <= n; i++ {
+		bt.Set(i, i*10)
+	}
+
+	// Validate entries: (i, i*10)
+	// Set entries: (i, i*20)
+	count := uint64(0)
+	bt.IterateKV(func(k, v uint64) uint64 {
+		require.Equal(t, k*10, v)
+		count++
+		return k * 20
+	})
+	require.Equal(t, n, count)
+
+	// Validate entries: (i, i*20)
+	count = uint64(0)
+	bt.IterateKV(func(k, v uint64) uint64 {
+		require.Equal(t, k*20, v)
+		count++
+		return 0
+	})
+	require.Equal(t, n, count)
+}
+
 func TestOccupancyRatio(t *testing.T) {
 	// atmax 4 keys per node
 	setPageSize(16 * 5)

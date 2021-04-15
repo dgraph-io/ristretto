@@ -43,7 +43,6 @@ func TestFlagDefault(t *testing.T) {
 }
 
 func TestGetPath(t *testing.T) {
-
 	usr, err := user.Current()
 	require.NoError(t, err)
 	homeDir := usr.HomeDir
