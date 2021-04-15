@@ -26,7 +26,7 @@ cache in [Dgraph][].
 
 ## Status
 
-Ristretto is production ready. See [Projects using Ristretto](#projects-using-ristretto).
+Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ristretto).
 
 ## Table of Contents
 
