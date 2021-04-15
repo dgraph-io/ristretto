@@ -205,6 +205,7 @@ Below is a list of known projects that use Ristretto:
 
 - [Badger](https://github.com/dgraph-io/badger) - Embeddable key-value DB in Go.
 - [Dgraph](https://github.com/dgraph-io/dgraph) - Horizontally scalable and distributed GraphQL database with a graph backend
+- [Vitess](https://github.com/vitessio/vitess) - database clustering system for horizontal scaling of MySQL
 
 ## FAQ
 
