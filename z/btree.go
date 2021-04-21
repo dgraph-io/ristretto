@@ -38,6 +38,7 @@ var (
 // Tree represents the structure for custom mmaped B+ tree.
 // It supports keys in range [1, math.MaxUint64-1] and values [1, math.Uint64].
 type Tree struct {
+	buffer   *Buffer
 	data     []byte
 	nextPage uint64
 	freePage uint64
@@ -51,9 +52,9 @@ func (t *Tree) initRootNode() {
 	t.Set(absoluteMax, 0)
 }
 
-// NewTree returns a memory mapped B+ tree with given filename.
+// NewTree returns an in-memory B+ tree.
 func NewTree() *Tree {
-	t := &Tree{}
+	t := &Tree{buffer: NewBuffer(minSize, "tree")}
 	t.Reset()
 	return t
 }
@@ -62,7 +63,9 @@ func NewTree() *Tree {
 func (t *Tree) Reset() {
 	t.nextPage = 1
 	t.freePage = 0
-	t.data = make([]byte, minSize)
+	t.buffer.Reset()
+	t.buffer.AllocateOffset(minSize)
+	t.data = t.buffer.Bytes()
 	t.stats = TreeStats{}
 	t.initRootNode()
 }
@@ -82,7 +85,7 @@ func (t *Tree) Stats() TreeStats {
 	numPages := int(t.nextPage - 1)
 	out := TreeStats{
 		Bytes:        numPages * pageSize,
-		Allocated:    cap(t.data),
+		Allocated:    len(t.data),
 		NumLeafKeys:  t.stats.NumLeafKeys,
 		NumPages:     numPages,
 		NumPagesFree: t.stats.NumPagesFree,
@@ -114,16 +117,10 @@ func (t *Tree) newNode(bit uint64) node {
 		pageId = t.nextPage
 		t.nextPage++
 		offset := int(pageId) * pageSize
-		// Double the size with an upper cap of 1GB, if current buffer is insufficient.
-		if offset+pageSize > len(t.data) {
-			const oneGB = 1 << 30
-			newSz := 2 * len(t.data)
-			if newSz > len(t.data)+oneGB {
-				newSz = len(t.data) + oneGB
-			}
-			out := make([]byte, newSz)
-			copy(out, t.data)
-			t.data = out
+		reqSize := offset + pageSize
+		if reqSize > len(t.data) {
+			t.buffer.AllocateOffset(reqSize - len(t.data))
+			t.data = t.buffer.Bytes()
 		}
 	}
 	n := t.node(pageId)
