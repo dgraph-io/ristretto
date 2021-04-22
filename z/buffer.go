@@ -46,7 +46,7 @@ type Buffer struct {
 	maxSz         int        // causes a panic if the buffer grows beyond this size
 	mmapFile      *MmapFile  // optional mmap backing for the buffer
 	autoMmapAfter int        // Calloc falls back to an mmaped tmpfile after crossing this size
-	autoMmapDir   string     // must be set if using autoMmapAfter
+	autoMmapDir   string     // directory for autoMmap to create a tempfile in
 	persistent    bool       // when enabled, Release will not delete the underlying mmap file
 	tag           string     // used for jemalloc stats
 }
@@ -496,6 +496,9 @@ func (b *Buffer) Reset() {
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
 // important to call Release, otherwise a memory leak can happen.
 func (b *Buffer) Release() error {
+	if b == nil {
+		return nil
+	}
 	switch b.bufType {
 	case UseCalloc:
 		Free(b.buf)

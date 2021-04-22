@@ -33,7 +33,7 @@ import (
 func TestBuffer(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	file, err := ioutil.TempFile("", "")
+	file, err := ioutil.TempFile("", "buffer")
 	require.NoError(t, err)
 
 	const capacity = 512
@@ -43,10 +43,10 @@ func TestBuffer(t *testing.T) {
 	}
 
 	for _, buf := range buffers {
-		defer func() { require.NoError(t, buf.Release()) }()
-
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
+			defer func() { require.NoError(t, buf.Release()) }()
+
 			// This is just for verifying result
 			var bytesBuf bytes.Buffer
 			bytesBuf.Grow(capacity)
@@ -66,9 +66,6 @@ func TestBuffer(t *testing.T) {
 			bytesBuf.Write(smallData[:])
 			bytesBuf.Write(bigData[:])
 			require.Equal(t, buf.Bytes(), bytesBuf.Bytes())
-
-			err := buf.Release()
-			require.NoError(t, err)
 		})
 	}
 }
@@ -76,7 +73,7 @@ func TestBuffer(t *testing.T) {
 func TestBufferWrite(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	file, err := ioutil.TempFile("", "")
+	file, err := ioutil.TempFile("", "buffer")
 	require.NoError(t, err)
 
 	const capacity = 32
@@ -86,10 +83,10 @@ func TestBufferWrite(t *testing.T) {
 	}
 
 	for _, buf := range buffers {
-		defer func() { require.NoError(t, buf.Release()) }()
-
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
+			defer func() { require.NoError(t, buf.Release()) }()
+
 			var data [128]byte
 			rand.Read(data[:])
 			bytesBuf := new(bytes.Buffer)
@@ -168,7 +165,7 @@ func TestBufferSimpleSort(t *testing.T) {
 }
 
 func TestBufferSlice(t *testing.T) {
-	file, err := ioutil.TempFile("", "")
+	file, err := ioutil.TempFile("", "buffer")
 	require.NoError(t, err)
 
 	const capacity = 32
@@ -178,10 +175,9 @@ func TestBufferSlice(t *testing.T) {
 	}
 
 	for _, buf := range buffers {
-		defer func() { require.NoError(t, buf.Release()) }()
-
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
+			defer func() { require.NoError(t, buf.Release()) }()
 			count := 10000
 			exp := make([][]byte, 0, count)
 
@@ -225,15 +221,12 @@ func TestBufferSlice(t *testing.T) {
 			})
 			t.Logf("Done sorting\n")
 			compare() // same order after sort.
-
-			err := buf.Release()
-			require.NoError(t, err)
 		})
 	}
 }
 
 func TestBufferSort(t *testing.T) {
-	file, err := ioutil.TempFile("", "")
+	file, err := ioutil.TempFile("", "buffer")
 	require.NoError(t, err)
 
 	const capacity = 32
@@ -243,11 +236,11 @@ func TestBufferSort(t *testing.T) {
 	}
 
 	for _, buf := range buffers {
-		defer func() { require.NoError(t, buf.Release()) }()
-
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
+			defer func() { require.NoError(t, buf.Release()) }()
 			const N = 10000
+
 			for i := 0; i < N; i++ {
 				newSlice := buf.SliceAllocate(8)
 				uid := uint64(rand.Int63())
@@ -279,9 +272,6 @@ func TestBufferSort(t *testing.T) {
 				test(i-10, i)
 			}
 			test(0, N)
-
-			err := buf.Release()
-			require.NoError(t, err)
 		})
 	}
 }

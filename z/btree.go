@@ -59,6 +59,18 @@ func NewTree() *Tree {
 	return t
 }
 
+// NewTree returns a persistent on-disk B+ tree.
+func NewTreePersistent(path string) (*Tree, error) {
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	buffer := NewBufferFromFile(file, 0).WithPersistent(true)
+	tree := &Tree{buffer: buffer}
+	tree.Reset()
+	return tree, nil
+}
+
 // Reset resets the tree and truncates it to maxSz.
 func (t *Tree) Reset() {
 	t.nextPage = 1
@@ -68,6 +80,14 @@ func (t *Tree) Reset() {
 	t.data = t.buffer.Bytes()
 	t.stats = TreeStats{}
 	t.initRootNode()
+}
+
+// Close releases the memory used by the tree.
+func (t *Tree) Close() error {
+	if t != nil {
+		return nil
+	}
+	return t.buffer.Release()
 }
 
 type TreeStats struct {
