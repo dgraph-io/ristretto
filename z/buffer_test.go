@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"sort"
 	"testing"
@@ -32,32 +33,40 @@ import (
 func TestBuffer(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	for btype := UseCalloc; btype < UseInvalid; btype++ {
-		name := fmt.Sprintf("Using mode %s", btype)
-		t.Run(name, func(t *testing.T) {
-			var bytesBuffer bytes.Buffer // This is just for verifying result.
-			bytesBuffer.Grow(512)
+	file, err := ioutil.TempFile("", "")
+	require.NoError(t, err)
 
-			cBuffer, err := NewBufferWith(512, 4<<30, btype, "test")
-			require.Nil(t, err)
-			defer cBuffer.Release()
+	const capacity = 512
+	buffers := []*Buffer{
+		NewBuffer(capacity, "test"),
+		NewBufferFromFile(file, capacity),
+	}
+
+	for _, buffer := range buffers {
+		name := fmt.Sprintf("Using buffer type: %s", buffer.bufType)
+		t.Run(name, func(t *testing.T) {
+			// This is just for verifying result
+			var bytesBuffer bytes.Buffer
+			bytesBuffer.Grow(capacity)
 
 			// Writer small []byte
-			var smallBytes [256]byte
-			rand.Read(smallBytes[:])
-			var bigBytes [1024]byte
-			rand.Read(bigBytes[:])
+			var smallData [256]byte
+			rand.Read(smallData[:])
+			var bigData [1024]byte
+			rand.Read(bigData[:])
 
-			_, err = cBuffer.Write(smallBytes[:])
+			_, err = buffer.Write(smallData[:])
 			require.NoError(t, err, "unable to write data to page buffer")
-			_, err = cBuffer.Write(bigBytes[:])
+			_, err = buffer.Write(bigData[:])
 			require.NoError(t, err, "unable to write data to page buffer")
 
 			// Write data to bytesBuffer also, just to match result.
-			bytesBuffer.Write(smallBytes[:])
-			bytesBuffer.Write(bigBytes[:])
+			bytesBuffer.Write(smallData[:])
+			bytesBuffer.Write(bigData[:])
+			require.Equal(t, buffer.Bytes(), bytesBuffer.Bytes())
 
-			require.True(t, bytes.Equal(cBuffer.Bytes(), bytesBuffer.Bytes()))
+			err := buffer.Release()
+			require.NoError(t, err)
 		})
 	}
 }
@@ -65,66 +74,72 @@ func TestBuffer(t *testing.T) {
 func TestBufferWrite(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	for btype := UseCalloc; btype < UseInvalid; btype++ {
-		name := fmt.Sprintf("Using mode %s", btype)
+	file, err := ioutil.TempFile("", "")
+	require.NoError(t, err)
+
+	const capacity = 32
+	buffers := []*Buffer{
+		NewBuffer(capacity, "test"),
+		NewBufferFromFile(file, capacity),
+	}
+
+	for _, buffer := range buffers {
+		name := fmt.Sprintf("Using buffer type: %s", buffer.bufType)
 		t.Run(name, func(t *testing.T) {
-			var wb [128]byte
-			rand.Read(wb[:])
+			var data [128]byte
+			rand.Read(data[:])
 
-			cb, err := NewBufferWith(32, 4<<30, btype, "test")
-			require.Nil(t, err)
-			defer cb.Release()
-
-			bb := new(bytes.Buffer)
+			bytesBuffer := new(bytes.Buffer)
 
 			end := 32
 			for i := 0; i < 3; i++ {
-				n, err := cb.Write(wb[:end])
+				n, err := buffer.Write(data[:end])
 				require.NoError(t, err, "unable to write bytes to buffer")
 				require.Equal(t, n, end, "length of buffer and length written should be equal")
 
 				// append to bb also for testing.
-				bb.Write(wb[:end])
+				bytesBuffer.Write(data[:end])
 
-				require.True(t, bytes.Equal(cb.Bytes(), bb.Bytes()), "Both bytes should match")
+				require.Equal(t, buffer.Bytes(), bytesBuffer.Bytes())
 				end = end * 2
 			}
+
 		})
 	}
 }
 
-func TestBufferAutoMmap(t *testing.T) {
-	buf := NewBuffer(1 << 20, "test")
-	defer buf.Release()
-	buf.AutoMmapAfter(64 << 20)
+// TODO(ajeet)
+// func TestBufferAutoMmap(t *testing.T) {
+// 	buf := NewBuffer(1<<20, "test").WithAutoMmap(64 << 20)
+// 	defer buf.Release()
 
-	N := 128 << 10
-	var wb [1024]byte
-	for i := 0; i < N; i++ {
-		rand.Read(wb[:])
-		b := buf.SliceAllocate(len(wb))
-		copy(b, wb[:])
-	}
-	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
+// 	N := 128 << 10
+// 	var wb [1024]byte
+// 	for i := 0; i < N; i++ {
+// 		rand.Read(wb[:])
+// 		b := buf.SliceAllocate(len(wb))
+// 		copy(b, wb[:])
+// 	}
+// 	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
 
-	buf.SortSlice(func(l, r []byte) bool {
-		return bytes.Compare(l, r) < 0
-	})
-	t.Logf("sort done\n")
+// 	buf.SortSlice(func(l, r []byte) bool {
+// 		return bytes.Compare(l, r) < 0
+// 	})
+// 	t.Logf("sort done\n")
 
-	var count int
-	var last []byte
-	buf.SliceIterate(func(slice []byte) error {
-		require.True(t, bytes.Compare(slice, last) >= 0)
-		last = append(last[:0], slice...)
-		count++
-		return nil
-	})
-	require.Equal(t, N, count)
-}
+// 	var count int
+// 	var last []byte
+// 	buf.SliceIterate(func(slice []byte) error {
+// 		require.True(t, bytes.Compare(slice, last) >= 0)
+// 		last = append(last[:0], slice...)
+// 		count++
+// 		return nil
+// 	})
+// 	require.Equal(t, N, count)
+// }
 
 func TestBufferSimpleSort(t *testing.T) {
-	buf := NewBuffer(1 << 20, "test")
+	buf := NewBuffer(1<<20, "test")
 	defer buf.Release()
 	for i := 0; i < 25600; i++ {
 		b := buf.SliceAllocate(4)
@@ -151,13 +166,18 @@ func TestBufferSimpleSort(t *testing.T) {
 }
 
 func TestBufferSlice(t *testing.T) {
-	for btype := UseCalloc; btype < UseInvalid; btype++ {
-		name := fmt.Sprintf("Using mode %s", btype)
-		t.Run(name, func(t *testing.T) {
-			buf, err := NewBufferWith(0, 0, btype, "test")
-			require.Nil(t, err)
-			defer buf.Release()
+	file, err := ioutil.TempFile("", "")
+	require.NoError(t, err)
 
+	const capacity = 32
+	buffers := []*Buffer{
+		NewBuffer(capacity, "test").WithPadding(8),
+		NewBufferFromFile(file, capacity).WithPadding(8),
+	}
+
+	for _, buffer := range buffers {
+		name := fmt.Sprintf("Using buffer type: %s", buffer.bufType)
+		t.Run(name, func(t *testing.T) {
 			count := 10000
 			exp := make([][]byte, 0, count)
 
@@ -167,7 +187,7 @@ func TestBufferSlice(t *testing.T) {
 				testBuf := make([]byte, sz)
 				rand.Read(testBuf)
 
-				newSlice := buf.SliceAllocate(sz)
+				newSlice := buffer.SliceAllocate(sz)
 				require.Equal(t, sz, copy(newSlice, testBuf))
 
 				// Save testBuf for verification.
@@ -176,7 +196,7 @@ func TestBufferSlice(t *testing.T) {
 
 			compare := func() {
 				i := 0
-				buf.SliceIterate(func(slice []byte) error {
+				buffer.SliceIterate(func(slice []byte) error {
 					// All the slices returned by the buffer should be equal to what we
 					// inserted earlier.
 					if !bytes.Equal(exp[i], slice) {
@@ -196,35 +216,42 @@ func TestBufferSlice(t *testing.T) {
 				return bytes.Compare(exp[i], exp[j]) < 0
 			})
 			t.Logf("Sorting using buf.SortSlice\n")
-			buf.SortSlice(func(a, b []byte) bool {
+			buffer.SortSlice(func(a, b []byte) bool {
 				return bytes.Compare(a, b) < 0
 			})
 			t.Logf("Done sorting\n")
 			compare() // same order after sort.
+
+			err := buffer.Release()
+			require.NoError(t, err)
 		})
 	}
 }
 
 func TestBufferSort(t *testing.T) {
-	for btype := UseCalloc; btype < UseInvalid; btype++ {
-		name := fmt.Sprintf("Using mode %s", btype)
+	file, err := ioutil.TempFile("", "")
+	require.NoError(t, err)
+
+	const capacity = 32
+	buffers := []*Buffer{
+		NewBuffer(capacity, "test"),
+		NewBufferFromFile(file, capacity),
+	}
+
+	for _, buffer := range buffers {
+		name := fmt.Sprintf("Using buffer type: %s", buffer.bufType)
 		t.Run(name, func(t *testing.T) {
-			buf, err := NewBufferWith(0, 0, btype, "test")
-			require.Nil(t, err)
-			defer buf.Release()
-
-			N := 10000
-
+			const N = 10000
 			for i := 0; i < N; i++ {
-				newSlice := buf.SliceAllocate(8)
+				newSlice := buffer.SliceAllocate(8)
 				uid := uint64(rand.Int63())
 				binary.BigEndian.PutUint64(newSlice, uid)
 			}
 
 			test := func(start, end int) {
-				start = buf.StartOffset() + 12*start
-				end = buf.StartOffset() + 12*end
-				buf.SortSliceBetween(start, end, func(ls, rs []byte) bool {
+				start = buffer.StartOffset() + 12*start
+				end = buffer.StartOffset() + 12*end
+				buffer.SortSliceBetween(start, end, func(ls, rs []byte) bool {
 					lhs := binary.BigEndian.Uint64(ls)
 					rhs := binary.BigEndian.Uint64(rs)
 					return lhs < rhs
@@ -234,7 +261,7 @@ func TestBufferSort(t *testing.T) {
 				var last uint64
 				var count int
 				for next >= 0 && next < end {
-					slice, next = buf.Slice(next)
+					slice, next = buffer.Slice(next)
 					uid := binary.BigEndian.Uint64(slice)
 					require.GreaterOrEqual(t, uid, last)
 					last = uid
@@ -246,13 +273,16 @@ func TestBufferSort(t *testing.T) {
 				test(i-10, i)
 			}
 			test(0, N)
+
+			err := buffer.Release()
+			require.NoError(t, err)
 		})
 	}
 }
 
 // Test that the APIs returns the expected offsets.
 func TestBufferPadding(t *testing.T) {
-	buf := NewBuffer(1 << 10, "test")
+	buf := NewBuffer(1<<10, "test")
 	defer buf.Release()
 	sz := rand.Int31n(100)
 
