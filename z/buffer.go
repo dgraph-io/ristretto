@@ -406,7 +406,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		return
 	}
 	if start == 0 {
-		panic("start can never be zero") // TODO(ajeet): why?
+		panic("start can never be zero")
 	}
 
 	var offsets []int
