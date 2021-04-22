@@ -28,6 +28,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const defaultCapacity = 64
+
 // Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
 //
 // In UseCalloc mode, z.Calloc is used to allocate memory, which depending upon how the code is
@@ -51,12 +53,9 @@ type Buffer struct {
 	tag           string     // used for jemalloc stats
 }
 
-const (
-	defaultCapacity = 64
-	defaultTag      = "buffer"
-)
-
 func NewBuffer(capacity int, tag string) *Buffer {
+	const defaultTag = "buffer"
+
 	if capacity == 0 {
 		capacity = defaultCapacity
 	}
@@ -69,7 +68,7 @@ func NewBuffer(capacity int, tag string) *Buffer {
 		curSz:   capacity,
 		offset:  8,
 		padding: 8,
-		tag:     defaultTag,
+		tag:     tag,
 	}
 }
 
@@ -151,7 +150,7 @@ func (b *Buffer) Grow(n int) {
 	if b.buf == nil {
 		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.maxSz != 0 && int(b.offset)+n > b.maxSz {
+	if b.maxSz > 0 && int(b.offset)+n > b.maxSz {
 		err := fmt.Errorf(
 			"z.Buffer max size exceeded: %d offset: %d grow: %d", b.maxSz, b.offset, n)
 		panic(err)

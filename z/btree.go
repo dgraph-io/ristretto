@@ -53,8 +53,12 @@ func (t *Tree) initRootNode() {
 }
 
 // NewTree returns an in-memory B+ tree.
-func NewTree() *Tree {
-	t := &Tree{buffer: NewBuffer(minSize, "tree")}
+func NewTree(tag string) *Tree {
+	const defaultTag = "tree"
+	if tag == "" {
+		tag = defaultTag
+	}
+	t := &Tree{buffer: NewBuffer(minSize, tag)}
 	t.Reset()
 	return t
 }
@@ -75,6 +79,7 @@ func NewTreePersistent(path string) (*Tree, error) {
 func (t *Tree) Reset() {
 	t.nextPage = 1
 	t.freePage = 0
+	Memclr(t.data)
 	t.buffer.Reset()
 	t.buffer.AllocateOffset(minSize)
 	t.data = t.buffer.Bytes()
@@ -84,7 +89,7 @@ func (t *Tree) Reset() {
 
 // Close releases the memory used by the tree.
 func (t *Tree) Close() error {
-	if t != nil {
+	if t == nil {
 		return nil
 	}
 	return t.buffer.Release()

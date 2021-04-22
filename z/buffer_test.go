@@ -33,7 +33,7 @@ import (
 func TestBuffer(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	file, err := ioutil.TempFile("", "buffer")
+	file, err := ioutil.TempFile("", "TestBuffer")
 	require.NoError(t, err)
 
 	const capacity = 512
@@ -73,7 +73,7 @@ func TestBuffer(t *testing.T) {
 func TestBufferWrite(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
-	file, err := ioutil.TempFile("", "buffer")
+	file, err := ioutil.TempFile("", "TestBufferWrite")
 	require.NoError(t, err)
 
 	const capacity = 32
@@ -165,7 +165,7 @@ func TestBufferSimpleSort(t *testing.T) {
 }
 
 func TestBufferSlice(t *testing.T) {
-	file, err := ioutil.TempFile("", "buffer")
+	file, err := ioutil.TempFile("", "TestBufferSlice")
 	require.NoError(t, err)
 
 	const capacity = 32
@@ -226,7 +226,7 @@ func TestBufferSlice(t *testing.T) {
 }
 
 func TestBufferSort(t *testing.T) {
-	file, err := ioutil.TempFile("", "buffer")
+	file, err := ioutil.TempFile("", "TestBufferSort")
 	require.NoError(t, err)
 
 	const capacity = 32
