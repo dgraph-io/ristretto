@@ -19,6 +19,7 @@ package z
 import (
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sort"
 	"sync/atomic"
@@ -81,13 +82,12 @@ func NewBufferFromFile(file *os.File, capacity int) *Buffer {
 		panic(err)
 	}
 	return &Buffer{
-		buf:         mmapFile.Data,
-		bufType:     UseMmap,
-		curSz:       capacity,
-		mmapFile:    mmapFile,
-		autoMmapDir: file.Name(),
-		offset:      8,
-		padding:     8,
+		buf:      mmapFile.Data,
+		bufType:  UseMmap,
+		curSz:    capacity,
+		mmapFile: mmapFile,
+		offset:   8,
+		padding:  8,
 	}
 }
 
@@ -177,9 +177,12 @@ func (b *Buffer) Grow(n int) {
 		// If autoMmap gets triggered, copy the slice over to an mmaped file.
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
 			b.bufType = UseMmap
-			// TODO(ajeet): where do we get mmapPath from?
-			mmapFile, err := OpenMmapFile(b.autoMmapDir, os.O_RDWR|os.O_CREATE|os.O_TRUNC, b.curSz)
+			file, err := ioutil.TempFile(b.autoMmapDir, "")
 			if err != nil {
+				panic(err)
+			}
+			mmapFile, err := OpenMmapFileUsing(file, b.curSz, true)
+			if err != nil && err != NewFile {
 				panic(err)
 			}
 			copy(mmapFile.Data, b.buf[:b.offset])
@@ -497,12 +500,16 @@ func (b *Buffer) Release() error {
 	case UseCalloc:
 		Free(b.buf)
 	case UseMmap:
+		if b.mmapFile == nil {
+			return nil
+		}
+		path := b.mmapFile.Fd.Name()
 		if err := b.mmapFile.Close(-1); err != nil {
-			return errors.Wrapf(err, "while closing file: %s", b.autoMmapDir)
+			return errors.Wrapf(err, "while closing file: %s", path)
 		}
 		if !b.persistent {
-			if err := os.Remove(b.mmapFile.Fd.Name()); err != nil {
-				return errors.Wrapf(err, "while deleting file %s", b.autoMmapDir)
+			if err := os.Remove(path); err != nil {
+				return errors.Wrapf(err, "while deleting file %s", path)
 			}
 		}
 	}

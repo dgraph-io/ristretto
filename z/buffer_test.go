@@ -108,35 +108,34 @@ func TestBufferWrite(t *testing.T) {
 	}
 }
 
-// TODO(ajeet)
-// func TestBufferAutoMmap(t *testing.T) {
-// 	buf := NewBuffer(1<<20, "test").WithAutoMmap(64 << 20)
-// 	defer buf.Release()
+func TestBufferAutoMmap(t *testing.T) {
+	buf := NewBuffer(1<<20, "test").WithAutoMmap(64<<20, "")
+	defer buf.Release()
 
-// 	N := 128 << 10
-// 	var wb [1024]byte
-// 	for i := 0; i < N; i++ {
-// 		rand.Read(wb[:])
-// 		b := buf.SliceAllocate(len(wb))
-// 		copy(b, wb[:])
-// 	}
-// 	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
+	N := 128 << 10
+	var wb [1024]byte
+	for i := 0; i < N; i++ {
+		rand.Read(wb[:])
+		b := buf.SliceAllocate(len(wb))
+		copy(b, wb[:])
+	}
+	t.Logf("Buffer size: %d\n", buf.LenWithPadding())
 
-// 	buf.SortSlice(func(l, r []byte) bool {
-// 		return bytes.Compare(l, r) < 0
-// 	})
-// 	t.Logf("sort done\n")
+	buf.SortSlice(func(l, r []byte) bool {
+		return bytes.Compare(l, r) < 0
+	})
+	t.Logf("sort done\n")
 
-// 	var count int
-// 	var last []byte
-// 	buf.SliceIterate(func(slice []byte) error {
-// 		require.True(t, bytes.Compare(slice, last) >= 0)
-// 		last = append(last[:0], slice...)
-// 		count++
-// 		return nil
-// 	})
-// 	require.Equal(t, N, count)
-// }
+	var count int
+	var last []byte
+	buf.SliceIterate(func(slice []byte) error {
+		require.True(t, bytes.Compare(slice, last) >= 0)
+		last = append(last[:0], slice...)
+		count++
+		return nil
+	})
+	require.Equal(t, N, count)
+}
 
 func TestBufferSimpleSort(t *testing.T) {
 	buf := NewBuffer(1<<20, "test")
@@ -171,8 +170,8 @@ func TestBufferSlice(t *testing.T) {
 
 	const capacity = 32
 	buffers := []*Buffer{
-		NewBuffer(capacity, "test").WithPadding(8),
-		NewBufferFromFile(file, capacity).WithPadding(8),
+		NewBuffer(capacity, "test"),
+		NewBufferFromFile(file, capacity),
 	}
 
 	for _, buffer := range buffers {
