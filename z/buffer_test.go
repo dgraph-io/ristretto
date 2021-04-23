@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"sort"
 	"testing"
@@ -32,15 +31,8 @@ import (
 
 func TestBuffer(t *testing.T) {
 	rand.Seed(time.Now().Unix())
-
-	file, err := ioutil.TempFile("", "TestBuffer")
-	require.NoError(t, err)
-
 	const capacity = 512
-	buffers := []*Buffer{
-		NewBuffer(capacity, "test"),
-		NewBufferFromFile(file, capacity),
-	}
+	buffers := newBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
@@ -57,7 +49,7 @@ func TestBuffer(t *testing.T) {
 			var bigData [1024]byte
 			rand.Read(bigData[:])
 
-			_, err = buf.Write(smallData[:])
+			_, err := buf.Write(smallData[:])
 			require.NoError(t, err, "unable to write data to page buffer")
 			_, err = buf.Write(bigData[:])
 			require.NoError(t, err, "unable to write data to page buffer")
@@ -72,15 +64,8 @@ func TestBuffer(t *testing.T) {
 
 func TestBufferWrite(t *testing.T) {
 	rand.Seed(time.Now().Unix())
-
-	file, err := ioutil.TempFile("", "TestBufferWrite")
-	require.NoError(t, err)
-
 	const capacity = 32
-	buffers := []*Buffer{
-		NewBuffer(capacity, "test"),
-		NewBufferFromFile(file, capacity),
-	}
+	buffers := newBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
@@ -165,14 +150,8 @@ func TestBufferSimpleSort(t *testing.T) {
 }
 
 func TestBufferSlice(t *testing.T) {
-	file, err := ioutil.TempFile("", "TestBufferSlice")
-	require.NoError(t, err)
-
 	const capacity = 32
-	buffers := []*Buffer{
-		NewBuffer(capacity, "test"),
-		NewBufferFromFile(file, capacity),
-	}
+	buffers := newBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
@@ -226,14 +205,8 @@ func TestBufferSlice(t *testing.T) {
 }
 
 func TestBufferSort(t *testing.T) {
-	file, err := ioutil.TempFile("", "TestBufferSort")
-	require.NoError(t, err)
-
 	const capacity = 32
-	buffers := []*Buffer{
-		NewBuffer(capacity, "test"),
-		NewBufferFromFile(file, capacity),
-	}
+	buffers := newBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
@@ -291,4 +264,17 @@ func TestBufferPadding(t *testing.T) {
 	copy(buf.Bytes(), b)
 	data := buf.Data(buf.StartOffset())
 	require.Equal(t, b, data[:sz])
+}
+
+func newBuffers(t *testing.T, capacity int) []*Buffer {
+	var bufs []*Buffer
+
+	buf := NewBuffer(capacity, "test")
+	bufs = append(bufs, buf)
+
+	buf, err := NewBufferTmp("", capacity)
+	require.NoError(t, err)
+	bufs = append(bufs, buf)
+
+	return bufs
 }

@@ -28,7 +28,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-const defaultCapacity = 64
+const (
+	defaultCapacity = 64
+	defaultTag      = "buffer"
+)
 
 // Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
 //
@@ -54,8 +57,6 @@ type Buffer struct {
 }
 
 func NewBuffer(capacity int, tag string) *Buffer {
-	const defaultTag = "buffer"
-
 	if capacity == 0 {
 		capacity = defaultCapacity
 	}
@@ -72,15 +73,39 @@ func NewBuffer(capacity int, tag string) *Buffer {
 	}
 }
 
-func NewBufferFromFile(file *os.File, capacity int) *Buffer {
+func NewBufferPersistent(path string) (*Buffer, error) {
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	buffer, err := newBufferFile(file, 0)
+	if err != nil {
+		return nil, err
+	}
+	buffer.persistent = true
+	return buffer, nil
+}
+
+func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 	if capacity == 0 {
 		capacity = defaultCapacity
 	}
+	if dir == "" {
+		dir = tmpDir
+	}
+	file, err := ioutil.TempFile(dir, "buffer")
+	if err != nil {
+		return nil, err
+	}
+	return newBufferFile(file, capacity)
+}
+
+func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
 	mmapFile, err := OpenMmapFileUsing(file, capacity, true)
 	if err != nil && err != NewFile {
-		panic(err)
+		return nil, err
 	}
-	return &Buffer{
+	buf := &Buffer{
 		buf:      mmapFile.Data,
 		bufType:  UseMmap,
 		curSz:    capacity,
@@ -88,9 +113,10 @@ func NewBufferFromFile(file *os.File, capacity int) *Buffer {
 		offset:   8,
 		padding:  8,
 	}
+	return buf, nil
 }
 
-func NewBufferFromSlice(slice []byte) *Buffer {
+func NewBufferSlice(slice []byte) *Buffer {
 	return &Buffer{
 		buf:     slice,
 		bufType: UseInvalid,
@@ -103,20 +129,16 @@ func (b *Buffer) WithAutoMmap(threshold int, path string) *Buffer {
 		panic("can only autoMmap with UseCalloc")
 	}
 	b.autoMmapAfter = threshold
-	b.autoMmapDir = path
+	if path == "" {
+		b.autoMmapDir = tmpDir
+	} else {
+		b.autoMmapDir = path
+	}
 	return b
 }
 
 func (b *Buffer) WithMaxSize(size int) *Buffer {
 	b.maxSz = size
-	return b
-}
-
-func (b *Buffer) WithPersistent(persistent bool) *Buffer {
-	if b.bufType != UseMmap {
-		panic("can only use persistent storage with UseMmap")
-	}
-	b.persistent = persistent
 	return b
 }
 

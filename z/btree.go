@@ -65,11 +65,10 @@ func NewTree(tag string) *Tree {
 
 // NewTree returns a persistent on-disk B+ tree.
 func NewTreePersistent(path string) (*Tree, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	buffer, err := NewBufferPersistent(path)
 	if err != nil {
 		return nil, err
 	}
-	buffer := NewBufferFromFile(file, 0).WithPersistent(true)
 	tree := &Tree{buffer: buffer}
 	tree.Reset()
 	return tree, nil
