@@ -557,6 +557,71 @@ func TestCacheDelWithTTL(t *testing.T) {
 	require.Nil(t, val)
 }
 
+func TestCacheGetTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	// try expiration with valid ttl item
+	{
+		expiration := time.Second * 5
+		retrySet(t, c, 1, 1, 1, expiration)
+
+		val, ok := c.Get(1)
+		require.True(t, ok)
+		require.Equal(t, 1, val.(int))
+
+		ttl, ok := c.GetTTL(1)
+		require.True(t, ok)
+		require.WithinDuration(t,
+			time.Now().Add(expiration), time.Now().Add(ttl), 1*time.Second)
+
+		c.Del(1)
+
+		ttl, ok = c.GetTTL(1)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with no ttl
+	{
+		retrySet(t, c, 2, 2, 1, time.Duration(0))
+
+		val, ok := c.Get(2)
+		require.True(t, ok)
+		require.Equal(t, 2, val.(int))
+
+		ttl, ok := c.GetTTL(2)
+		require.True(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with missing item
+	{
+		ttl, ok := c.GetTTL(3)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with expired item
+	{
+		expiration := time.Second
+		retrySet(t, c, 3, 3, 1, expiration)
+
+		val, ok := c.Get(3)
+		require.True(t, ok)
+		require.Equal(t, 3, val.(int))
+
+		time.Sleep(time.Second)
+
+		ttl, ok := c.GetTTL(3)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+}
+
 func TestCacheClear(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters:        100,

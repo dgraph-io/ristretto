@@ -321,6 +321,34 @@ func (c *Cache) Del(key interface{}) {
 	}
 }
 
+// GetTTL returns the TTL for the specified key and a bool that is true if the
+// item was found and is not expired.
+func (c *Cache) GetTTL(key interface{}) (time.Duration, bool) {
+	if c == nil || key == nil {
+		return 0, false
+	}
+
+	keyHash, conflictHash := c.keyToHash(key)
+	if _, ok := c.store.Get(keyHash, conflictHash); !ok {
+		// not found
+		return 0, false
+	}
+
+	expiration := c.store.Expiration(keyHash)
+	if expiration == 0 {
+		// found but no expiration
+		return 0, true
+	}
+
+	ttl := time.Unix(expiration, 0)
+	if time.Now().After(ttl) {
+		// found but expired
+		return 0, false
+	}
+
+	return time.Until(ttl), true
+}
+
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
 	if c == nil || c.isClosed {
