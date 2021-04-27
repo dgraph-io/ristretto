@@ -78,7 +78,7 @@ func NewTreePersistent(path string) (*Tree, error) {
 func (t *Tree) Reset() {
 	t.nextPage = 1
 	t.freePage = 0
-	Memclr(t.data)
+	Memclr(t.buffer.buf)
 	t.buffer.Reset()
 	t.buffer.AllocateOffset(minSize)
 	t.data = t.buffer.Bytes()

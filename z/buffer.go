@@ -118,9 +118,9 @@ func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
 
 func NewBufferSlice(slice []byte) *Buffer {
 	return &Buffer{
+		offset:  uint64(len(slice)),
 		buf:     slice,
 		bufType: UseInvalid,
-		curSz:   len(slice),
 	}
 }
 
@@ -206,7 +206,7 @@ func (b *Buffer) Grow(n int) {
 			if err != nil && err != NewFile {
 				panic(err)
 			}
-			copy(mmapFile.Data, b.buf[:b.offset])
+			assert(int(b.offset) == copy(mmapFile.Data, b.buf[:b.offset]))
 			Free(b.buf)
 			b.mmapFile = mmapFile
 			b.buf = mmapFile.Data
@@ -215,7 +215,7 @@ func (b *Buffer) Grow(n int) {
 
 		// Else, reallocate the slice.
 		newBuf := Calloc(b.curSz, b.tag)
-		copy(newBuf, b.buf[:b.offset])
+		assert(int(b.offset) == copy(newBuf, b.buf[:b.offset]))
 		Free(b.buf)
 		b.buf = newBuf
 
@@ -272,7 +272,7 @@ func (b *Buffer) StartOffset() int {
 
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
-	copy(dst, slice)
+	assert(len(slice) == copy(dst, slice))
 }
 
 func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
@@ -503,8 +503,9 @@ func (b *Buffer) Data(offset int) []byte {
 
 // Write would write p bytes to the buffer.
 func (b *Buffer) Write(p []byte) (n int, err error) {
-	b.Grow(len(p))
-	n = copy(b.buf[b.offset:], p)
+	n = len(p)
+	b.Grow(n)
+	assert(n == copy(b.buf[b.offset:], p))
 	b.offset += uint64(n)
 	return n, nil
 }

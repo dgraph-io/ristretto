@@ -32,13 +32,11 @@ import (
 func TestBuffer(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 	const capacity = 512
-	buffers := newBuffers(t, capacity)
+	buffers := newTestBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
-			defer func() { require.NoError(t, buf.Release()) }()
-
 			// This is just for verifying result
 			var bytesBuf bytes.Buffer
 			bytesBuf.Grow(capacity)
@@ -65,13 +63,11 @@ func TestBuffer(t *testing.T) {
 func TestBufferWrite(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 	const capacity = 32
-	buffers := newBuffers(t, capacity)
+	buffers := newTestBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
-			defer func() { require.NoError(t, buf.Release()) }()
-
 			var data [128]byte
 			rand.Read(data[:])
 			bytesBuf := new(bytes.Buffer)
@@ -123,40 +119,43 @@ func TestBufferAutoMmap(t *testing.T) {
 }
 
 func TestBufferSimpleSort(t *testing.T) {
-	buf := NewBuffer(1<<20, "test")
-	defer func() { require.NoError(t, buf.Release()) }()
-	for i := 0; i < 25600; i++ {
-		b := buf.SliceAllocate(4)
-		binary.BigEndian.PutUint32(b, uint32(rand.Int31n(256000)))
+	bufs := newTestBuffers(t, 1<<20)
+	for _, buf := range bufs {
+		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
+		t.Run(name, func(t *testing.T) {
+			for i := 0; i < 25600; i++ {
+				b := buf.SliceAllocate(4)
+				binary.BigEndian.PutUint32(b, uint32(rand.Int31n(256000)))
+			}
+			buf.SortSlice(func(ls, rs []byte) bool {
+				left := binary.BigEndian.Uint32(ls)
+				right := binary.BigEndian.Uint32(rs)
+				return left < right
+			})
+			var last uint32
+			var i int
+			buf.SliceIterate(func(slice []byte) error {
+				num := binary.BigEndian.Uint32(slice)
+				if num < last {
+					fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
+				}
+				i++
+				require.GreaterOrEqual(t, num, last)
+				last = num
+				// fmt.Printf("Got number: %d\n", num)
+				return nil
+			})
+		})
 	}
-	buf.SortSlice(func(ls, rs []byte) bool {
-		left := binary.BigEndian.Uint32(ls)
-		right := binary.BigEndian.Uint32(rs)
-		return left < right
-	})
-	var last uint32
-	var i int
-	buf.SliceIterate(func(slice []byte) error {
-		num := binary.BigEndian.Uint32(slice)
-		if num < last {
-			fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
-		}
-		i++
-		require.GreaterOrEqual(t, num, last)
-		last = num
-		// fmt.Printf("Got number: %d\n", num)
-		return nil
-	})
 }
 
 func TestBufferSlice(t *testing.T) {
 	const capacity = 32
-	buffers := newBuffers(t, capacity)
+	buffers := newTestBuffers(t, capacity)
 
 	for _, buf := range buffers {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
-			defer func() { require.NoError(t, buf.Release()) }()
 			count := 10000
 			exp := make([][]byte, 0, count)
 
@@ -206,12 +205,11 @@ func TestBufferSlice(t *testing.T) {
 
 func TestBufferSort(t *testing.T) {
 	const capacity = 32
-	buffers := newBuffers(t, capacity)
+	bufs := newTestBuffers(t, capacity)
 
-	for _, buf := range buffers {
+	for _, buf := range bufs {
 		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
 		t.Run(name, func(t *testing.T) {
-			defer func() { require.NoError(t, buf.Release()) }()
 			const N = 10000
 
 			for i := 0; i < N; i++ {
@@ -251,22 +249,26 @@ func TestBufferSort(t *testing.T) {
 
 // Test that the APIs returns the expected offsets.
 func TestBufferPadding(t *testing.T) {
-	buf := NewBuffer(1<<10, "test")
-	defer func() { require.NoError(t, buf.Release()) }()
-	sz := rand.Int31n(100)
+	bufs := newTestBuffers(t, 1<<10)
+	for _, buf := range bufs {
+		name := fmt.Sprintf("Using buffer type: %s", buf.bufType)
+		t.Run(name, func(t *testing.T) {
+			sz := rand.Int31n(100)
 
-	writeOffset := buf.AllocateOffset(int(sz))
-	require.Equal(t, buf.StartOffset(), writeOffset)
+			writeOffset := buf.AllocateOffset(int(sz))
+			require.Equal(t, buf.StartOffset(), writeOffset)
 
-	b := make([]byte, sz)
-	rand.Read(b)
+			b := make([]byte, sz)
+			rand.Read(b)
 
-	copy(buf.Bytes(), b)
-	data := buf.Data(buf.StartOffset())
-	require.Equal(t, b, data[:sz])
+			copy(buf.Bytes(), b)
+			data := buf.Data(buf.StartOffset())
+			require.Equal(t, b, data[:sz])
+		})
+	}
 }
 
-func newBuffers(t *testing.T, capacity int) []*Buffer {
+func newTestBuffers(t *testing.T, capacity int) []*Buffer {
 	var bufs []*Buffer
 
 	buf := NewBuffer(capacity, "test")
@@ -275,6 +277,12 @@ func newBuffers(t *testing.T, capacity int) []*Buffer {
 	buf, err := NewBufferTmp("", capacity)
 	require.NoError(t, err)
 	bufs = append(bufs, buf)
+
+	t.Cleanup(func() {
+		for _, buf := range bufs {
+			require.NoError(t, buf.Release())
+		}
+	})
 
 	return bufs
 }
