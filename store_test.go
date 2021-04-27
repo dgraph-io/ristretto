@@ -2,6 +2,7 @@ package ristretto
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
@@ -150,6 +151,36 @@ func TestStoreCollision(t *testing.T) {
 	val, ok = s.Get(1, 0)
 	require.True(t, ok)
 	require.NotNil(t, val)
+}
+
+func TestStoreExpiration(t *testing.T) {
+	s := newStore()
+	key, conflict := z.KeyToHash(1)
+	expiration := time.Now().Add(time.Second).Unix()
+	i := Item{
+		Key:        key,
+		Conflict:   conflict,
+		Value:      1,
+		Expiration: expiration,
+	}
+	s.Set(&i)
+	val, ok := s.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 1, val.(int))
+
+	ttl := s.Expiration(key)
+	require.Equal(t, expiration, ttl)
+
+	s.Del(key, conflict)
+
+	_, ok = s.Get(key, conflict)
+	require.False(t, ok)
+	require.Equal(t, int64(0), s.Expiration(key))
+
+	// missing item
+	key, _ = z.KeyToHash(4340958203495)
+	ttl = s.Expiration(key)
+	require.Equal(t, int64(0), ttl)
 }
 
 func BenchmarkStoreGet(b *testing.B) {
