@@ -39,7 +39,8 @@ func setPageSize(sz int) {
 }
 
 func TestTree(t *testing.T) {
-	bt := NewTree()
+	bt := NewTree("TestTree")
+	defer func() { require.NoError(t, bt.Close()) }()
 
 	N := uint64(256 * 256)
 	for i := uint64(1); i < N; i++ {
@@ -60,7 +61,8 @@ func TestTree(t *testing.T) {
 
 func TestTreeBasic(t *testing.T) {
 	setAndGet := func() {
-		bt := NewTree()
+		bt := NewTree("TestTreeBasic")
+		defer func() { require.NoError(t, bt.Close()) }()
 
 		N := uint64(1 << 20)
 		mp := make(map[uint64]uint64)
@@ -83,7 +85,9 @@ func TestTreeBasic(t *testing.T) {
 }
 
 func TestTreeReset(t *testing.T) {
-	bt := NewTree()
+	bt := NewTree("TestTreeReset")
+	defer func() { require.NoError(t, bt.Close()) }()
+
 	N := 1 << 10
 	val := rand.Uint64()
 	for i := 0; i < N; i++ {
@@ -114,7 +118,9 @@ func TestTreeReset(t *testing.T) {
 }
 
 func TestTreeCycle(t *testing.T) {
-	bt := NewTree()
+	bt := NewTree("TestTreeCycle")
+	defer func() { require.NoError(t, bt.Close()) }()
+
 	val := uint64(0)
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 1e6+i*1e4; j++ {
@@ -135,7 +141,8 @@ func TestTreeCycle(t *testing.T) {
 }
 
 func TestTreeIterateKV(t *testing.T) {
-	bt := NewTree()
+	bt := NewTree("TestTreeIterateKV")
+	defer func() { require.NoError(t, bt.Close()) }()
 
 	// Set entries: (i, i*10)
 	const n = uint64(1 << 20)
@@ -169,7 +176,8 @@ func TestOccupancyRatio(t *testing.T) {
 	defer setPageSize(os.Getpagesize())
 	require.Equal(t, 4, maxKeys)
 
-	bt := NewTree()
+	bt := NewTree("TestOccupancyRatio")
+	defer func() { require.NoError(t, bt.Close()) }()
 
 	expectedRatio := float64(1) * 100 / float64(2*maxKeys) // 2 because we'll have 2 pages.
 	stats := bt.Stats()
@@ -276,7 +284,8 @@ func BenchmarkPurge(b *testing.B) {
 
 	b.Run("btree", func(b *testing.B) {
 		start := time.Now()
-		bt := NewTree()
+		bt := NewTree("BenchmarkPurge")
+		defer func() { require.NoError(b, bt.Close()) }()
 		for i := 0; i < N; i++ {
 			bt.Set(rand.Uint64(), uint64(i))
 		}
@@ -299,7 +308,8 @@ func BenchmarkWrite(b *testing.B) {
 		}
 	})
 	b.Run("btree", func(b *testing.B) {
-		bt := NewTree()
+		bt := NewTree("BenchmarkWrite")
+		defer func() { require.NoError(b, bt.Close()) }()
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			k := rand.Uint64()
@@ -332,7 +342,8 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 
-	bt := NewTree()
+	bt := NewTree("BenchmarkRead")
+	defer func() { require.NoError(b, bt.Close()) }()
 	for i := 0; i < N; i++ {
 		k := uint64(rand.Intn(2*N)) + 1
 		bt.Set(k, k)

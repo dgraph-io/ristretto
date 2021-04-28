@@ -20,13 +20,17 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"sort"
 	"sync/atomic"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+)
+
+const (
+	defaultCapacity = 64
+	defaultTag      = "buffer"
 )
 
 // Buffer is equivalent of bytes.Buffer without the ability to read. It is NOT thread-safe.
@@ -39,126 +43,103 @@ import (
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
-	padding       uint64
-	offset        uint64
-	buf           []byte
-	curSz         int
-	maxSz         int
-	fd            *os.File
-	bufType       BufferType
-	autoMmapAfter int
-	dir           string
-	tag           string
+	padding       uint64     // number of starting bytes used for padding
+	offset        uint64     // used length of the buffer
+	buf           []byte     // backing slice for the buffer
+	bufType       BufferType // type of the underlying buffer
+	curSz         int        // capacity of the buffer
+	maxSz         int        // causes a panic if the buffer grows beyond this size
+	mmapFile      *MmapFile  // optional mmap backing for the buffer
+	autoMmapAfter int        // Calloc falls back to an mmaped tmpfile after crossing this size
+	autoMmapDir   string     // directory for autoMmap to create a tempfile in
+	persistent    bool       // when enabled, Release will not delete the underlying mmap file
+	tag           string     // used for jemalloc stats
 }
 
-type BufferType int
-
-func (t BufferType) String() string {
-	switch t {
-	case UseCalloc:
-		return "UseCalloc"
-	case UseMmap:
-		return "UseMmap"
+func NewBuffer(capacity int, tag string) *Buffer {
+	if capacity == 0 {
+		capacity = defaultCapacity
 	}
-	return "invalid"
-}
-
-const (
-	UseCalloc BufferType = iota
-	UseMmap
-	UseInvalid
-)
-
-// smallBufferSize is an initial allocation minimal capacity.
-const smallBufferSize = 64
-
-// NewBuffer is a helper utility, which creates a virtually unlimited Buffer in UseCalloc mode.
-func NewBuffer(sz int, tag string) *Buffer {
-	buf, err := NewBufferWithDir(sz, MaxBufferSize, UseCalloc, "", tag)
-	if err != nil {
-		glog.Fatalf("while creating buffer: %v", err)
+	if tag == "" {
+		tag = defaultTag
 	}
-	return buf
-}
-
-// NewBufferWith would allocate a buffer of size sz upfront, with the total size of the buffer not
-// exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults would be
-// used. Buffer can't be used without initialization via NewBuffer.
-func NewBufferWith(sz, maxSz int, bufType BufferType, tag string) (*Buffer, error) {
-	buf, err := NewBufferWithDir(sz, maxSz, bufType, "", tag)
-	return buf, err
-}
-
-func BufferFrom(data []byte) *Buffer {
 	return &Buffer{
-		offset:  uint64(len(data)),
-		padding: 0,
-		buf:     data,
+		buf:     Calloc(capacity, tag),
+		bufType: UseCalloc,
+		curSz:   capacity,
+		offset:  8,
+		padding: 8,
+		tag:     tag,
+	}
+}
+
+func NewBufferPersistent(path string) (*Buffer, error) {
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	buffer, err := newBufferFile(file, 0)
+	if err != nil {
+		return nil, err
+	}
+	buffer.persistent = true
+	return buffer, nil
+}
+
+func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
+	if capacity == 0 {
+		capacity = defaultCapacity
+	}
+	if dir == "" {
+		dir = tmpDir
+	}
+	file, err := ioutil.TempFile(dir, "buffer")
+	if err != nil {
+		return nil, err
+	}
+	return newBufferFile(file, capacity)
+}
+
+func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
+	mmapFile, err := OpenMmapFileUsing(file, capacity, true)
+	if err != nil && err != NewFile {
+		return nil, err
+	}
+	buf := &Buffer{
+		buf:      mmapFile.Data,
+		bufType:  UseMmap,
+		curSz:    capacity,
+		mmapFile: mmapFile,
+		offset:   8,
+		padding:  8,
+	}
+	return buf, nil
+}
+
+func NewBufferSlice(slice []byte) *Buffer {
+	return &Buffer{
+		offset:  uint64(len(slice)),
+		buf:     slice,
 		bufType: UseInvalid,
 	}
 }
 
-func (b *Buffer) doMmap() error {
-	curBuf := b.buf
-	fd, err := ioutil.TempFile(b.dir, "buffer")
-	if err != nil {
-		return err
+func (b *Buffer) WithAutoMmap(threshold int, path string) *Buffer {
+	if b.bufType != UseCalloc {
+		panic("can only autoMmap with UseCalloc")
 	}
-	if err := fd.Truncate(int64(b.curSz)); err != nil {
-		return errors.Wrapf(err, "while truncating %s to size: %d", fd.Name(), b.curSz)
+	b.autoMmapAfter = threshold
+	if path == "" {
+		b.autoMmapDir = tmpDir
+	} else {
+		b.autoMmapDir = path
 	}
-
-	buf, err := Mmap(fd, true, int64(b.maxSz)) // Mmap up to max size.
-	if err != nil {
-		return errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), b.maxSz)
-	}
-	if len(curBuf) > 0 {
-		assert(int(b.offset) == copy(buf, curBuf[:b.offset]))
-		Free(curBuf)
-	}
-	b.buf = buf
-	b.bufType = UseMmap
-	b.fd = fd
-	return nil
+	return b
 }
 
-// NewBufferWithDir would allocate a buffer of size sz upfront, with the total size of the buffer
-// not exceeding maxSz. Both sz and maxSz can be set to zero, in which case reasonable defaults
-// would be used. Buffer can't be used without initialization via NewBuffer. The buffer is created
-// inside dir. The caller should take care of existence of dir.
-func NewBufferWithDir(sz, maxSz int, bufType BufferType, dir, tag string) (*Buffer, error) {
-	if sz == 0 {
-		sz = smallBufferSize
-	}
-	if maxSz == 0 {
-		maxSz = math.MaxInt32
-	}
-	if len(dir) == 0 {
-		dir = tmpDir
-	}
-	b := &Buffer{
-		padding: 8,
-		offset:  8, // Use 8 bytes of padding so that the elements are aligned.
-		curSz:   sz,
-		maxSz:   maxSz,
-		bufType: UseCalloc, // by default.
-		dir:     dir,
-		tag:     tag,
-	}
-
-	switch bufType {
-	case UseCalloc:
-		b.buf = Calloc(sz, b.tag)
-	case UseMmap:
-		if err := b.doMmap(); err != nil {
-			return nil, err
-		}
-	default:
-		glog.Fatalf("Invalid bufType: %q\n", bufType)
-	}
-
-	b.buf[0] = 0x00
-	return b, nil
+func (b *Buffer) WithMaxSize(size int) *Buffer {
+	b.maxSz = size
+	return b
 }
 
 func (b *Buffer) IsEmpty() bool {
@@ -183,56 +164,72 @@ func (b *Buffer) Bytes() []byte {
 	return b.buf[b.padding:off]
 }
 
-func (b *Buffer) AutoMmapAfter(size int) {
-	b.autoMmapAfter = size
-}
-
 // Grow would grow the buffer to have at least n more bytes. In case the buffer is at capacity, it
 // would reallocate twice the size of current capacity + n, to ensure n bytes can be written to the
 // buffer without further allocation. In UseMmap mode, this might result in underlying file
 // expansion.
 func (b *Buffer) Grow(n int) {
-	// In this case, len and cap are the same.
 	if b.buf == nil {
 		panic("z.Buffer needs to be initialized before using")
 	}
-	if b.maxSz-int(b.offset) < n {
-		panic(fmt.Sprintf("Buffer max size exceeded: %d."+
-			" Offset: %d. Grow: %d", b.maxSz, b.offset, n))
+	if b.maxSz > 0 && int(b.offset)+n > b.maxSz {
+		err := fmt.Errorf(
+			"z.Buffer max size exceeded: %d offset: %d grow: %d", b.maxSz, b.offset, n)
+		panic(err)
 	}
-	if b.curSz-int(b.offset) > n {
+	if int(b.offset)+n < b.curSz {
 		return
 	}
 
+	// Calculate new capacity.
 	growBy := b.curSz + n
+	// Don't allocate more than 1GB at a time.
 	if growBy > 1<<30 {
 		growBy = 1 << 30
 	}
+	// Allocate at least n, even if it exceeds the 1GB limit above.
 	if n > growBy {
-		// Always at least allocate n, even if it exceeds the 1GB limit above.
 		growBy = n
 	}
 	b.curSz += growBy
 
 	switch b.bufType {
 	case UseCalloc:
+		// If autoMmap gets triggered, copy the slice over to an mmaped file.
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
-			// This would do copy as well.
-			check(b.doMmap())
-
-		} else {
-			newBuf := Calloc(b.curSz, b.tag)
-			copy(newBuf, b.buf[:b.offset])
+			b.bufType = UseMmap
+			file, err := ioutil.TempFile(b.autoMmapDir, "")
+			if err != nil {
+				panic(err)
+			}
+			mmapFile, err := OpenMmapFileUsing(file, b.curSz, true)
+			if err != nil && err != NewFile {
+				panic(err)
+			}
+			assert(int(b.offset) == copy(mmapFile.Data, b.buf[:b.offset]))
 			Free(b.buf)
-			b.buf = newBuf
+			b.mmapFile = mmapFile
+			b.buf = mmapFile.Data
+			break
 		}
+
+		// Else, reallocate the slice.
+		newBuf := Calloc(b.curSz, b.tag)
+		assert(int(b.offset) == copy(newBuf, b.buf[:b.offset]))
+		Free(b.buf)
+		b.buf = newBuf
+
 	case UseMmap:
-		if err := b.fd.Truncate(int64(b.curSz)); err != nil {
-			glog.Fatalf("While trying to truncate file %s to size: %d error: %v\n",
-				b.fd.Name(), b.curSz, err)
+		// Truncate and remap the underlying file.
+		if err := b.mmapFile.Truncate(int64(b.curSz)); err != nil {
+			err = errors.Wrapf(err,
+				"while trying to truncate file: %s to size: %d", b.mmapFile.Fd.Name(), b.curSz)
+			panic(err)
 		}
+		b.buf = b.mmapFile.Data
+
 	default:
-		panic("Invalid bufType")
+		panic("can only use Grow on UseCalloc and UseMmap buffers")
 	}
 }
 
@@ -269,11 +266,13 @@ func (b *Buffer) SliceAllocate(sz int) []byte {
 	return b.Allocate(sz)
 }
 
-func (b *Buffer) StartOffset() int { return int(b.padding) }
+func (b *Buffer) StartOffset() int {
+	return int(b.padding)
+}
 
 func (b *Buffer) WriteSlice(slice []byte) {
 	dst := b.SliceAllocate(len(slice))
-	copy(dst, slice)
+	assert(len(slice) == copy(dst, slice))
 }
 
 func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
@@ -291,6 +290,25 @@ func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
 		}
 	}
 	return nil
+}
+
+const (
+	UseCalloc BufferType = iota
+	UseMmap
+	UseInvalid
+)
+
+type BufferType int
+
+func (t BufferType) String() string {
+	switch t {
+	case UseCalloc:
+		return "UseCalloc"
+	case UseMmap:
+		return "UseMmap"
+	default:
+		return "UseInvalid"
+	}
 }
 
 type LessFunc func(a, b []byte) bool
@@ -485,8 +503,9 @@ func (b *Buffer) Data(offset int) []byte {
 
 // Write would write p bytes to the buffer.
 func (b *Buffer) Write(p []byte) (n int, err error) {
-	b.Grow(len(p))
-	n = copy(b.buf[b.offset:], p)
+	n = len(p)
+	b.Grow(n)
+	assert(n == copy(b.buf[b.offset:], p))
 	b.offset += uint64(n)
 	return n, nil
 }
@@ -499,23 +518,24 @@ func (b *Buffer) Reset() {
 // Release would free up the memory allocated by the buffer. Once the usage of buffer is done, it is
 // important to call Release, otherwise a memory leak can happen.
 func (b *Buffer) Release() error {
+	if b == nil {
+		return nil
+	}
 	switch b.bufType {
 	case UseCalloc:
 		Free(b.buf)
-
 	case UseMmap:
-		fname := b.fd.Name()
-		if err := Munmap(b.buf); err != nil {
-			return errors.Wrapf(err, "while munmap file %s", fname)
+		if b.mmapFile == nil {
+			return nil
 		}
-		if err := b.fd.Truncate(0); err != nil {
-			return errors.Wrapf(err, "while truncating file %s", fname)
+		path := b.mmapFile.Fd.Name()
+		if err := b.mmapFile.Close(-1); err != nil {
+			return errors.Wrapf(err, "while closing file: %s", path)
 		}
-		if err := b.fd.Close(); err != nil {
-			return errors.Wrapf(err, "while closing file %s", fname)
-		}
-		if err := os.Remove(b.fd.Name()); err != nil {
-			return errors.Wrapf(err, "while deleting file %s", fname)
+		if !b.persistent {
+			if err := os.Remove(path); err != nil {
+				return errors.Wrapf(err, "while deleting file %s", path)
+			}
 		}
 	}
 	return nil
