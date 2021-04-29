@@ -79,6 +79,20 @@ func NewTreePersistent(path string) (*Tree, error) {
 	t.buffer.offset = uint64(len(t.buffer.buf))
 	t.data = t.buffer.Bytes()
 
+	// TODO(ajeet): can we do better than this?
+	isInitialized := false
+	for _, b := range t.data {
+		if b != 0 {
+			isInitialized = true
+			break
+		}
+	}
+	if !isInitialized {
+		t.nextPage = 1
+		t.freePage = 0
+		return t, nil
+	}
+
 	// Calculate t.nextPage by finding the highest pageId among all the nodes.
 	t.nextPage = 0
 	t.Iterate(func(n node) {
