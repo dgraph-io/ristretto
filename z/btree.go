@@ -28,9 +28,12 @@ import (
 )
 
 var (
-	pageSize    = os.Getpagesize()
-	maxKeys     = (pageSize / 16) - 1
-	oneThird    = int(float64(maxKeys) / 3)
+	pageSize = os.Getpagesize()
+	maxKeys  = (pageSize / 16) - 1
+	oneThird = int(float64(maxKeys) / 3)
+)
+
+const (
 	absoluteMax = uint64(math.MaxUint64 - 1)
 	minSize     = 1 << 20
 )
@@ -65,24 +68,70 @@ func NewTree(tag string) *Tree {
 
 // NewTree returns a persistent on-disk B+ tree.
 func NewTreePersistent(path string) (*Tree, error) {
-	buffer, err := NewBufferPersistent(path)
+	t := &Tree{}
+	var err error
+
+	// Open the buffer from disk and set it to the maximum allocated size.
+	t.buffer, err = NewBufferPersistent(path, minSize)
 	if err != nil {
 		return nil, err
 	}
-	tree := &Tree{buffer: buffer}
-	tree.Reset()
-	return tree, nil
+	t.buffer.offset = uint64(len(t.buffer.buf))
+	t.data = t.buffer.Bytes()
+
+	// Calculate t.nextPage by finding the highest pageId among all the nodes.
+	t.nextPage = 0
+	t.Iterate(func(n node) {
+		if pageId := n.pageID(); pageId > t.nextPage {
+			t.nextPage = pageId
+		}
+	})
+
+	// Calculate t.freePage by finding the page to which no other page points.
+	// usedPages[i] is true if pageId i+1 is in use.
+	usedPages := make([]bool, t.nextPage)
+	// If a node points to a page, mark it as used.
+	t.Iterate(func(n node) {
+		i := n.pageID() - 1
+		usedPages[i] = true
+	})
+	// pointPages is a list of page IDs that the free pages point to.
+	pointedPages := make([]uint64, 0)
+	for i, used := range usedPages {
+		if !used {
+			pageId := uint64(i) + 1
+			pointedPages = append(pointedPages, t.node(pageId).uint64(0))
+		}
+	}
+	// Mark all pages being pointed to as used.
+	for _, pageId := range pointedPages {
+		i := pageId - 1
+		usedPages[i] = true
+	}
+	// Only one page would still be marked as free.
+	// This is the root free page node.
+	for i, used := range usedPages {
+		if !used {
+			pageId := uint64(i) + 1
+			t.freePage = pageId
+			break
+		}
+	}
+
+	return t, nil
 }
 
 // Reset resets the tree and truncates it to maxSz.
 func (t *Tree) Reset() {
-	t.nextPage = 1
-	t.freePage = 0
+	// Tree relies on uninitialized data being zeroed out, so we need to Memclr
+	// the data before using it again.
 	Memclr(t.buffer.buf)
 	t.buffer.Reset()
 	t.buffer.AllocateOffset(minSize)
 	t.data = t.buffer.Bytes()
 	t.stats = TreeStats{}
+	t.nextPage = 1
+	t.freePage = 0
 	t.initRootNode()
 }
 
@@ -119,7 +168,7 @@ func (t *Tree) Stats() TreeStats {
 	return out
 }
 
-// BytesToU32Slice converts the given byte slice to uint32 slice
+// BytesToUint64Slice converts a byte slice to a uint64 slice.
 func BytesToUint64Slice(b []byte) []uint64 {
 	if len(b) == 0 {
 		return nil
