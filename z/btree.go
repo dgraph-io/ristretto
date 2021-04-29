@@ -79,17 +79,14 @@ func NewTreePersistent(path string) (*Tree, error) {
 	t.buffer.offset = uint64(len(t.buffer.buf))
 	t.data = t.buffer.Bytes()
 
-	// TODO(ajeet): can we do better than this?
-	isInitialized := false
-	for _, b := range t.data {
-		if b != 0 {
-			isInitialized = true
-			break
-		}
-	}
+	// pageID can never be 0 is the tree has been initialized.
+	root := t.node(1)
+	isInitialized := root.pageID() != 0
+
 	if !isInitialized {
 		t.nextPage = 1
 		t.freePage = 0
+		t.initRootNode()
 		return t, nil
 	}
 
