@@ -99,13 +99,17 @@ func NewTreePersistent(path string) (*Tree, error) {
 		if pageId := n.pageID(); pageId > t.nextPage {
 			t.nextPage = pageId
 		}
+		// If this is a leaf node, increment the stats.
+		if n.isLeaf() {
+			t.stats.NumLeafKeys++
+		}
 	})
 
 	// Calculate t.freePage by finding the page to which no other page points.
 	// usedPages[i] is true if pageId i+1 is in use.
 	usedPages := make([]bool, t.nextPage)
-	// If a node points to a page, mark it as used.
 	t.Iterate(func(n node) {
+		// If a node points to a page, mark it as used.
 		i := n.pageID() - 1
 		usedPages[i] = true
 	})
@@ -115,6 +119,7 @@ func NewTreePersistent(path string) (*Tree, error) {
 		if !used {
 			pageId := uint64(i) + 1
 			pointedPages = append(pointedPages, t.node(pageId).uint64(0))
+			t.stats.NumPagesFree++
 		}
 	}
 	// Mark all pages being pointed to as used.
