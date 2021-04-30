@@ -91,20 +91,21 @@ func NewTreePersistent(path string) (*Tree, error) {
 	}
 
 	// Calculate t.nextPage by finding the highest pageId among all the nodes.
-	t.nextPage = 0
+	maxPageId := uint64(0)
 	t.Iterate(func(n node) {
 		if pageId := n.pageID(); pageId > t.nextPage {
-			t.nextPage = pageId
+			maxPageId = pageId
 		}
 		// If this is a leaf node, increment the stats.
 		if n.isLeaf() {
-			t.stats.NumLeafKeys++
+			t.stats.NumLeafKeys += n.numKeys()
 		}
 	})
+	t.nextPage = maxPageId + 1
 
 	// Calculate t.freePage by finding the page to which no other page points.
 	// usedPages[i] is true if pageId i+1 is in use.
-	usedPages := make([]bool, t.nextPage)
+	usedPages := make([]bool, maxPageId)
 	t.Iterate(func(n node) {
 		// If a node points to a page, mark it as used.
 		i := n.pageID() - 1
