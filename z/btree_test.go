@@ -22,6 +22,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -57,6 +58,44 @@ func TestTree(t *testing.T) {
 	for i := uint64(100); i < N; i++ {
 		require.Equal(t, i, bt.Get(i))
 	}
+}
+
+func TestTreePersistent(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "tree.buf")
+
+	// Create a tree and validate the data.
+	bt, err := NewTreePersistent(path)
+	require.NoError(t, err)
+	N := uint64(64 << 10)
+	for i := uint64(1); i < N; i++ {
+		bt.Set(i, i*2)
+	}
+	for i := uint64(1); i < N; i++ {
+		require.Equal(t, i*2, bt.Get(i))
+	}
+	require.NoError(t, bt.Close())
+	freePage := bt.freePage
+	nextPage := bt.nextPage
+	stats := bt.Stats()
+
+	// Reopen tree and validate the data.
+	bt, err = NewTreePersistent(path)
+	require.NoError(t, err)
+	require.Equal(t, freePage, bt.freePage)
+	require.Equal(t, nextPage, bt.nextPage)
+	statsNew := bt.Stats()
+	// When reopening a tree, the allocated size becomes the file size.
+	// We don't need to compare this, it doesn't change anything in the tree.
+	statsNew.Allocated = stats.Allocated
+	require.Equal(t, stats, statsNew)
+	for i := uint64(1); i < N; i++ {
+		require.Equal(t, i*2, bt.Get(i))
+	}
+	require.NoError(t, err)
+	require.NoError(t, bt.Close())
 }
 
 func TestTreeBasic(t *testing.T) {

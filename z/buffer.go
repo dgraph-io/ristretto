@@ -73,12 +73,14 @@ func NewBuffer(capacity int, tag string) *Buffer {
 	}
 }
 
-func NewBufferPersistent(path string) (*Buffer, error) {
+// It is the caller's responsibility to set offset after this, because Buffer
+// doesn't remember what it was.
+func NewBufferPersistent(path string, capacity int) (*Buffer, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, err
 	}
-	buffer, err := newBufferFile(file, 0)
+	buffer, err := newBufferFile(file, capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +89,6 @@ func NewBufferPersistent(path string) (*Buffer, error) {
 }
 
 func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
-	if capacity == 0 {
-		capacity = defaultCapacity
-	}
 	if dir == "" {
 		dir = tmpDir
 	}
@@ -101,6 +100,9 @@ func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 }
 
 func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
+	if capacity == 0 {
+		capacity = defaultCapacity
+	}
 	mmapFile, err := OpenMmapFileUsing(file, capacity, true)
 	if err != nil && err != NewFile {
 		return nil, err
@@ -108,7 +110,7 @@ func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
 	buf := &Buffer{
 		buf:      mmapFile.Data,
 		bufType:  UseMmap,
-		curSz:    capacity,
+		curSz:    len(mmapFile.Data),
 		mmapFile: mmapFile,
 		offset:   8,
 		padding:  8,

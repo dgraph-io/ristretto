@@ -28,9 +28,12 @@ import (
 )
 
 var (
-	pageSize    = os.Getpagesize()
-	maxKeys     = (pageSize / 16) - 1
-	oneThird    = int(float64(maxKeys) / 3)
+	pageSize = os.Getpagesize()
+	maxKeys  = (pageSize / 16) - 1
+	oneThird = int(float64(maxKeys) / 3)
+)
+
+const (
 	absoluteMax = uint64(math.MaxUint64 - 1)
 	minSize     = 1 << 20
 )
@@ -65,24 +68,92 @@ func NewTree(tag string) *Tree {
 
 // NewTree returns a persistent on-disk B+ tree.
 func NewTreePersistent(path string) (*Tree, error) {
-	buffer, err := NewBufferPersistent(path)
+	t := &Tree{}
+	var err error
+
+	// Open the buffer from disk and set it to the maximum allocated size.
+	t.buffer, err = NewBufferPersistent(path, minSize)
 	if err != nil {
 		return nil, err
 	}
-	tree := &Tree{buffer: buffer}
-	tree.Reset()
-	return tree, nil
+	t.buffer.offset = uint64(len(t.buffer.buf))
+	t.data = t.buffer.Bytes()
+
+	// pageID can never be 0 if the tree has been initialized.
+	root := t.node(1)
+	isInitialized := root.pageID() != 0
+
+	if !isInitialized {
+		t.nextPage = 1
+		t.freePage = 0
+		t.initRootNode()
+	} else {
+		t.reinit()
+	}
+
+	return t, nil
+}
+
+// reinit sets the internal variables of a Tree, which are normally stored in
+// memory, but are lost when loading from disk.
+func (t *Tree) reinit() {
+	// Calculate t.nextPage by finding the highest pageId among all the nodes.
+	maxPageId := uint64(0)
+	t.Iterate(func(n node) {
+		if pageId := n.pageID(); pageId > t.nextPage {
+			maxPageId = pageId
+		}
+		// If this is a leaf node, increment the stats.
+		if n.isLeaf() {
+			t.stats.NumLeafKeys += n.numKeys()
+		}
+	})
+	t.nextPage = maxPageId + 1
+
+	// Calculate t.freePage by finding the page to which no other page points.
+	// This would be the root of the page tree.
+	// childPages[i] is true if pageId i+1 is a child page.
+	childPages := make([]bool, maxPageId)
+	// Mark all pages containing nodes as child pages.
+	t.Iterate(func(n node) {
+		i := n.pageID() - 1
+		childPages[i] = true
+	})
+	// pointedPages is a list of page IDs that the child pages point to.
+	pointedPages := make([]uint64, 0)
+	for i, isChild := range childPages {
+		if !isChild {
+			pageId := uint64(i) + 1
+			pointedPages = append(pointedPages, t.node(pageId).uint64(0))
+			t.stats.NumPagesFree++
+		}
+	}
+	// Mark all pages being pointed to as child pages.
+	for _, pageId := range pointedPages {
+		i := pageId - 1
+		childPages[i] = true
+	}
+	// There should only be one root page left.
+	for i, isChild := range childPages {
+		if !isChild {
+			pageId := uint64(i) + 1
+			t.freePage = pageId
+			break
+		}
+	}
 }
 
 // Reset resets the tree and truncates it to maxSz.
 func (t *Tree) Reset() {
-	t.nextPage = 1
-	t.freePage = 0
+	// Tree relies on uninitialized data being zeroed out, so we need to Memclr
+	// the data before using it again.
 	Memclr(t.buffer.buf)
 	t.buffer.Reset()
 	t.buffer.AllocateOffset(minSize)
 	t.data = t.buffer.Bytes()
 	t.stats = TreeStats{}
+	t.nextPage = 1
+	t.freePage = 0
 	t.initRootNode()
 }
 
@@ -119,7 +190,7 @@ func (t *Tree) Stats() TreeStats {
 	return out
 }
 
-// BytesToU32Slice converts the given byte slice to uint32 slice
+// BytesToUint64Slice converts a byte slice to a uint64 slice.
 func BytesToUint64Slice(b []byte) []uint64 {
 	if len(b) == 0 {
 		return nil
