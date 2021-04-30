@@ -87,9 +87,16 @@ func NewTreePersistent(path string) (*Tree, error) {
 		t.nextPage = 1
 		t.freePage = 0
 		t.initRootNode()
-		return t, nil
+	} else {
+		t.reinit()
 	}
 
+	return t, nil
+}
+
+// reinit sets the internal variables of a Tree, which are normally stored in
+// memory, but are lost when loading from disk.
+func (t *Tree) reinit() {
 	// Calculate t.nextPage by finding the highest pageId among all the nodes.
 	maxPageId := uint64(0)
 	t.Iterate(func(n node) {
@@ -104,38 +111,36 @@ func NewTreePersistent(path string) (*Tree, error) {
 	t.nextPage = maxPageId + 1
 
 	// Calculate t.freePage by finding the page to which no other page points.
-	// usedPages[i] is true if pageId i+1 is in use.
-	usedPages := make([]bool, maxPageId)
+	// This would be the root of the page tree.
+	// childPages[i] is true if pageId i+1 is a child page.
+	childPages := make([]bool, maxPageId)
+	// Mark all pages containing nodes as child pages.
 	t.Iterate(func(n node) {
-		// If a node points to a page, mark it as used.
 		i := n.pageID() - 1
-		usedPages[i] = true
+		childPages[i] = true
 	})
-	// pointPages is a list of page IDs that the free pages point to.
+	// pointedPages is a list of page IDs that the child pages point to.
 	pointedPages := make([]uint64, 0)
-	for i, used := range usedPages {
-		if !used {
+	for i, isChild := range childPages {
+		if !isChild {
 			pageId := uint64(i) + 1
 			pointedPages = append(pointedPages, t.node(pageId).uint64(0))
 			t.stats.NumPagesFree++
 		}
 	}
-	// Mark all pages being pointed to as used.
+	// Mark all pages being pointed to as child pages.
 	for _, pageId := range pointedPages {
 		i := pageId - 1
-		usedPages[i] = true
+		childPages[i] = true
 	}
-	// Only one page would still be marked as free.
-	// This is the root free page node.
-	for i, used := range usedPages {
-		if !used {
+	// There should only be one root page left.
+	for i, isChild := range childPages {
+		if !isChild {
 			pageId := uint64(i) + 1
 			t.freePage = pageId
 			break
 		}
 	}
-
-	return t, nil
 }
 
 // Reset resets the tree and truncates it to maxSz.

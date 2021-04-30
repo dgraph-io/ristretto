@@ -69,7 +69,7 @@ func TestTreePersistent(t *testing.T) {
 	// Create a tree and validate the data.
 	bt, err := NewTreePersistent(path)
 	require.NoError(t, err)
-	N := uint64(256 * 256)
+	N := uint64(64 << 10)
 	for i := uint64(1); i < N; i++ {
 		bt.Set(i, i*2)
 	}
