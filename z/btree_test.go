@@ -67,35 +67,45 @@ func TestTreePersistent(t *testing.T) {
 	path := filepath.Join(dir, "tree.buf")
 
 	// Create a tree and validate the data.
-	bt, err := NewTreePersistent(path)
+	bt1, err := NewTreePersistent(path)
 	require.NoError(t, err)
 	N := uint64(64 << 10)
 	for i := uint64(1); i < N; i++ {
-		bt.Set(i, i*2)
+		bt1.Set(i, i*2)
 	}
 	for i := uint64(1); i < N; i++ {
-		require.Equal(t, i*2, bt.Get(i))
+		require.Equal(t, i*2, bt1.Get(i))
 	}
-	require.NoError(t, bt.Close())
-	freePage := bt.freePage
-	nextPage := bt.nextPage
-	stats := bt.Stats()
+	bt1Stats := bt1.Stats()
+	require.NoError(t, bt1.Close())
 
 	// Reopen tree and validate the data.
-	bt, err = NewTreePersistent(path)
+	bt2, err := NewTreePersistent(path)
 	require.NoError(t, err)
-	require.Equal(t, freePage, bt.freePage)
-	require.Equal(t, nextPage, bt.nextPage)
-	statsNew := bt.Stats()
+	require.Equal(t, bt2.freePage, bt1.freePage)
+	require.Equal(t, bt2.nextPage, bt1.nextPage)
+	bt2Stats := bt2.Stats()
 	// When reopening a tree, the allocated size becomes the file size.
 	// We don't need to compare this, it doesn't change anything in the tree.
-	statsNew.Allocated = stats.Allocated
-	require.Equal(t, stats, statsNew)
+	bt2Stats.Allocated = bt1Stats.Allocated
+	require.Equal(t, bt1Stats, bt2Stats)
 	for i := uint64(1); i < N; i++ {
-		require.Equal(t, i*2, bt.Get(i))
+		require.Equal(t, i*2, bt2.Get(i))
 	}
+	// Delete all the data. This will change the value of bt.freePage.
+	bt2.DeleteBelow(math.MaxUint64)
+	bt2Stats = bt2.Stats()
+	require.NoError(t, bt2.Close())
+
+	// Reopen tree and validate the data.
+	bt3, err := NewTreePersistent(path)
 	require.NoError(t, err)
-	require.NoError(t, bt.Close())
+	require.Equal(t, bt2.freePage, bt3.freePage)
+	require.Equal(t, bt2.nextPage, bt3.nextPage)
+	bt3Stats := bt3.Stats()
+	bt3Stats.Allocated = bt2Stats.Allocated
+	require.Equal(t, bt2Stats, bt3Stats)
+	require.NoError(t, bt3.Close())
 }
 
 func TestTreeBasic(t *testing.T) {
