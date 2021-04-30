@@ -18,6 +18,7 @@ package z
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"reflect"
@@ -94,50 +95,60 @@ func NewTreePersistent(path string) (*Tree, error) {
 	return t, nil
 }
 
-// reinit sets the internal variables of a Tree, which are normally stored in
-// memory, but are lost when loading from disk.
+// reinit sets the internal variables of a Tree, which are normally stored
+// in-memory, but are lost when loading from disk.
 func (t *Tree) reinit() {
+	log.Printf("---- REINIT -----")
 	// Calculate t.nextPage by finding the highest pageId among all the nodes.
 	maxPageId := uint64(0)
 	t.Iterate(func(n node) {
-		if pageId := n.pageID(); pageId > t.nextPage {
+		if pageId := n.pageID(); pageId > maxPageId {
 			maxPageId = pageId
 		}
 		// If this is a leaf node, increment the stats.
 		if n.isLeaf() {
 			t.stats.NumLeafKeys += n.numKeys()
+			if n.numKeys() > 0 {
+				log.Printf("numKeys: %+v", n.pageID())
+			}
 		}
 	})
 	t.nextPage = maxPageId + 1
+	log.Printf("nextPage: %d", t.nextPage)
 
 	// Calculate t.freePage by finding the page to which no other page points.
-	// This would be the root of the page tree.
-	// childPages[i] is true if pageId i+1 is a child page.
-	childPages := make([]bool, maxPageId)
-	// Mark all pages containing nodes as child pages.
+	// This would be the head of the page linked list.
+	// tailPages[i] is true if pageId i+1 is not the head of the list.
+	tailPages := make([]bool, maxPageId)
+	// Mark all pages containing nodes as tail pages.
 	t.Iterate(func(n node) {
 		i := n.pageID() - 1
-		childPages[i] = true
+		tailPages[i] = true
 	})
-	// pointedPages is a list of page IDs that the child pages point to.
+	// pointedPages is a list of page IDs that the tail pages point to.
 	pointedPages := make([]uint64, 0)
-	for i, isChild := range childPages {
-		if !isChild {
+	for i, isTail := range tailPages {
+		if !isTail {
 			pageId := uint64(i) + 1
-			pointedPages = append(pointedPages, t.node(pageId).uint64(0))
+			// TODO(ajeet)
+			if nextPageId := t.node(pageId).uint64(0); nextPageId != 0 {
+				pointedPages = append(pointedPages, nextPageId)
+			}
 			t.stats.NumPagesFree++
 		}
 	}
-	// Mark all pages being pointed to as child pages.
+
+	// Mark all pages being pointed to as tail pages.
 	for _, pageId := range pointedPages {
 		i := pageId - 1
-		childPages[i] = true
+		tailPages[i] = true
 	}
-	// There should only be one root page left.
-	for i, isChild := range childPages {
-		if !isChild {
+	// There should only be one head page left.
+	for i, isTail := range tailPages {
+		if !isTail {
 			pageId := uint64(i) + 1
 			t.freePage = pageId
+			log.Printf("freePage: %d", t.freePage)
 			break
 		}
 	}
