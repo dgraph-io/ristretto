@@ -18,7 +18,6 @@ package z
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"reflect"
@@ -98,23 +97,16 @@ func NewTreePersistent(path string) (*Tree, error) {
 // reinit sets the internal variables of a Tree, which are normally stored
 // in-memory, but are lost when loading from disk.
 func (t *Tree) reinit() {
-	log.Printf("---- REINIT -----")
-	// Calculate t.nextPage by finding the highest pageId among all the nodes.
-	maxPageId := uint64(0)
-	t.Iterate(func(n node) {
-		if pageId := n.pageID(); pageId > maxPageId {
-			maxPageId = pageId
+	// Calculate t.nextPage by finding the first node whose pageID is not set.
+	t.nextPage = 1
+	for int(t.nextPage)*pageSize < len(t.data) {
+		n := t.node(t.nextPage)
+		if n.pageID() == 0 {
+			break
 		}
-		// If this is a leaf node, increment the stats.
-		if n.isLeaf() {
-			t.stats.NumLeafKeys += n.numKeys()
-			if n.numKeys() > 0 {
-				log.Printf("numKeys: %+v", n.pageID())
-			}
-		}
-	})
-	t.nextPage = maxPageId + 1
-	log.Printf("nextPage: %d", t.nextPage)
+		t.nextPage++
+	}
+	maxPageId := t.nextPage - 1
 
 	// Calculate t.freePage by finding the page to which no other page points.
 	// This would be the head of the page linked list.
@@ -124,13 +116,17 @@ func (t *Tree) reinit() {
 	t.Iterate(func(n node) {
 		i := n.pageID() - 1
 		tailPages[i] = true
+		// If this is a leaf node, increment the stats.
+		if n.isLeaf() {
+			t.stats.NumLeafKeys += n.numKeys()
+		}
 	})
 	// pointedPages is a list of page IDs that the tail pages point to.
 	pointedPages := make([]uint64, 0)
 	for i, isTail := range tailPages {
 		if !isTail {
 			pageId := uint64(i) + 1
-			// TODO(ajeet)
+			// Skip if nextPageId = 0, as that is equivalent to null page.
 			if nextPageId := t.node(pageId).uint64(0); nextPageId != 0 {
 				pointedPages = append(pointedPages, nextPageId)
 			}
@@ -148,7 +144,6 @@ func (t *Tree) reinit() {
 		if !isTail {
 			pageId := uint64(i) + 1
 			t.freePage = pageId
-			log.Printf("freePage: %d", t.freePage)
 			break
 		}
 	}
@@ -364,7 +359,7 @@ func (t *Tree) DeleteBelow(ts uint64) {
 func (t *Tree) compact(n node, ts uint64) int {
 	if n.isLeaf() {
 		numKeys := n.compact(ts)
-		t.stats.NumLeafKeys += numKeys
+		t.stats.NumLeafKeys += n.numKeys()
 		return numKeys
 	}
 	// Not leaf.
@@ -376,6 +371,7 @@ func (t *Tree) compact(n node, ts uint64) int {
 		if rem := t.compact(child, ts); rem == 0 && i < N-1 {
 			// If no valid key is remaining we can drop this child. However, don't do that if this
 			// is the max key.
+			t.stats.NumLeafKeys -= child.numKeys()
 			child.setAt(0, t.freePage)
 			t.freePage = childID
 			n.setAt(valOffset(i), 0)
