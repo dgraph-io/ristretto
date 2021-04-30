@@ -79,7 +79,7 @@ func NewTreePersistent(path string) (*Tree, error) {
 	t.buffer.offset = uint64(len(t.buffer.buf))
 	t.data = t.buffer.Bytes()
 
-	// pageID can never be 0 is the tree has been initialized.
+	// pageID can never be 0 if the tree has been initialized.
 	root := t.node(1)
 	isInitialized := root.pageID() != 0
 
