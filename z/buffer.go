@@ -57,7 +57,7 @@ type Buffer struct {
 }
 
 func NewBuffer(capacity int, tag string) *Buffer {
-	if capacity == 0 {
+	if capacity < defaultCapacity {
 		capacity = defaultCapacity
 	}
 	if tag == "" {
@@ -100,7 +100,7 @@ func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 }
 
 func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
-	if capacity == 0 {
+	if capacity < defaultCapacity {
 		capacity = defaultCapacity
 	}
 	mmapFile, err := OpenMmapFileUsing(file, capacity, true)
