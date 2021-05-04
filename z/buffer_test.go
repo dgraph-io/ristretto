@@ -286,3 +286,18 @@ func newTestBuffers(t *testing.T, capacity int) []*Buffer {
 
 	return bufs
 }
+
+func TestSmallBuffer(t *testing.T) {
+	buf := NewBuffer(5, "test")
+	t.Cleanup(func() {
+		require.NoError(t, buf.Release())
+	})
+	// Write something to buffer so sort actually happens.
+	buf.WriteSlice([]byte("abc"))
+	// This test fails if the buffer has offset > currSz.
+	require.NotPanics(t, func() {
+		buf.SortSlice(func(left, right []byte) bool {
+			return true
+		})
+	})
+}
