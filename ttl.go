@@ -26,11 +26,11 @@ var (
 	bucketDurationSecs = int64(5)
 )
 
-func storageBucket(t int64) int64 {
-	return (t / bucketDurationSecs) + 1
+func storageBucket(t time.Time) int64 {
+	return (t.Unix() / bucketDurationSecs) + 1
 }
 
-func cleanupBucket(t int64) int64 {
+func cleanupBucket(t time.Time) int64 {
 	// The bucket to cleanup is always behind the storage bucket by one so that
 	// no elements in that bucket (which might not have expired yet) are deleted.
 	return storageBucket(t) - 1
@@ -51,13 +51,13 @@ func newExpirationMap() *expirationMap {
 	}
 }
 
-func (m *expirationMap) add(key, conflict uint64, expiration int64) {
+func (m *expirationMap) add(key, conflict uint64, expiration time.Time) {
 	if m == nil {
 		return
 	}
 
 	// Items that don't expire don't need to be in the expiration map.
-	if expiration == 0 {
+	if expiration.IsZero() {
 		return
 	}
 
@@ -73,7 +73,7 @@ func (m *expirationMap) add(key, conflict uint64, expiration int64) {
 	b[key] = conflict
 }
 
-func (m *expirationMap) update(key, conflict uint64, oldExpTime, newExpTime int64) {
+func (m *expirationMap) update(key, conflict uint64, oldExpTime, newExpTime time.Time) {
 	if m == nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (m *expirationMap) update(key, conflict uint64, oldExpTime, newExpTime int6
 	newBucket[key] = conflict
 }
 
-func (m *expirationMap) del(key uint64, expiration int64) {
+func (m *expirationMap) del(key uint64, expiration time.Time) {
 	if m == nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict itemCallback
 	}
 
 	m.Lock()
-	now := time.Now().Unix()
+	now := time.Now()
 	bucketNum := cleanupBucket(now)
 	keys := m.buckets[bucketNum]
 	delete(m.buckets, bucketNum)
@@ -128,7 +128,7 @@ func (m *expirationMap) cleanup(store store, policy policy, onEvict itemCallback
 
 	for key, conflict := range keys {
 		// Sanity check. Verify that the store agrees that this key is expired.
-		if store.Expiration(key) > now {
+		if store.Expiration(key).After(now) {
 			continue
 		}
 
