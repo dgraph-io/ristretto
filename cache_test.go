@@ -961,3 +961,39 @@ func newTestCache() (*Cache, error) {
 		Metrics:     true,
 	})
 }
+
+func TestCacheWithTTL(t *testing.T) {
+	// There may be a race condition, so run the test multiple times.
+	const try = 10
+
+	for i := 0; i < try; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			c, err := NewCache(&Config{
+				NumCounters: 100,
+				MaxCost:     1000,
+				BufferItems: 64,
+				Metrics:     true,
+			})
+
+			require.NoError(t, err)
+
+			// Set initial value for key = 1
+			insert := c.SetWithTTL(1, 1, 1, 800*time.Millisecond)
+			require.True(t, insert)
+
+			time.Sleep(100 * time.Millisecond)
+
+			// Get value from cache for key = 1
+			val, ok := c.Get(1)
+			require.True(t, ok)
+			require.NotNil(t, val)
+			require.Equal(t, 1, val)
+
+			time.Sleep(1200 * time.Millisecond)
+
+			val, ok = c.Get(1)
+			require.False(t, ok)
+			require.Nil(t, val)
+		})
+	}
+}

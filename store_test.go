@@ -156,7 +156,7 @@ func TestStoreCollision(t *testing.T) {
 func TestStoreExpiration(t *testing.T) {
 	s := newStore()
 	key, conflict := z.KeyToHash(1)
-	expiration := time.Now().Add(time.Second).Unix()
+	expiration := time.Now().Add(time.Second)
 	i := Item{
 		Key:        key,
 		Conflict:   conflict,
@@ -175,12 +175,12 @@ func TestStoreExpiration(t *testing.T) {
 
 	_, ok = s.Get(key, conflict)
 	require.False(t, ok)
-	require.Equal(t, int64(0), s.Expiration(key))
+	require.True(t, s.Expiration(key).IsZero())
 
 	// missing item
 	key, _ = z.KeyToHash(4340958203495)
 	ttl = s.Expiration(key)
-	require.Equal(t, int64(0), ttl)
+	require.True(t, ttl.IsZero())
 }
 
 func BenchmarkStoreGet(b *testing.B) {

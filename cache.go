@@ -152,7 +152,7 @@ type Item struct {
 	Conflict   uint64
 	Value      interface{}
 	Cost       int64
-	Expiration int64
+	Expiration time.Time
 	wg         *sync.WaitGroup
 }
 
@@ -258,7 +258,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		return false
 	}
 
-	var expiration int64
+	var expiration time.Time
 	switch {
 	case ttl == 0:
 		// No expiration.
@@ -267,7 +267,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		// Treat this a a no-op.
 		return false
 	default:
-		expiration = time.Now().Add(ttl).Unix()
+		expiration = time.Now().Add(ttl)
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
@@ -335,18 +335,17 @@ func (c *Cache) GetTTL(key interface{}) (time.Duration, bool) {
 	}
 
 	expiration := c.store.Expiration(keyHash)
-	if expiration == 0 {
+	if expiration.IsZero() {
 		// found but no expiration
 		return 0, true
 	}
 
-	ttl := time.Unix(expiration, 0)
-	if time.Now().After(ttl) {
+	if time.Now().After(expiration) {
 		// found but expired
 		return 0, false
 	}
 
-	return time.Until(ttl), true
+	return time.Until(expiration), true
 }
 
 // Close stops all goroutines and closes all channels.
