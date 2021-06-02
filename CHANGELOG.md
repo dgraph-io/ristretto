@@ -11,122 +11,195 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 [0.1.0]: https://github.com/dgraph-io/ristretto/compare/v0.1.0..v0.0.3
 
 ### Changed
-18e2797 Make item public. Add a new onReject call for rejected items. (#180)
+- Make item public. Add a new onReject call for rejected items. ([#180][])
 
 ### Added
-8405ab9 Use z.Buffer backing for B+ tree (#268)
-0f08db7 expose GetTTL function (#270)
-b837fdf docs(README): Ristretto is production-ready. (#267)
-221ca9b Add IterateKV (#265)
-a4346e5 feat(super-flags): Add GetPath method in superflags (#258)
-58fa1b4 add GetDuration to SuperFlag (#248)
-a29b033 add Has, GetFloat64, and GetInt64 to SuperFlag (#247)
-1fb8d28 move SuperFlag to Ristretto (#246)
-024fba8 add SuperFlagHelp tool to generate flag help text (#251)
-8ec1dc1 allow empty defaults in SuperFlag (#254)
-1d4870a add mmaped b+ tree (#207)
-9739cfa Add API to allow the MaxCost of an existing cache to be updated. (#200)
-623d8ef Add OnExit handler which can be used for manual memory management (#183)
-1940d54 Add life expectancy histogram (#182)
-bf86548 Add mechanism to wait for items to be processed. (#184)
+- Use z.Buffer backing for B+ tree ([#268][])
+- expose GetTTL function ([#270][])
+- docs(README): Ristretto is production-ready. ([#267][])
+- Add IterateKV ([#265][])
+- feat(super-flags): Add GetPath method in superflags ([#258][])
+- add GetDuration to SuperFlag ([#248][])
+- add Has, GetFloat64, and GetInt64 to SuperFlag ([#247][])
+- move SuperFlag to Ristretto ([#246][])
+- add SuperFlagHelp tool to generate flag help text ([#251][])
+- allow empty defaults in SuperFlag ([#254][])
+- add mmaped b+ tree ([#207][])
+- Add API to allow the MaxCost of an existing cache to be updated. ([#200][])
+- Add OnExit handler which can be used for manual memory management ([#183][])
+- Add life expectancy histogram ([#182][])
+- Add mechanism to wait for items to be processed. ([#184][])
 
 ### Fixed
-9d4946d change expiration type from int64 to time.Time (#277)
-0bf2acd fix(buffer): make buffer capacity atleast defaultCapacity (#273)
-6429872 Fixes for z.PersistentTree (#272)
-ad070f2 Initialize persistent tree correctly (#271)
-5946b62 use xxhash v2 (#266)
-e0a933c update comments to correctly reflect counter space usage (#189)
-cd8cd61 enable riscv64 builds (#264)
-59dd468 Switch from log to glog (#263)
-62d2e17 Use Fibonacci for latency numbers
-74754f6 cache: fix race when clearning a cache (#261)
-ecb55b4 Check for keys without values in superflags (#259)
-3836124 chore(perf): using tags instead of runtime callers to improve the performance of leak detection (#255)
-9b320d0 fix(Flags): panic on user errors (#256)
-61bbb40 fix SuperFlagHelp newline (#252)
-9c8fa18 fix(arm): Fix crashing under ARMv6 due to memory mis-alignment (#239)
-426327c Fix incorrect unit test coverage depiction (#245)
-13024c7 chore(histogram): adding percentile in histogram (#241)
-bb5d392 fix(windows): use filepath instead of path (#244)
-b1486d8 fix(MmapFile): Close the fd before deleting the file (#242)
-d7c5d7a Fixes CGO_ENABLED=0 compilation error (#240)
-e860a6c fix(build): fix build on non-amd64 architectures (#238)
-6a5070b fix(b+tree): Do not double the size of btree (#237)
-c72a155 fix(jemalloc): Fix the stats of jemalloc (#236)
-bafef75 Don't print stuff, only return strings.
-b7ca2e9 Bring memclrNoHeapPointers to z (#235)
-bc9300e increase number of buffers from 32 to 64 in allocator (#234)
-67fef61 Set minSize to 1MB.
-d04b4c2 Opt(btree): Use Go memory instead of mmap files
-afb2200 Opt(btree): Lightweight stats calculation
-766bca5 Put padding internally to z.Buffer
-bd7dd13 Chore(z): Add SetTmpDir API to set the temp directory (#233)
-0074940 Add a BufferFrom
-6497cc6 Bring z.Allocator and z.AllocatorPool back
-68b18eb Fix(z.Allocator): Make Allocator use Go memory
-729b324 Updated ZeroOut to use a simple for loop.  (#231)
-eeefcb8 Add concurrency back
-110f2c6 Add a test to check concurrency of Allocator.
-3e25d09 Fix(buffer): Expose padding by z.Buffer's APIs and fix test (#222)
-261a957 AllocateSlice should Truncate if the file is not big enough (#226)
-24ae56e Zero out allocations for structs now that we're reusing Allocators.
-1040b7d Fix the ristretto substring
-692243c Deal with nil z.AllocatorPool
-32c2982 Create an AllocatorPool class.
-1caec3b chore(btree): clean NewTree API (#225)
-f3ca035 fix(MmapFile): Don't error out if fileSize > sz (#224)
-af58718 feat(btree): allow option to reset btree and mmaping it to specified file. (#223)
-f30e50e Use mremap on Linux instead of munmap+mmap (#221)
-a2c5a34 Reuse pages in B+ tree (#220)
-732f879 fix(allocator): make nil allocator return go byte slice (#217)
-d8d5371 fix(buffer): Make padding internal to z.buffer (#216)
-93dc830 chore(buffer): add a parent directory field in z.Buffer (#215)
-4dcfe40 Make Allocator concurrent
-cd75c35 Fix infinite loop in allocator (#214)
-4f21aeb Add trim func
-0ca62b6 Use allocator pool. Turn off freelist.
-d0f9132 Add freelists to Allocator to reuse.
-0eff948 make DeleteBelow delete values that are less than lo (#211)
-e2057c1 Avoid an unnecessary Load procedure in IncrementOffset.
-5dc1199 Add Stats method in Btree.
-1c00afa chore(script): fix local test script (#210)
-2652d61 fix(btree): Increase buffer size if needed. (#209)
-78a6c82 chore(btree): add occupancy ratio, search benchmark and compact bug fix (#208)
-72c2139 Add licenses, remove prints, and fix a bug in compact
-f32a016 Add IncrementOffset API for z.buffers (#206)
-385d3ac Show count when printing histogram (#201)
-f071429 Zbuffer: Add LenNoPadding and make padding 8 bytes (#204)
-28aba7a Allocate Go memory in case allocator is nil.
-6d6fac6 Add leak detection via leak build flag and fix a leak during cache.Close.
-0af15dd Add some APIs for allocator and buffer
-ba670c7 Sync before truncation or close.
-079c5f0 Handle nil MmapFile for Sync.
-88ad187 Public methods must not panic after Close() (#202)
-0310ffe Check for RD_ONLY correctly.
-7b37336 Modify MmapFile APIs
-8795246 Add a bunch of APIs around MmapFile
-b807f09 Move APIs for mmapfile creation over to z package.
-db2bdec Add ZeroOut func
-4b068f2 Add SliceOffsets
-e1609c8 z: Add TotalSize method on bloom filter (#197)
-646c5f3 Add Msync func
-2878aeb Update CODEOWNERS (#199)
-163c5d4 Buffer: Use 256GB mmap size instead of MaxInt64 (#198)
-9dda05d Add a simple test to check next2Pow
-5f615bf Improve memory performance (#195)
-a1c354a Have a way to automatically mmap a growing buffer (#196)
-148048a Introduce Mmapped buffers and Merge Sort (#194)
-0f2ad8c Add a way to access an allocator via reference.
-5635329 Use jemalloc.a to ensure compilation with the Go binary
-034d03c Fix up a build issue with ReadMemStats
-578ecae Add ReadMemStats function (#193)
-41ebdbf Allocator helps allocate memory to be used by unsafe structs (#192)
-96070d1 Improve histogram output
-4dec277 Move Closer from y to z (#191)
-9d26abc Add histogram.Mean() method (#188)
-834a9bc Delete .travis.yml (#185)
-2ce4f8f Introduce Calloc: Manual Memory Management via jemalloc (#186)
+- change expiration type from int64 to time.Time ([#277][])
+- fix(buffer): make buffer capacity atleast defaultCapacity ([#273][])
+- Fixes for z.PersistentTree ([#272][])
+- Initialize persistent tree correctly ([#271][])
+- use xxhash v2 ([#266][])
+- update comments to correctly reflect counter space usage ([#189][])
+- enable riscv64 builds ([#264][])
+- Switch from log to glog ([#263][])
+- Use Fibonacci for latency numbers
+- cache: fix race when clearning a cache ([#261][])
+- Check for keys without values in superflags ([#259][])
+- chore(perf): using tags instead of runtime callers to improve the performance of leak detection ([#255][])
+- fix(Flags): panic on user errors ([#256][])
+- fix SuperFlagHelp newline ([#252][])
+- fix(arm): Fix crashing under ARMv6 due to memory mis-alignment ([#239][])
+- Fix incorrect unit test coverage depiction ([#245][])
+- chore(histogram): adding percentile in histogram ([#241][])
+- fix(windows): use filepath instead of path ([#244][])
+- fix(MmapFile): Close the fd before deleting the file ([#242][])
+- Fixes CGO_ENABLED=0 compilation error ([#240][])
+- fix(build): fix build on non-amd64 architectures ([#238][])
+- fix(b+tree): Do not double the size of btree ([#237][])
+- fix(jemalloc): Fix the stats of jemalloc ([#236][])
+- Don't print stuff, only return strings.
+- Bring memclrNoHeapPointers to z ([#235][])
+- increase number of buffers from 32 to 64 in allocator ([#234][])
+- Set minSize to 1MB.
+- Opt(btree): Use Go memory instead of mmap files
+- Opt(btree): Lightweight stats calculation
+- Put padding internally to z.Buffer
+- Chore(z): Add SetTmpDir API to set the temp directory ([#233][])
+- Add a BufferFrom
+- Bring z.Allocator and z.AllocatorPool back
+- Fix(z.Allocator): Make Allocator use Go memory
+- Updated ZeroOut to use a simple for loop.  ([#231][])
+- Add concurrency back
+- Add a test to check concurrency of Allocator.
+- Fix(buffer): Expose padding by z.Buffer's APIs and fix test ([#222][])
+- AllocateSlice should Truncate if the file is not big enough ([#226][])
+- Zero out allocations for structs now that we're reusing Allocators.
+- Fix the ristretto substring
+- Deal with nil z.AllocatorPool
+- Create an AllocatorPool class.
+- chore(btree): clean NewTree API ([#225][])
+- fix(MmapFile): Don't error out if fileSize > sz ([#224][])
+- feat(btree): allow option to reset btree and mmaping it to specified file. ([#223][])
+- Use mremap on Linux instead of munmap+mmap ([#221][])
+- Reuse pages in B+ tree ([#220][])
+- fix(allocator): make nil allocator return go byte slice ([#217][])
+- fix(buffer): Make padding internal to z.buffer ([#216][])
+- chore(buffer): add a parent directory field in z.Buffer ([#215][])
+- Make Allocator concurrent
+- Fix infinite loop in allocator ([#214][])
+- Add trim func
+- Use allocator pool. Turn off freelist.
+- Add freelists to Allocator to reuse.
+- make DeleteBelow delete values that are less than lo ([#211][])
+- Avoid an unnecessary Load procedure in IncrementOffset.
+- Add Stats method in Btree.
+- chore(script): fix local test script ([#210][])
+- fix(btree): Increase buffer size if needed. ([#209][])
+- chore(btree): add occupancy ratio, search benchmark and compact bug fix ([#208][])
+- Add licenses, remove prints, and fix a bug in compact
+- Add IncrementOffset API for z.buffers ([#206][])
+- Show count when printing histogram ([#201][])
+- Zbuffer: Add LenNoPadding and make padding 8 bytes ([#204][])
+- Allocate Go memory in case allocator is nil.
+- Add leak detection via leak build flag and fix a leak during cache.Close.
+- Add some APIs for allocator and buffer
+- Sync before truncation or close.
+- Handle nil MmapFile for Sync.
+- Public methods must not panic after Close() ([#202][])
+- Check for RD_ONLY correctly.
+- Modify MmapFile APIs
+- Add a bunch of APIs around MmapFile
+- Move APIs for mmapfile creation over to z package.
+- Add ZeroOut func
+- Add SliceOffsets
+- z: Add TotalSize method on bloom filter ([#197][])
+- Add Msync func
+- Buffer: Use 256 GB mmap size instead of MaxInt64 ([#198][])
+- Add a simple test to check next2Pow
+- Improve memory performance ([#195][])
+- Have a way to automatically mmap a growing buffer ([#196][])
+- Introduce Mmapped buffers and Merge Sort ([#194][])
+- Add a way to access an allocator via reference.
+- Use jemalloc.a to ensure compilation with the Go binary
+- Fix up a build issue with ReadMemStats
+- Add ReadMemStats function ([#193][])
+- Allocator helps allocate memory to be used by unsafe structs ([#192][])
+- Improve histogram output
+- Move Closer from y to z ([#191][])
+- Add histogram.Mean() method ([#188][])
+- Delete .travis.yml ([#185][])
+- Introduce Calloc: Manual Memory Management via jemalloc ([#186][])
+
+[#180]: https://github.com/dgraph-io/ristretto/pull/180
+[#268]: https://github.com/dgraph-io/ristretto/pull/268
+[#270]: https://github.com/dgraph-io/ristretto/pull/270
+[#267]: https://github.com/dgraph-io/ristretto/pull/267
+[#265]: https://github.com/dgraph-io/ristretto/pull/265
+[#258]: https://github.com/dgraph-io/ristretto/pull/258
+[#248]: https://github.com/dgraph-io/ristretto/pull/248
+[#247]: https://github.com/dgraph-io/ristretto/pull/247
+[#246]: https://github.com/dgraph-io/ristretto/pull/246
+[#251]: https://github.com/dgraph-io/ristretto/pull/251
+[#254]: https://github.com/dgraph-io/ristretto/pull/254
+[#207]: https://github.com/dgraph-io/ristretto/pull/207
+[#200]: https://github.com/dgraph-io/ristretto/pull/200
+[#183]: https://github.com/dgraph-io/ristretto/pull/183
+[#182]: https://github.com/dgraph-io/ristretto/pull/182
+[#184]: https://github.com/dgraph-io/ristretto/pull/184
+[#277]: https://github.com/dgraph-io/ristretto/pull/277
+[#273]: https://github.com/dgraph-io/ristretto/pull/273
+[#272]: https://github.com/dgraph-io/ristretto/pull/272
+[#271]: https://github.com/dgraph-io/ristretto/pull/271
+[#266]: https://github.com/dgraph-io/ristretto/pull/266
+[#189]: https://github.com/dgraph-io/ristretto/pull/189
+[#264]: https://github.com/dgraph-io/ristretto/pull/264
+[#263]: https://github.com/dgraph-io/ristretto/pull/263
+[#261]: https://github.com/dgraph-io/ristretto/pull/261
+[#259]: https://github.com/dgraph-io/ristretto/pull/259
+[#255]: https://github.com/dgraph-io/ristretto/pull/255
+[#256]: https://github.com/dgraph-io/ristretto/pull/256
+[#252]: https://github.com/dgraph-io/ristretto/pull/252
+[#239]: https://github.com/dgraph-io/ristretto/pull/239
+[#245]: https://github.com/dgraph-io/ristretto/pull/245
+[#241]: https://github.com/dgraph-io/ristretto/pull/241
+[#244]: https://github.com/dgraph-io/ristretto/pull/244
+[#242]: https://github.com/dgraph-io/ristretto/pull/242
+[#240]: https://github.com/dgraph-io/ristretto/pull/240
+[#238]: https://github.com/dgraph-io/ristretto/pull/238
+[#237]: https://github.com/dgraph-io/ristretto/pull/237
+[#236]: https://github.com/dgraph-io/ristretto/pull/236
+[#235]: https://github.com/dgraph-io/ristretto/pull/235
+[#234]: https://github.com/dgraph-io/ristretto/pull/234
+[#233]: https://github.com/dgraph-io/ristretto/pull/233
+[#231]: https://github.com/dgraph-io/ristretto/pull/231
+[#222]: https://github.com/dgraph-io/ristretto/pull/222
+[#226]: https://github.com/dgraph-io/ristretto/pull/226
+[#225]: https://github.com/dgraph-io/ristretto/pull/225
+[#224]: https://github.com/dgraph-io/ristretto/pull/224
+[#223]: https://github.com/dgraph-io/ristretto/pull/223
+[#221]: https://github.com/dgraph-io/ristretto/pull/221
+[#220]: https://github.com/dgraph-io/ristretto/pull/220
+[#217]: https://github.com/dgraph-io/ristretto/pull/217
+[#216]: https://github.com/dgraph-io/ristretto/pull/216
+[#215]: https://github.com/dgraph-io/ristretto/pull/215
+[#214]: https://github.com/dgraph-io/ristretto/pull/214
+[#211]: https://github.com/dgraph-io/ristretto/pull/211
+[#210]: https://github.com/dgraph-io/ristretto/pull/210
+[#209]: https://github.com/dgraph-io/ristretto/pull/209
+[#208]: https://github.com/dgraph-io/ristretto/pull/208
+[#206]: https://github.com/dgraph-io/ristretto/pull/206
+[#201]: https://github.com/dgraph-io/ristretto/pull/201
+[#204]: https://github.com/dgraph-io/ristretto/pull/204
+[#202]: https://github.com/dgraph-io/ristretto/pull/202
+[#197]: https://github.com/dgraph-io/ristretto/pull/197
+[#199]: https://github.com/dgraph-io/ristretto/pull/199
+[#198]: https://github.com/dgraph-io/ristretto/pull/198
+[#195]: https://github.com/dgraph-io/ristretto/pull/195
+[#196]: https://github.com/dgraph-io/ristretto/pull/196
+[#194]: https://github.com/dgraph-io/ristretto/pull/194
+[#193]: https://github.com/dgraph-io/ristretto/pull/193
+[#192]: https://github.com/dgraph-io/ristretto/pull/192
+[#191]: https://github.com/dgraph-io/ristretto/pull/191
+[#188]: https://github.com/dgraph-io/ristretto/pull/188
+[#185]: https://github.com/dgraph-io/ristretto/pull/185
+[#186]: https://github.com/dgraph-io/ristretto/pull/186
 
 ## [0.0.3] - 2020-07-06
 
