@@ -9,6 +9,10 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 ## [0.1.0] - 2021-06-03
 
 [0.1.0]: https://github.com/dgraph-io/ristretto/compare/v0.1.0..v0.0.3
+This release contains bug fixes and improvements to Ristretto. It also contains
+major updates to the z package. The z package contains types such as Tree (B+
+tree), Buffer, Mmap file, etc. All these types are used in Badger and Dgraph to
+improve performance and reduce memory requirements.
 
 ### Changed
 - Make item public. Add a new onReject call for rejected items. ([#180][])
@@ -124,7 +128,6 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 - Improve histogram output
 - Move Closer from y to z ([#191][])
 - Add histogram.Mean() method ([#188][])
-- Delete .travis.yml ([#185][])
 - Introduce Calloc: Manual Memory Management via jemalloc ([#186][])
 
 [#180]: https://github.com/dgraph-io/ristretto/pull/180
@@ -198,7 +201,6 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 [#192]: https://github.com/dgraph-io/ristretto/pull/192
 [#191]: https://github.com/dgraph-io/ristretto/pull/191
 [#188]: https://github.com/dgraph-io/ristretto/pull/188
-[#185]: https://github.com/dgraph-io/ristretto/pull/185
 [#186]: https://github.com/dgraph-io/ristretto/pull/186
 
 ## [0.0.3] - 2020-07-06
