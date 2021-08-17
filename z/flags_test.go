@@ -16,7 +16,7 @@ func TestFlag(t *testing.T) {
 	const def = `bool_key=false; int-key=0; float-key=1.0; string-key=; other-key=5;
 		duration-minutes=15m; duration-hours=12h; duration-days=30d;`
 
-	_, err := NewSuperFlag("boolo-key=true").mergeAndCheckDefaultImpl(def)
+	_, err := NewSuperFlag("boolo-key=true").MergeWithDefault(def)
 	require.Error(t, err)
 	_, err = newSuperFlagImpl("key-without-value")
 	require.Error(t, err)
