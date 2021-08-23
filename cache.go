@@ -45,9 +45,9 @@ const itemSize = int64(unsafe.Sizeof(storeItem{}))
 // from as many goroutines as you want.
 type Cache struct {
 	// store is the central concurrent hashmap where key-value items are stored.
-	store store
+	store *shardedMap
 	// policy determines what gets let in to the cache and what gets kicked out.
-	policy policy
+	policy *defaultPolicy
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	getBuf *ringBuffer
@@ -126,6 +126,8 @@ type Config struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	KeyToHash func(key interface{}) (uint64, uint64)
+	// shouldUpdate is called when a value already exists in cache and is being updated.
+	ShouldUpdate func(prev, cur interface{}) bool
 	// Cost evaluates a value and outputs a corresponding cost. This function
 	// is ran after Set is called for a new item or an item update with a cost
 	// param of 0.
@@ -166,9 +168,9 @@ func NewCache(config *Config) (*Cache, error) {
 	case config.BufferItems == 0:
 		return nil, errors.New("BufferItems can't be zero")
 	}
-	policy := newPolicy(config.NumCounters, config.MaxCost)
+	policy := newDefaultPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
-		store:              newStore(),
+		store:              newShardedMap(config.ShouldUpdate),
 		policy:             policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item, setBufSize),
@@ -194,6 +196,12 @@ func NewCache(config *Config) (*Cache, error) {
 			config.OnReject(item)
 		}
 		cache.onExit(item.Value)
+	}
+	cache.store.shouldUpdate = func(prev, cur interface{}) bool {
+		if config.ShouldUpdate != nil {
+			return config.ShouldUpdate(prev, cur)
+		}
+		return true
 	}
 	if cache.keyToHash == nil {
 		cache.keyToHash = z.KeyToHash

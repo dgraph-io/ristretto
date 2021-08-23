@@ -11,7 +11,7 @@ func TestPolicy(t *testing.T) {
 	defer func() {
 		require.Nil(t, recover())
 	}()
-	newPolicy(100, 10)
+	newDefaultPolicy(100, 10)
 }
 
 func TestPolicyMetrics(t *testing.T) {
