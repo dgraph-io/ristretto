@@ -44,7 +44,7 @@ type Cache struct {
 	// store is the central concurrent hashmap where key-value items are stored.
 	store *shardedMap
 	// policy determines what gets let in to the cache and what gets kicked out.
-	policy *defaultPolicy
+	policy *lfuPolicy
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	getBuf *ringBuffer
@@ -165,7 +165,7 @@ func NewCache(config *Config) (*Cache, error) {
 	case config.BufferItems == 0:
 		return nil, errors.New("BufferItems can't be zero")
 	}
-	policy := newDefaultPolicy(config.NumCounters, config.MaxCost)
+	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
 		store:              newShardedMap(config.ShouldUpdate),
 		policy:             policy,
