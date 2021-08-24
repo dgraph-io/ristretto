@@ -29,51 +29,28 @@ type storeItem struct {
 	expiration time.Time
 }
 
-// store is the interface fulfilled by all hash map implementations in this
-// file. Some hash map implementations are better suited for certain data
-// distributions than others, so this allows us to abstract that out for use
-// in Ristretto.
-//
-// Every store is safe for concurrent usage.
-type store interface {
-	// Get returns the value associated with the key parameter.
-	Get(uint64, uint64) (interface{}, bool)
-	// Expiration returns the expiration time for this key.
-	Expiration(uint64) time.Time
-	// Set adds the key-value pair to the Map or updates the value if it's
-	// already present. The key-value pair is passed as a pointer to an
-	// item object.
-	Set(*Item)
-	// Del deletes the key-value pair from the Map.
-	Del(uint64, uint64) (uint64, interface{})
-	// Update attempts to update the key with a new value and returns true if
-	// successful.
-	Update(*Item) (interface{}, bool)
-	// Cleanup removes items that have an expired TTL.
-	Cleanup(policy policy, onEvict itemCallback)
-	// Clear clears all contents of the store.
-	Clear(onEvict itemCallback)
-}
-
-// newStore returns the default store implementation.
-func newStore() store {
-	return newShardedMap()
-}
-
 const numShards uint64 = 256
 
+type updateFn func(prev, cur interface{}) bool
 type shardedMap struct {
-	shards    []*lockedMap
-	expiryMap *expirationMap
+	shards       []*lockedMap
+	expiryMap    *expirationMap
+	shouldUpdate func(prev, cur interface{}) bool
 }
 
-func newShardedMap() *shardedMap {
+// newShardedMap is safe for concurrent usage.
+func newShardedMap(fn updateFn) *shardedMap {
 	sm := &shardedMap{
 		shards:    make([]*lockedMap, int(numShards)),
 		expiryMap: newExpirationMap(),
 	}
+	if fn == nil {
+		fn = func(prev, cur interface{}) bool {
+			return true
+		}
+	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap(sm.expiryMap)
+		sm.shards[i] = newLockedMap(fn, sm.expiryMap)
 	}
 	return sm
 }
@@ -103,7 +80,7 @@ func (sm *shardedMap) Update(newItem *Item) (interface{}, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
-func (sm *shardedMap) Cleanup(policy policy, onEvict itemCallback) {
+func (sm *shardedMap) Cleanup(policy *lfuPolicy, onEvict itemCallback) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
@@ -115,14 +92,16 @@ func (sm *shardedMap) Clear(onEvict itemCallback) {
 
 type lockedMap struct {
 	sync.RWMutex
-	data map[uint64]storeItem
-	em   *expirationMap
+	data         map[uint64]storeItem
+	em           *expirationMap
+	shouldUpdate updateFn
 }
 
-func newLockedMap(em *expirationMap) *lockedMap {
+func newLockedMap(fn updateFn, em *expirationMap) *lockedMap {
 	return &lockedMap{
-		data: make(map[uint64]storeItem),
-		em:   em,
+		data:         make(map[uint64]storeItem),
+		em:           em,
+		shouldUpdate: fn,
 	}
 }
 
@@ -166,6 +145,9 @@ func (m *lockedMap) Set(i *Item) {
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
 			return
 		}
+		if !m.shouldUpdate(item.value, i.Value) {
+			return
+		}
 		m.em.update(i.Key, i.Conflict, item.expiration, i.Expiration)
 	} else {
 		// The value is not in the map already. There's no need to return anything.
@@ -204,14 +186,17 @@ func (m *lockedMap) Del(key, conflict uint64) (uint64, interface{}) {
 
 func (m *lockedMap) Update(newItem *Item) (interface{}, bool) {
 	m.Lock()
+	defer m.Unlock()
+
 	item, ok := m.data[newItem.Key]
 	if !ok {
-		m.Unlock()
 		return nil, false
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
-		m.Unlock()
 		return nil, false
+	}
+	if !m.shouldUpdate(item.value, newItem.Value) {
+		return item.value, false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
@@ -221,8 +206,6 @@ func (m *lockedMap) Update(newItem *Item) (interface{}, bool) {
 		value:      newItem.Value,
 		expiration: newItem.Expiration,
 	}
-
-	m.Unlock()
 	return item.value, true
 }
 
