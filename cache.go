@@ -259,7 +259,7 @@ func (c *Cache) Set(key, value interface{}, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool {
-	return c.setInternal(key, value, cost, ttl)
+	return c.setInternal(key, value, cost, ttl, false)
 }
 
 // SetIfPresent is like Set, but only updates the value of an existing key. It
