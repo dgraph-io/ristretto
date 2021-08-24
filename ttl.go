@@ -77,17 +77,25 @@ func (m *expirationMap) update(key, conflict uint64, oldExpTime, newExpTime time
 	if m == nil {
 		return
 	}
+	if oldExpTime.IsZero() && newExpTime.IsZero() {
+		return
+	}
 
 	m.Lock()
 	defer m.Unlock()
 
 	oldBucketNum := storageBucket(oldExpTime)
+	newBucketNum := storageBucket(newExpTime)
+	if oldBucketNum == newBucketNum {
+		// No change.
+		return
+	}
+
 	oldBucket, ok := m.buckets[oldBucketNum]
 	if ok {
 		delete(oldBucket, key)
 	}
 
-	newBucketNum := storageBucket(newExpTime)
 	newBucket, ok := m.buckets[newBucketNum]
 	if !ok {
 		newBucket = make(bucket)
@@ -114,7 +122,7 @@ func (m *expirationMap) del(key uint64, expiration time.Time) {
 // cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
-func (m *expirationMap) cleanup(store store, policy policy, onEvict itemCallback) {
+func (m *expirationMap) cleanup(store *shardedMap, policy *lfuPolicy, onEvict itemCallback) {
 	if m == nil {
 		return
 	}
