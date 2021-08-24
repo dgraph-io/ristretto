@@ -268,7 +268,8 @@ func (c *Cache) SetIfPresent(key, value interface{}, cost int64) bool {
 	return c.setInternal(key, value, cost, 0*time.Second, true)
 }
 
-func (c *Cache) setInternal(key, value interface{}, cost int64, ttl time.Duration, onlyUpdate bool) bool {
+func (c *Cache) setInternal(key, value interface{},
+	cost int64, ttl time.Duration, onlyUpdate bool) bool {
 	if c == nil || c.isClosed || key == nil {
 		return false
 	}
