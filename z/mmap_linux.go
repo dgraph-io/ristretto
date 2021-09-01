@@ -17,7 +17,6 @@
 package z
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"unsafe"
@@ -41,7 +40,7 @@ func mremap(data []byte, size int) ([]byte, error) {
 	const MREMAP_MAYMOVE = 0x1
 
 	header := (*reflect.SliceHeader)(unsafe.Pointer(&data))
-	mmapAddr, mmapSize, errno := unix.Syscall6(
+	mmapAddr, _, errno := unix.Syscall6(
 		unix.SYS_MREMAP,
 		header.Data,
 		uintptr(header.Len),
@@ -52,9 +51,6 @@ func mremap(data []byte, size int) ([]byte, error) {
 	)
 	if errno != 0 {
 		return nil, errno
-	}
-	if mmapSize != uintptr(size) {
-		return nil, fmt.Errorf("mremap size mismatch: requested: %d got: %d", size, mmapSize)
 	}
 
 	header.Data = mmapAddr
