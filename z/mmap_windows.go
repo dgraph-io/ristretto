@@ -91,6 +91,5 @@ func madvise(b []byte, readahead bool) error {
 }
 
 func msync(b []byte) error {
-	// TODO: Figure out how to do msync on Windows.
-	return nil
+	return syscall.FlushViewOfFile(uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
 }
