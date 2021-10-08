@@ -33,20 +33,26 @@ const (
 // lfuPolicy encapsulates eviction/admission behavior.
 type lfuPolicy struct {
 	sync.Mutex
-	admit    *tinyLFU
-	costs    *keyCosts
-	itemsCh  chan []uint64
-	stop     chan struct{}
-	isClosed bool
-	metrics  *Metrics
+	admit *tinyLFU
+	costs *keyCosts
+
+	stop      chan struct{}
+	internals *policyInternals
+	metrics   *Metrics
+}
+
+type policyInternals struct {
+	itemsCh chan []uint64
 }
 
 func newPolicy(numCounters, maxCost int64) *lfuPolicy {
 	p := &lfuPolicy{
-		admit:   newTinyLFU(numCounters),
-		costs:   newSampledLFU(maxCost),
-		itemsCh: make(chan []uint64, 3),
-		stop:    make(chan struct{}),
+		admit: newTinyLFU(numCounters),
+		costs: newSampledLFU(maxCost),
+		internals: &policyInternals{
+			itemsCh: make(chan []uint64, 3),
+		},
+		stop: make(chan struct{}),
 	}
 	go p.processItems()
 	return p
@@ -62,10 +68,24 @@ type policyPair struct {
 	cost int64
 }
 
+func (p *lfuPolicy) getInternals() *policyInternals {
+	if p == nil {
+		return nil
+	}
+	p.Lock()
+	defer p.Unlock()
+	return p.internals
+}
+
 func (p *lfuPolicy) processItems() {
 	for {
+		internals := p.getInternals()
+		if internals == nil {
+			return
+		}
+
 		select {
-		case items := <-p.itemsCh:
+		case items := <-internals.itemsCh:
 			p.Lock()
 			p.admit.Push(items)
 			p.Unlock()
@@ -76,7 +96,8 @@ func (p *lfuPolicy) processItems() {
 }
 
 func (p *lfuPolicy) Push(keys []uint64) bool {
-	if p.isClosed {
+	internals := p.getInternals()
+	if internals == nil {
 		return false
 	}
 
@@ -85,7 +106,7 @@ func (p *lfuPolicy) Push(keys []uint64) bool {
 	}
 
 	select {
-	case p.itemsCh <- keys:
+	case internals.itemsCh <- keys:
 		p.metrics.add(keepGets, keys[0], uint64(len(keys)))
 		return true
 	default:
@@ -217,15 +238,20 @@ func (p *lfuPolicy) Clear() {
 }
 
 func (p *lfuPolicy) Close() {
-	if p.isClosed {
+	internals := p.getInternals()
+	if internals == nil {
 		return
 	}
 
 	// Block until the p.processItems goroutine returns.
 	p.stop <- struct{}{}
 	close(p.stop)
-	close(p.itemsCh)
-	p.isClosed = true
+
+	p.Lock()
+	p.internals = nil
+	p.Unlock()
+
+	close(internals.itemsCh)
 }
 
 func (p *lfuPolicy) MaxCost() int64 {

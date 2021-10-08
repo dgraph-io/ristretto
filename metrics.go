@@ -90,7 +90,10 @@ type Metrics struct {
 // to the cache and policy instances.
 func (c *Cache) collectMetrics() {
 	c.Metrics = newMetrics()
-	c.policy.CollectMetrics(c.Metrics)
+	internals := c.internals
+	if internals != nil {
+		internals.policy.CollectMetrics(c.Metrics)
+	}
 }
 
 func newMetrics() *Metrics {

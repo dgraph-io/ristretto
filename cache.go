@@ -28,10 +28,8 @@ import (
 	"github.com/dgraph-io/ristretto/z"
 )
 
-var (
-	// TODO: find the optimal value for this or make it configurable
-	setBufSize = 32 * 1024
-)
+// TODO: find the optimal value for this or make it configurable
+var setBufSize = 32 * 1024
 
 type itemCallback func(*Item)
 
@@ -43,14 +41,9 @@ const itemSize = int64(unsafe.Sizeof(storeItem{}))
 type Cache struct {
 	// store is the central concurrent hashmap where key-value items are stored.
 	store *shardedMap
-	// policy determines what gets let in to the cache and what gets kicked out.
-	policy *lfuPolicy
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	getBuf *ringBuffer
-	// setBuf is a buffer allowing us to batch/drop Sets during times of high
-	// contention.
-	setBuf chan *Item
 	// onEvict is called for item evictions.
 	onEvict itemCallback
 	// onReject is called when an item is rejected via admission policy.
@@ -61,10 +54,6 @@ type Cache struct {
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
 	keyToHash func(interface{}) (uint64, uint64)
-	// stop is used to stop the processItems goroutine.
-	stop chan struct{}
-	// indicates whether cache is closed.
-	isClosed bool
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
 	// ignoreInternalCost dictates whether to ignore the cost of internally storing
@@ -75,6 +64,21 @@ type Cache struct {
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items.
 	Metrics *Metrics
+	// internalsLock is a lock around the internals value.
+	internalsLock sync.Mutex
+	// internals holds the references to the cache internals, including the setBuf
+	// channel and the policy. If the cache has been closed, this value is nil.
+	internals *cacheInternals
+}
+
+type cacheInternals struct {
+	// setBuf is a buffer allowing us to batch/drop Sets during times of high
+	// contention.
+	setBuf chan *Item
+	// stop is used to stop the processItems goroutine.
+	stop chan struct{}
+	// policy determines what gets let in to the cache and what gets kicked out.
+	policy *lfuPolicy
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -168,14 +172,16 @@ func NewCache(config *Config) (*Cache, error) {
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
 		store:              newShardedMap(config.ShouldUpdate),
-		policy:             policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
-		setBuf:             make(chan *Item, setBufSize),
 		keyToHash:          config.KeyToHash,
-		stop:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+		internals: &cacheInternals{
+			policy: policy,
+			stop:   make(chan struct{}),
+			setBuf: make(chan *Item, setBufSize),
+		},
 	}
 	cache.onExit = func(val interface{}) {
 		if config.OnExit != nil && val != nil {
@@ -213,13 +219,24 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
+func (c *Cache) getInternals() *cacheInternals {
+	if c == nil {
+		return nil
+	}
+	c.internalsLock.Lock()
+	defer c.internalsLock.Unlock()
+	return c.internals
+}
+
 func (c *Cache) Wait() {
-	if c == nil || c.isClosed {
+	internals := c.getInternals()
+	if internals == nil {
 		return
 	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	c.setBuf <- &Item{wg: wg}
+	internals.setBuf <- &Item{wg: wg}
 	wg.Wait()
 }
 
@@ -227,9 +244,15 @@ func (c *Cache) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	if c == nil || c.isClosed || key == nil {
+	internals := c.getInternals()
+	if internals == nil {
 		return nil, false
 	}
+
+	if key == nil {
+		return nil, false
+	}
+
 	keyHash, conflictHash := c.keyToHash(key)
 	c.getBuf.Push(keyHash)
 	value, ok := c.store.Get(keyHash, conflictHash)
@@ -270,7 +293,12 @@ func (c *Cache) SetIfPresent(key, value interface{}, cost int64) bool {
 
 func (c *Cache) setInternal(key, value interface{},
 	cost int64, ttl time.Duration, onlyUpdate bool) bool {
-	if c == nil || c.isClosed || key == nil {
+	internals := c.getInternals()
+	if internals == nil {
+		return false
+	}
+
+	if key == nil {
 		return false
 	}
 
@@ -310,7 +338,7 @@ func (c *Cache) setInternal(key, value interface{},
 	}
 	// Attempt to send item to policy.
 	select {
-	case c.setBuf <- i:
+	case internals.setBuf <- i:
 		return true
 	default:
 		if i.flag == itemUpdate {
@@ -326,9 +354,15 @@ func (c *Cache) setInternal(key, value interface{},
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil || c.isClosed || key == nil {
+	internals := c.getInternals()
+	if internals == nil {
 		return
 	}
+
+	if key == nil {
+		return
+	}
+
 	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
 	_, prev := c.store.Del(keyHash, conflictHash)
@@ -337,7 +371,7 @@ func (c *Cache) Del(key interface{}) {
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
-	c.setBuf <- &Item{
+	internals.setBuf <- &Item{
 		flag:     itemDelete,
 		Key:      keyHash,
 		Conflict: conflictHash,
@@ -373,34 +407,41 @@ func (c *Cache) GetTTL(key interface{}) (time.Duration, bool) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
-	if c == nil || c.isClosed {
+	internals := c.getInternals()
+	if internals == nil {
 		return
 	}
+
 	c.Clear()
 
 	// Block until processItems goroutine is returned.
-	c.stop <- struct{}{}
-	close(c.stop)
-	close(c.setBuf)
-	c.policy.Close()
-	c.isClosed = true
+	internals.stop <- struct{}{}
+	close(internals.stop)
+
+	c.internalsLock.Lock()
+	c.internals = nil
+	c.internalsLock.Unlock()
+
+	internals.policy.Close()
 }
 
 // Clear empties the hashmap and zeroes all policy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
-	if c == nil || c.isClosed {
+	internals := c.getInternals()
+	if internals == nil {
 		return
 	}
+
 	// Block until processItems goroutine is returned.
-	c.stop <- struct{}{}
+	internals.stop <- struct{}{}
 
 	// Clear out the setBuf channel.
 loop:
 	for {
 		select {
-		case i := <-c.setBuf:
+		case i := <-internals.setBuf:
 			if i.wg != nil {
 				i.wg.Done()
 				continue
@@ -416,7 +457,7 @@ loop:
 	}
 
 	// Clear value hashmap and policy data.
-	c.policy.Clear()
+	internals.policy.Clear()
 	c.store.Clear(c.onEvict)
 	// Only reset metrics if they're enabled.
 	if c.Metrics != nil {
@@ -428,22 +469,30 @@ loop:
 
 // MaxCost returns the max cost of the cache.
 func (c *Cache) MaxCost() int64 {
-	if c == nil {
+	internals := c.getInternals()
+	if internals == nil {
 		return 0
 	}
-	return c.policy.MaxCost()
+
+	return internals.policy.MaxCost()
 }
 
 // UpdateMaxCost updates the maxCost of an existing cache.
 func (c *Cache) UpdateMaxCost(maxCost int64) {
-	if c == nil {
+	internals := c.getInternals()
+	if internals == nil {
 		return
 	}
-	c.policy.UpdateMaxCost(maxCost)
+	internals.policy.UpdateMaxCost(maxCost)
 }
 
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache) processItems() {
+	internals := c.getInternals()
+	if internals == nil {
+		return
+	}
+
 	startTs := make(map[uint64]time.Time)
 	numToKeep := 100000 // TODO: Make this configurable via options.
 
@@ -473,7 +522,7 @@ func (c *Cache) processItems() {
 
 	for {
 		select {
-		case i := <-c.setBuf:
+		case i := <-internals.setBuf:
 			if i.wg != nil {
 				i.wg.Done()
 				continue
@@ -489,7 +538,7 @@ func (c *Cache) processItems() {
 
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.Key, i.Cost)
+				victims, added := internals.policy.Add(i.Key, i.Cost)
 				if added {
 					c.store.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
@@ -503,16 +552,16 @@ func (c *Cache) processItems() {
 				}
 
 			case itemUpdate:
-				c.policy.Update(i.Key, i.Cost)
+				internals.policy.Update(i.Key, i.Cost)
 
 			case itemDelete:
-				c.policy.Del(i.Key) // Deals with metrics updates.
+				internals.policy.Del(i.Key) // Deals with metrics updates.
 				_, val := c.store.Del(i.Key, i.Conflict)
 				c.onExit(val)
 			}
 		case <-c.cleanupTicker.C:
-			c.store.Cleanup(c.policy, onEvict)
-		case <-c.stop:
+			c.store.Cleanup(internals.policy, onEvict)
+		case <-internals.stop:
 			return
 		}
 	}

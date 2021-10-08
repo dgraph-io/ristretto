@@ -23,7 +23,7 @@ func TestPolicyMetrics(t *testing.T) {
 
 func TestPolicyProcessItems(t *testing.T) {
 	p := newPolicy(100, 10)
-	p.itemsCh <- []uint64{1, 2, 2}
+	p.internals.itemsCh <- []uint64{1, 2, 2}
 	time.Sleep(wait)
 	p.Lock()
 	require.Equal(t, int64(2), p.admit.Estimate(2))
@@ -31,7 +31,7 @@ func TestPolicyProcessItems(t *testing.T) {
 	p.Unlock()
 
 	p.stop <- struct{}{}
-	p.itemsCh <- []uint64{3, 3, 3}
+	p.internals.itemsCh <- []uint64{3, 3, 3}
 	time.Sleep(wait)
 	p.Lock()
 	require.Equal(t, int64(0), p.admit.Estimate(3))
@@ -138,7 +138,7 @@ func TestPolicyClose(t *testing.T) {
 	p := newPolicy(100, 10)
 	p.Add(1, 1)
 	p.Close()
-	p.itemsCh <- []uint64{1}
+	p.internals.itemsCh <- []uint64{1}
 }
 
 func TestPushAfterClose(t *testing.T) {
