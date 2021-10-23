@@ -37,6 +37,58 @@ type itemCallback func(*Item)
 
 const itemSize = int64(unsafe.Sizeof(storeItem{}))
 
+// CacheInterface exposes the common cache functions for the purpose of mocking
+// in unit tests.
+type CacheInterface interface {
+
+	// Get returns the value (if any) and a boolean representing whether the
+	// value was found or not. The value can be nil and the boolean can be true at
+	// the same time.
+	Get(key interface{}) (interface{}, bool)
+
+	// Set attempts to add the key-value item to the cache. If it returns false,
+	// then the Set was dropped and the key-value item isn't added to the cache. If
+	// it returns true, there's still a chance it could be dropped by the policy if
+	// its determined that the key-value item isn't worth keeping, but otherwise the
+	// item will be added and other items will be evicted in order to make room.
+	//
+	// To dynamically evaluate the items cost using the Config.Coster function, set
+	// the cost parameter to 0 and Coster will be ran when needed in order to find
+	// the items true cost.
+	Set(key, value interface{}, cost int64) bool
+
+	// SetWithTTL works like Set but adds a key-value pair to the cache that will expire
+	// after the specified TTL (time to live) has passed. A zero value means the value never
+	// expires, which is identical to calling Set. A negative value is a no-op and the value
+	// is discarded.
+	SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool
+
+	// SetIfPresent is like Set, but only updates the value of an existing key. It
+	// does NOT add the key to cache if it's absent.
+	SetIfPresent(key, value interface{}, cost int64) bool
+
+	// Del deletes the key-value item from the cache if it exists.
+	Del(key interface{})
+
+	// GetTTL returns the TTL for the specified key and a bool that is true if the
+	// item was found and is not expired.
+	GetTTL(key interface{}) (time.Duration, bool)
+
+	// Close stops all goroutines and closes all channels.
+	Close()
+
+	// Clear empties the hashmap and zeroes all policy counters. Note that this is
+	// not an atomic operation (but that shouldn't be a problem as it's assumed that
+	// Set/Get calls won't be occurring until after this).
+	Clear()
+
+	// MaxCost returns the max cost of the cache.
+	MaxCost() int64
+
+	// UpdateMaxCost updates the maxCost of an existing cache.
+	UpdateMaxCost(maxCost int64)
+}
+
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
@@ -76,6 +128,10 @@ type Cache struct {
 	// and dropped items.
 	Metrics *Metrics
 }
+
+// Verify that Cache implements the CacheInterface.
+// https://golang.org/doc/faq#guarantee_satisfies_interface
+var _ CacheInterface = &Cache{}
 
 // Config is passed to NewCache for creating new Cache instances.
 type Config struct {

@@ -39,7 +39,8 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 		* [Metrics](#Config)
 		* [OnEvict](#Config)
 		* [KeyToHash](#Config)
-        * [Cost](#Config)
+	        * [Cost](#Config)
+	* [Testing](#Testing)
 * [Benchmarks](#Benchmarks)
 	* [Hit Ratios](#Hit-Ratios)
 		* [Search](#Search)
@@ -52,6 +53,7 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 		* [Write](#Write)
 * [Projects using Ristretto](#projects-using-ristretto)
 * [FAQ](#FAQ)
+
 
 ## Usage
 
@@ -134,6 +136,11 @@ To signal to Ristretto that you'd like to use this Cost function:
 
 1. Set the Cost field to a non-nil function.
 2. When calling Set for new items or item updates, use a `cost` of 0.
+
+### Testing
+
+If you wish to mock out the caching functionality for use in your tests, you should use the `CacheInterface` in your code.
+This enables you to generate mocks using something like [mockery](https://github.com/vektra/mockery) or provide your own implementation.
 
 ## Benchmarks
 
