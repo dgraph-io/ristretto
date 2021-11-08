@@ -12,7 +12,7 @@ if [ -z "${TEAMCITY_VERSION}" ]; then
   		-v `pwd`:/go/src/github.com/dgraph-io/ristretto \
   		--workdir /go/src/github.com/dgraph-io/ristretto \
 		--env TEAMCITY_VERSION=local \
-  		golang:1.13 \
+  		golang:1.16 \
   		sh test.sh
 else
 	# running in teamcity, since teamcity itself run this in container, let's simply run this
