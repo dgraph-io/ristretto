@@ -36,9 +36,10 @@ type lfuPolicy struct {
 	admit *tinyLFU
 	costs *keyCosts
 
-	stop      chan struct{}
-	internals *policyInternals
-	metrics   *Metrics
+	stop       chan struct{}
+	cancelPush chan struct{}
+	internals  *policyInternals
+	metrics    *Metrics
 }
 
 type policyInternals struct {
@@ -52,7 +53,8 @@ func newPolicy(numCounters, maxCost int64) *lfuPolicy {
 		internals: &policyInternals{
 			itemsCh: make(chan []uint64, 3),
 		},
-		stop: make(chan struct{}),
+		stop:       make(chan struct{}),
+		cancelPush: make(chan struct{}),
 	}
 	go p.processItems()
 	return p
@@ -109,6 +111,8 @@ func (p *lfuPolicy) Push(keys []uint64) bool {
 	case internals.itemsCh <- keys:
 		p.metrics.add(keepGets, keys[0], uint64(len(keys)))
 		return true
+	case <-p.cancelPush:
+		return false
 	default:
 		p.metrics.add(dropGets, keys[0], uint64(len(keys)))
 		return false
@@ -247,11 +251,12 @@ func (p *lfuPolicy) Close() {
 	p.stop <- struct{}{}
 	close(p.stop)
 
+	// Cancel any pending pushes.
+	close(p.cancelPush)
+
 	p.Lock()
 	p.internals = nil
 	p.Unlock()
-
-	close(internals.itemsCh)
 }
 
 func (p *lfuPolicy) MaxCost() int64 {
