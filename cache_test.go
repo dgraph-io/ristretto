@@ -214,6 +214,57 @@ func TestDelAfterClose(t *testing.T) {
 	c.Del(1)
 }
 
+func TestConcurrentSetAfterClose(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	// Spin up a bunch of goroutines that simply call Set over and over.
+	for i := 10; i <= 20; i++ {
+		wg.Add(1)
+		go (func(duration int) {
+			wg.Done()
+
+			tc := time.Tick(time.Duration(duration) * time.Millisecond)
+			for {
+				select {
+				case <-tc:
+					c.Set("somekey", duration, 1)
+
+				case <-done:
+					break
+				}
+			}
+		})(i)
+	}
+
+	wg.Wait()
+
+	// Wait some time so Set can run a few times.
+	tc := time.Tick(50 * time.Millisecond)
+	<-tc
+
+	// Ensure at least one key was written.
+	_, ok := c.Get("somekey")
+	require.True(t, ok)
+
+	// Run close to ensure nothing panics.
+	c.Close()
+
+	// Wait some more time so Set can run a few additional times.
+	tcd := time.Tick(150 * time.Millisecond)
+	<-tcd
+	close(done)
+}
+
 func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
@@ -237,7 +288,7 @@ func TestCacheProcessItems(t *testing.T) {
 	var conflict uint64
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemNew,
 		Key:      key,
 		Conflict: conflict,
@@ -245,11 +296,11 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     0,
 	}
 	time.Sleep(wait)
-	require.True(t, c.policy.Has(1))
-	require.Equal(t, int64(1), c.policy.Cost(1))
+	require.True(t, c.internals.policy.Has(1))
+	require.Equal(t, int64(1), c.internals.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemUpdate,
 		Key:      key,
 		Conflict: conflict,
@@ -257,10 +308,10 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     0,
 	}
 	time.Sleep(wait)
-	require.Equal(t, int64(2), c.policy.Cost(1))
+	require.Equal(t, int64(2), c.internals.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemDelete,
 		Key:      key,
 		Conflict: conflict,
@@ -270,10 +321,10 @@ func TestCacheProcessItems(t *testing.T) {
 	val, ok := c.store.Get(key, conflict)
 	require.False(t, ok)
 	require.Nil(t, val)
-	require.False(t, c.policy.Has(1))
+	require.False(t, c.internals.policy.Has(1))
 
 	key, conflict = z.KeyToHash(2)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemNew,
 		Key:      key,
 		Conflict: conflict,
@@ -281,7 +332,7 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(3)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemNew,
 		Key:      key,
 		Conflict: conflict,
@@ -289,7 +340,7 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(4)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemNew,
 		Key:      key,
 		Conflict: conflict,
@@ -297,7 +348,7 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(5)
-	c.setBuf <- &Item{
+	c.internals.setBuf <- &Item{
 		flag:     itemNew,
 		Key:      key,
 		Conflict: conflict,
@@ -313,7 +364,7 @@ func TestCacheProcessItems(t *testing.T) {
 		require.NotNil(t, recover())
 	}()
 	c.Close()
-	c.setBuf <- &Item{flag: itemNew}
+	c.internals.setBuf <- &Item{flag: itemNew}
 }
 
 func TestCacheGet(t *testing.T) {
@@ -384,10 +435,10 @@ func TestCacheSet(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 2, val.(int))
 
-	c.stop <- struct{}{}
+	c.internals.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
 		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &Item{
+		c.internals.setBuf <- &Item{
 			flag:     itemUpdate,
 			Key:      key,
 			Conflict: conflict,
@@ -397,8 +448,8 @@ func TestCacheSet(t *testing.T) {
 	}
 	require.False(t, c.Set(2, 2, 1))
 	require.Equal(t, uint64(1), c.Metrics.SetsDropped())
-	close(c.setBuf)
-	close(c.stop)
+	close(c.internals.setBuf)
+	close(c.internals.stop)
 
 	c = nil
 	require.False(t, c.Set(1, 1, 1))
