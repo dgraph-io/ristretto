@@ -1,15 +1,15 @@
-//+build !jemalloc
+//go:build !jemalloc
+// +build !jemalloc
 
 package main
 
 // #include <stdlib.h>
 import "C"
 import (
+	"log"
 	"reflect"
 	"sync/atomic"
 	"unsafe"
-
-	"github.com/golang/glog"
 )
 
 func Calloc(size int) []byte {
@@ -42,5 +42,5 @@ func NumAllocBytes() int64 { return atomic.LoadInt64(&numbytes) }
 func check() {}
 
 func init() {
-	glog.Infof("USING CALLOC")
+	log.Print("USING CALLOC")
 }
