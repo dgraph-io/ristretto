@@ -1,10 +1,12 @@
-//+build jemalloc
+//go:build jemalloc
+// +build jemalloc
 
 package main
 
 import (
+	"log"
+
 	"github.com/dgraph-io/ristretto/z"
-	"github.com/golang/glog"
 )
 
 func Calloc(size int) []byte { return z.Calloc(size, "memtest") }
@@ -13,7 +15,7 @@ func NumAllocBytes() int64   { return z.NumAllocBytes() }
 
 func check() {
 	if buf := z.CallocNoRef(1, "memtest"); len(buf) == 0 {
-		glog.Fatalf("Not using manual memory management. Compile with jemalloc.")
+		log.Fatalf("Not using manual memory management. Compile with jemalloc.")
 	} else {
 		z.Free(buf)
 	}
@@ -22,5 +24,5 @@ func check() {
 }
 
 func init() {
-	glog.Infof("USING JEMALLOC")
+	log.Print("USING JEMALLOC")
 }
