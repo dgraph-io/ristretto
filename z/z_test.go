@@ -17,6 +17,7 @@
 package z
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -104,4 +105,45 @@ func TestZeroOut(t *testing.T) {
 
 	ZeroOut(dst, 0, len(dst))
 	check(dst, 0x00)
+}
+
+func BenchmarkKeyToHashBytes(b *testing.B) {
+	bench := []interface{}{
+		[]byte("foo"),
+		[]byte("barbaz"),
+		[]byte("quxquuxquuz"),
+		[]byte("corgegraultgarplywaldo"),
+	}
+	benchmarkKeyToHash(b, bench)
+}
+
+func BenchmarkKeyToHashString(b *testing.B) {
+	bench := []interface{}{
+		"foo",
+		"barbaz",
+		"quxquuxquuz",
+		"corgegraultgarplywaldo",
+	}
+	benchmarkKeyToHash(b, bench)
+}
+
+var key, conflict uint64
+
+func benchmarkKeyToHash(b *testing.B, bench []interface{}) {
+	for _, bb := range bench {
+		b.Run(fmt.Sprintf("%s", bb), func(b *testing.B) {
+			switch bb := bb.(type) {
+			case []byte:
+				b.SetBytes(int64(len(bb)))
+			case string:
+				b.SetBytes(int64(len(bb)))
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				key, conflict = KeyToHash(bb)
+			}
+		})
+	}
 }
