@@ -1,11 +1,7 @@
+//go:build ignore
 // +build ignore
 
 package main
-
-import (
-	. "github.com/mmcloughlin/avo/build"
-	. "github.com/mmcloughlin/avo/operand"
-)
 
 //go:generate go run asm2.go -out search_amd64.s -stubs stub_search_amd64.go
 

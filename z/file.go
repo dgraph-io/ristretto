@@ -26,11 +26,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+const filePerm = 0o666
+
 // MmapFile represents an mmapd file and includes both the buffer to the data
 // and the file descriptor.
 type MmapFile struct {
-	Data []byte
 	Fd   *os.File
+	Data []byte
 }
 
 var NewFile = errors.New("Create a new file")
@@ -75,7 +77,7 @@ func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 // returned.
 func OpenMmapFile(filename string, flag int, maxSz int) (*MmapFile, error) {
 	// fmt.Printf("opening file %s with flag: %v\n", filename, flag)
-	fd, err := os.OpenFile(filename, flag, 0666)
+	fd, err := os.OpenFile(filename, flag, filePerm) //nolint:gosec //adopt fork, do not touch it
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to open: %s", filename)
 	}

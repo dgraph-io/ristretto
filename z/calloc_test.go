@@ -18,11 +18,10 @@ package z
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
-
-	"math/rand"
 
 	"github.com/stretchr/testify/require"
 )

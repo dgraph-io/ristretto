@@ -25,7 +25,6 @@ func TestMain(m *testing.M) {
 	fmt.Print("Benchmarks relate to 2**16 OP. --> output/65536 op/ns\n###############\n\n")
 
 	m.Run()
-
 }
 
 func TestM_NumberOfWrongs(t *testing.T) {
@@ -39,7 +38,6 @@ func TestM_NumberOfWrongs(t *testing.T) {
 		}
 	}
 	fmt.Printf("Bloomfilter New(7* 2**16, 7) (-> size=%v bit): \n            Check for 'false positives': %v wrong positive 'Has' results on 2**16 entries => %v %%\n", len(bf.bitset)<<6, cnt, float64(cnt)/float64(n))
-
 }
 
 func TestM_JSON(t *testing.T) {
@@ -98,7 +96,6 @@ func BenchmarkM_Add(b *testing.B) {
 			bf.Add(hash)
 		}
 	}
-
 }
 
 func BenchmarkM_Has(b *testing.B) {

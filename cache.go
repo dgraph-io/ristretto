@@ -25,13 +25,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/etecs-ru/ristretto/z"
 )
 
-var (
-	// TODO: find the optimal value for this or make it configurable
-	setBufSize = 32 * 1024
-)
+// TODO: find the optimal value for this or make it configurable
+var setBufSize = 32 * 1024 //nolint:gochecknoglobals // adopt fork, do not touch it
 
 type itemCallback func(*Item)
 
@@ -41,98 +39,34 @@ const itemSize = int64(unsafe.Sizeof(storeItem{}))
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
 type Cache struct {
-	// store is the central concurrent hashmap where key-value items are stored.
-	store *shardedMap
-	// policy determines what gets let in to the cache and what gets kicked out.
-	policy *lfuPolicy
-	// getBuf is a custom ring buffer implementation that gets pushed to when
-	// keys are read.
-	getBuf *ringBuffer
-	// setBuf is a buffer allowing us to batch/drop Sets during times of high
-	// contention.
-	setBuf chan *Item
-	// onEvict is called for item evictions.
-	onEvict itemCallback
-	// onReject is called when an item is rejected via admission policy.
-	onReject itemCallback
-	// onExit is called whenever a value goes out of scope from the cache.
-	onExit (func(interface{}))
-	// KeyToHash function is used to customize the key hashing algorithm.
-	// Each key will be hashed using the provided function. If keyToHash value
-	// is not set, the default keyToHash function is used.
-	keyToHash func(interface{}) (uint64, uint64)
-	// stop is used to stop the processItems goroutine.
-	stop chan struct{}
-	// indicates whether cache is closed.
-	isClosed bool
-	// cost calculates cost from a value.
-	cost func(value interface{}) int64
-	// ignoreInternalCost dictates whether to ignore the cost of internally storing
-	// the item in the cost calculation.
+	store              *shardedMap
+	policy             *lfuPolicy
+	getBuf             *ringBuffer
+	setBuf             chan *Item
+	onEvict            itemCallback
+	onReject           itemCallback
+	onExit             func(interface{})
+	keyToHash          func(interface{}) (uint64, uint64)
+	stop               chan struct{}
+	cleanupTicker      *time.Ticker
+	cost               func(value interface{}) int64
+	Metrics            *Metrics
 	ignoreInternalCost bool
-	// cleanupTicker is used to periodically check for entries whose TTL has passed.
-	cleanupTicker *time.Ticker
-	// Metrics contains a running log of important statistics like hits, misses,
-	// and dropped items.
-	Metrics *Metrics
+	isClosed           bool
 }
 
 // Config is passed to NewCache for creating new Cache instances.
 type Config struct {
-	// NumCounters determines the number of counters (keys) to keep that hold
-	// access frequency information. It's generally a good idea to have more
-	// counters than the max cache capacity, as this will improve eviction
-	// accuracy and subsequent hit ratios.
-	//
-	// For example, if you expect your cache to hold 1,000,000 items when full,
-	// NumCounters should be 10,000,000 (10x). Each counter takes up roughly
-	// 3 bytes (4 bits for each counter * 4 copies plus about a byte per
-	// counter for the bloom filter). Note that the number of counters is
-	// internally rounded up to the nearest power of 2, so the space usage
-	// may be a little larger than 3 bytes * NumCounters.
-	NumCounters int64
-	// MaxCost can be considered as the cache capacity, in whatever units you
-	// choose to use.
-	//
-	// For example, if you want the cache to have a max capacity of 100MB, you
-	// would set MaxCost to 100,000,000 and pass an item's number of bytes as
-	// the `cost` parameter for calls to Set. If new items are accepted, the
-	// eviction process will take care of making room for the new item and not
-	// overflowing the MaxCost value.
-	MaxCost int64
-	// BufferItems determines the size of Get buffers.
-	//
-	// Unless you have a rare use case, using `64` as the BufferItems value
-	// results in good performance.
-	BufferItems int64
-	// Metrics determines whether cache statistics are kept during the cache's
-	// lifetime. There *is* some overhead to keeping statistics, so you should
-	// only set this flag to true when testing or throughput performance isn't a
-	// major factor.
-	Metrics bool
-	// OnEvict is called for every eviction and passes the hashed key, value,
-	// and cost to the function.
-	OnEvict func(item *Item)
-	// OnReject is called for every rejection done via the policy.
-	OnReject func(item *Item)
-	// OnExit is called whenever a value is removed from cache. This can be
-	// used to do manual memory deallocation. Would also be called on eviction
-	// and rejection of the value.
-	OnExit func(val interface{})
-	// KeyToHash function is used to customize the key hashing algorithm.
-	// Each key will be hashed using the provided function. If keyToHash value
-	// is not set, the default keyToHash function is used.
-	KeyToHash func(key interface{}) (uint64, uint64)
-	// shouldUpdate is called when a value already exists in cache and is being updated.
-	ShouldUpdate func(prev, cur interface{}) bool
-	// Cost evaluates a value and outputs a corresponding cost. This function
-	// is ran after Set is called for a new item or an item update with a cost
-	// param of 0.
-	Cost func(value interface{}) int64
-	// IgnoreInternalCost set to true indicates to the cache that the cost of
-	// internally storing the value should be ignored. This is useful when the
-	// cost passed to set is not using bytes as units. Keep in mind that setting
-	// this to true will increase the memory usage.
+	OnExit             func(val interface{})
+	KeyToHash          func(key interface{}) (uint64, uint64)
+	ShouldUpdate       func(prev, cur interface{}) bool
+	Cost               func(value interface{}) int64
+	OnEvict            func(item *Item)
+	OnReject           func(item *Item)
+	NumCounters        int64
+	MaxCost            int64
+	BufferItems        int64
+	Metrics            bool
 	IgnoreInternalCost bool
 }
 
@@ -146,13 +80,13 @@ const (
 
 // Item is passed to setBuf so items can eventually be added to the cache.
 type Item struct {
-	flag       itemFlag
+	Expiration time.Time
+	Value      interface{}
+	wg         *sync.WaitGroup
 	Key        uint64
 	Conflict   uint64
-	Value      interface{}
 	Cost       int64
-	Expiration time.Time
-	wg         *sync.WaitGroup
+	flag       itemFlag
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.

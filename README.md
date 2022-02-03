@@ -1,8 +1,15 @@
 # Ristretto
-[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/dgraph-io/ristretto)
-[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
-[![Coverage](https://gocover.io/_badge/github.com/dgraph-io/ristretto)](https://gocover.io/github.com/dgraph-io/ristretto)
-![Tests](https://github.com/dgraph-io/ristretto/workflows/tests/badge.svg)
+[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/etecs-ru/ristretto)
+[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/etecs-ru/ristretto)
+[![Coverage](https://gocover.io/_badge/github.com/etecs-ru/ristretto)](https://gocover.io/github.com/etecs-ru/ristretto)
+![Tests](https://github.com/etecs-ru/ristretto/workflows/tests/badge.svg)
+
+## This is the fork of the [github.com/dgraph-io/ristretto](https://github.com/dgraph-io/ristretto).
+
+This fork applies the selected PRs from the original repo. Also runs GitHub Actions on each PR. See the CHANGELOG.md.
+
+----
+
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
@@ -117,7 +124,7 @@ OnEvict is called for every eviction.
 
 **KeyToHash** `func(key interface{}) [2]uint64`
 
-KeyToHash is the hashing algorithm used for every key. If this is nil, Ristretto has a variety of [defaults depending on the underlying interface type](https://github.com/dgraph-io/ristretto/blob/master/z/z.go#L19-L41).
+KeyToHash is the hashing algorithm used for every key. If this is nil, Ristretto has a variety of [defaults depending on the underlying interface type](https://github.com/etecs-ru/ristretto/blob/master/z/z.go#L19-L41).
 
 Note that if you want 128bit hashes you should use the full `[2]uint64`,
 otherwise just fill the `uint64` at the `0` position and it will behave like
@@ -147,7 +154,7 @@ This trace is described as "disk read accesses initiated by a large commercial
 search engine in response to various web search requests."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Search%20(ARC-S3).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Hit%20Ratios%20-%20Search%20(ARC-S3).svg">
 </p>
 
 #### Database
@@ -156,7 +163,7 @@ This trace is described as "a database server running at a commercial site
 running an ERP application on top of a commercial database."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg">
 </p>
 
 #### Looping
@@ -164,7 +171,7 @@ running an ERP application on top of a commercial database."
 This trace demonstrates a looping access pattern.
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg">
 </p>
 
 #### CODASYL
@@ -173,7 +180,7 @@ This trace is described as "references to a CODASYL database for a one hour
 period."
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg">
 </p>
 
 ### Throughput
@@ -184,19 +191,19 @@ of RAM.
 #### Mixed
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Mixed.svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Throughput%20-%20Mixed.svg">
 </p>
 
 #### Read
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Read%20(Zipfian).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Throughput%20-%20Read%20(Zipfian).svg">
 </p>
 
 #### Write
 
 <p align="center">
-	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Write%20(Zipfian).svg">
+	<img src="https://raw.githubusercontent.com/etecs-ru/ristretto/master/benchmarks/Throughput%20-%20Write%20(Zipfian).svg">
 </p>
 
 ## Projects Using Ristretto

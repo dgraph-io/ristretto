@@ -1,0 +1,45 @@
+name: codeql
+
+permissions:
+  security-events: write
+
+on:
+  workflow_call:
+    inputs:
+      go:
+        description: 'Go version'
+        default: 1.17
+        required: false
+        type: string
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 10 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1a927e9307bc11970b2c679922ebc4d03a5bd980 # v1.0.30
+        with:
+          languages: go
+          # If you wish to specify custom queries, you can do so here or in a config file.
+          # By default, queries listed here will override any specified in a config file.
+          # Prefix the list here with "+" to use these queries and those in the config file.
+          # queries: ./path/to/local/query, your-org/your-repo/queries@main
+
+      - name: Install Go
+        uses: actions/setup-go@424fc82d43fa5a37540bae62709ddcc23d9520d4 # v2.1.5
+        with:
+          go-version: ${{ inputs.go }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@1a927e9307bc11970b2c679922ebc4d03a5bd980 # v1.0.30

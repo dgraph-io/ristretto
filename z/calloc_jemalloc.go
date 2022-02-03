@@ -2,6 +2,7 @@
 // of this source code is governed by a BSD-style license that can be found in
 // the LICENSE file.
 
+//go:build jemalloc
 // +build jemalloc
 
 package z
@@ -12,6 +13,7 @@ package z
 #include <jemalloc/jemalloc.h>
 */
 import "C"
+
 import (
 	"bytes"
 	"fmt"
@@ -45,8 +47,10 @@ type dalloc struct {
 	sz int
 }
 
-var dallocsMu sync.Mutex
-var dallocs map[unsafe.Pointer]*dalloc
+var (
+	dallocsMu sync.Mutex
+	dallocs   map[unsafe.Pointer]*dalloc
+)
 
 func init() {
 	// By initializing dallocs, we can start tracking allocations and deallocations via z.Calloc.
@@ -161,7 +165,7 @@ func fetchStat(s string) uint64 {
 		unsafe.Pointer(&out),             // Variable to store the output.
 		(*C.size_t)(unsafe.Pointer(&sz)), // Size of the output variable.
 		nil,                              // Input variable used to set a value.
-		0) // Size of the input variable.
+		0)                                // Size of the input variable.
 	return out
 }
 

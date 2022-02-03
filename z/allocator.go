@@ -38,18 +38,21 @@ import (
 // Instead, Allocator only allocates memory, with the idea that finally we
 // would just release the entire Allocator.
 type Allocator struct {
-	sync.Mutex
-	compIdx uint64 // Stores bufIdx in 32 MSBs and posIdx in 32 LSBs.
-	buffers [][]byte
-	Ref     uint64
 	Tag     string
+	buffers [][]byte
+	compIdx uint64
+	Ref     uint64
+	sync.Mutex
 }
 
 // allocs keeps references to all Allocators, so we can safely discard them later.
 var allocsMu *sync.Mutex
-var allocRef uint64
-var allocs map[uint64]*Allocator
-var calculatedLog2 []int
+
+var (
+	allocRef       uint64                //nolint:unused,varcheck,gochecknoglobals,lll,deadcode,revive // adopt fork, do not touch it
+	allocs         map[uint64]*Allocator //nolint:unused,varcheck,gochecknoglobals,lll,deadcode,revive // adopt fork, do not touch it
+	calculatedLog2 []int                 //nolint:unused,varcheck,gochecknoglobals,lll,deadcode,revive // adopt fork, do not touch it
+)
 
 func init() {
 	allocsMu = new(sync.Mutex)
@@ -311,9 +314,9 @@ func (a *Allocator) Allocate(sz int) []byte {
 }
 
 type AllocatorPool struct {
-	numGets int64
 	allocCh chan *Allocator
 	closer  *Closer
+	numGets int64
 }
 
 func NewAllocatorPool(sz int) *AllocatorPool {
@@ -339,6 +342,7 @@ func (p *AllocatorPool) Get(sz int, tag string) *Allocator {
 		return NewAllocator(sz, tag)
 	}
 }
+
 func (p *AllocatorPool) Return(a *Allocator) {
 	if a == nil {
 		return

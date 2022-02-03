@@ -19,7 +19,6 @@ package z
 import (
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"sync/atomic"
@@ -43,17 +42,17 @@ const (
 //
 // MaxSize can be set to limit the memory usage.
 type Buffer struct {
-	padding       uint64     // number of starting bytes used for padding
-	offset        uint64     // used length of the buffer
-	buf           []byte     // backing slice for the buffer
-	bufType       BufferType // type of the underlying buffer
-	curSz         int        // capacity of the buffer
-	maxSz         int        // causes a panic if the buffer grows beyond this size
-	mmapFile      *MmapFile  // optional mmap backing for the buffer
-	autoMmapAfter int        // Calloc falls back to an mmaped tmpfile after crossing this size
-	autoMmapDir   string     // directory for autoMmap to create a tempfile in
-	persistent    bool       // when enabled, Release will not delete the underlying mmap file
-	tag           string     // used for jemalloc stats
+	mmapFile      *MmapFile
+	autoMmapDir   string
+	tag           string
+	buf           []byte
+	offset        uint64
+	bufType       BufferType
+	maxSz         int
+	padding       uint64
+	autoMmapAfter int
+	curSz         int
+	persistent    bool
 }
 
 func NewBuffer(capacity int, tag string) *Buffer {
@@ -76,7 +75,7 @@ func NewBuffer(capacity int, tag string) *Buffer {
 // It is the caller's responsibility to set offset after this, because Buffer
 // doesn't remember what it was.
 func NewBufferPersistent(path string, capacity int) (*Buffer, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, filePerm) //nolint:gosec,revive //adopt fork, do not touch it
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +91,8 @@ func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 	if dir == "" {
 		dir = tmpDir
 	}
-	file, err := ioutil.TempFile(dir, "buffer")
+
+	file, err := os.CreateTemp(dir, "buffer")
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (b *Buffer) Grow(n int) {
 		// If autoMmap gets triggered, copy the slice over to an mmaped file.
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
 			b.bufType = UseMmap
-			file, err := ioutil.TempFile(b.autoMmapDir, "")
+			file, err := os.CreateTemp(b.autoMmapDir, "")
 			if err != nil {
 				panic(err)
 			}
@@ -313,14 +313,16 @@ func (t BufferType) String() string {
 	}
 }
 
-type LessFunc func(a, b []byte) bool
-type sortHelper struct {
-	offsets []int
-	b       *Buffer
-	tmp     *Buffer
-	less    LessFunc
-	small   []int
-}
+type (
+	LessFunc   func(a, b []byte) bool //nolint:revive //adopt fork, do not touch it
+	sortHelper struct {
+		offsets []int
+		b       *Buffer
+		tmp     *Buffer
+		less    LessFunc
+		small   []int
+	}
+)
 
 func (s *sortHelper) sortSmall(start, end int) {
 	s.tmp.Reset()
@@ -349,11 +351,13 @@ func assert(b bool) {
 		glog.Fatalf("%+v", errors.Errorf("Assertion failure"))
 	}
 }
+
 func check(err error) {
 	if err != nil {
 		glog.Fatalf("%+v", err)
 	}
 }
+
 func check2(_ interface{}, err error) {
 	check(err)
 }
@@ -424,6 +428,7 @@ func (s *sortHelper) sort(lo, hi int) []byte {
 func (b *Buffer) SortSlice(less func(left, right []byte) bool) {
 	b.SortSliceBetween(b.StartOffset(), int(b.offset), less)
 }
+
 func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 	if start >= end {
 		return

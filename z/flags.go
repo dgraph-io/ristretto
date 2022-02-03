@@ -34,9 +34,9 @@ import (
 // All flags are sorted alphabetically for consistent `--help` output. Flags with default values are
 // placed at the top, and everything else goes under.
 type SuperFlagHelp struct {
-	head     string
 	defaults *SuperFlag
 	flags    map[string]string
+	head     string
 }
 
 func NewSuperFlagHelp(defaults string) *SuperFlagHelp {

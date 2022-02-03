@@ -1,9 +1,10 @@
-//+build jemalloc
+//go:build jemalloc
+// +build jemalloc
 
 package main
 
 import (
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/etecs-ru/ristretto/z"
 	"github.com/golang/glog"
 )
 

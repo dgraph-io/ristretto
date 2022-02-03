@@ -21,7 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/etecs-ru/ristretto/z"
 )
 
 const (
@@ -32,13 +32,13 @@ const (
 
 // lfuPolicy encapsulates eviction/admission behavior.
 type lfuPolicy struct {
+	metrics *Metrics
+	admit   *tinyLFU
+	costs   *keyCosts
+	itemsCh chan []uint64
+	stop    chan struct{}
 	sync.Mutex
-	admit    *tinyLFU
-	costs    *keyCosts
-	itemsCh  chan []uint64
-	stop     chan struct{}
 	isClosed bool
-	metrics  *Metrics
 }
 
 func newPolicy(numCounters, maxCost int64) *lfuPolicy {
@@ -244,16 +244,10 @@ func (p *lfuPolicy) UpdateMaxCost(maxCost int64) {
 
 // keyCosts stores key-cost pairs.
 type keyCosts struct {
-	// NOTE: align maxCost to 64-bit boundary for use with atomic.
-	// As per https://golang.org/pkg/sync/atomic/: "On ARM, x86-32,
-	// and 32-bit MIPS, it is the caller’s responsibility to arrange
-	// for 64-bit alignment of 64-bit words accessed atomically.
-	// The first word in a variable or in an allocated struct, array,
-	// or slice can be relied upon to be 64-bit aligned."
-	maxCost  int64
-	used     int64
 	metrics  *Metrics
 	keyCosts map[uint64]int64
+	maxCost  int64
+	used     int64
 }
 
 func newSampledLFU(maxCost int64) *keyCosts {

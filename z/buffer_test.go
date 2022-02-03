@@ -84,7 +84,6 @@ func TestBufferWrite(t *testing.T) {
 				require.Equal(t, buf.Bytes(), bytesBuf.Bytes())
 				end = end * 2
 			}
-
 		})
 	}
 }

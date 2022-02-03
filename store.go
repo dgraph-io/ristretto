@@ -23,20 +23,22 @@ import (
 
 // TODO: Do we need this to be a separate struct from Item?
 type storeItem struct {
+	expiration time.Time
+	value      interface{}
 	key        uint64
 	conflict   uint64
-	value      interface{}
-	expiration time.Time
 }
 
 const numShards uint64 = 256
 
-type updateFn func(prev, cur interface{}) bool
-type shardedMap struct {
-	shards       []*lockedMap
-	expiryMap    *expirationMap
-	shouldUpdate func(prev, cur interface{}) bool
-}
+type (
+	updateFn   func(prev, cur interface{}) bool
+	shardedMap struct {
+		expiryMap    *expirationMap
+		shouldUpdate func(prev, cur interface{}) bool
+		shards       []*lockedMap
+	}
+)
 
 // newShardedMap is safe for concurrent usage.
 func newShardedMap(fn updateFn) *shardedMap {
@@ -91,10 +93,10 @@ func (sm *shardedMap) Clear(onEvict itemCallback) {
 }
 
 type lockedMap struct {
-	sync.RWMutex
 	data         map[uint64]storeItem
 	em           *expirationMap
 	shouldUpdate updateFn
+	sync.RWMutex
 }
 
 func newLockedMap(fn updateFn, em *expirationMap) *lockedMap {

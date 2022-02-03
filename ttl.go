@@ -21,10 +21,8 @@ import (
 	"time"
 )
 
-var (
-	// TODO: find the optimal value or make it configurable.
-	bucketDurationSecs = int64(5)
-)
+// TODO: find the optimal value or make it configurable.
+var bucketDurationSecs = int64(5) //nolint:gomnd,unused,varcheck,gochecknoglobals,lll,deadcode,revive // adopt fork, do not touch it
 
 func storageBucket(t time.Time) int64 {
 	return (t.Unix() / bucketDurationSecs) + 1
@@ -41,8 +39,8 @@ type bucket map[uint64]uint64
 
 // expirationMap is a map of bucket number to the corresponding bucket.
 type expirationMap struct {
-	sync.RWMutex
 	buckets map[int64]bucket
+	sync.RWMutex
 }
 
 func newExpirationMap() *expirationMap {
@@ -145,7 +143,8 @@ func (m *expirationMap) cleanup(store *shardedMap, policy *lfuPolicy, onEvict it
 		_, value := store.Del(key, conflict)
 
 		if onEvict != nil {
-			onEvict(&Item{Key: key,
+			onEvict(&Item{
+				Key:      key,
 				Conflict: conflict,
 				Value:    value,
 				Cost:     cost,

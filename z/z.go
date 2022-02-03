@@ -66,10 +66,9 @@ var (
 // finish: a chan to tell the goroutine to shut down, and a WaitGroup with
 // which to wait for it to finish shutting down.
 type Closer struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
 	waiting sync.WaitGroup
-
-	ctx    context.Context
-	cancel context.CancelFunc
 }
 
 // SetTmpDir sets the temporary directory for the temporary buffers.

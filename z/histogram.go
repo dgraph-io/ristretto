@@ -49,8 +49,8 @@ func Fibonacci(num int) []float64 {
 // as a histogram.
 type HistogramData struct {
 	Bounds         []float64
-	Count          int64
 	CountPerBucket []int64
+	Count          int64
 	Min            int64
 	Max            int64
 	Sum            int64

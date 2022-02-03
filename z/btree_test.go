@@ -18,7 +18,6 @@ package z
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -27,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z/simd"
 	"github.com/dustin/go-humanize"
+	"github.com/etecs-ru/ristretto/z/simd"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,10 +60,7 @@ func TestTree(t *testing.T) {
 }
 
 func TestTreePersistent(t *testing.T) {
-	dir, err := ioutil.TempDir("", "")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "tree.buf")
+	path := filepath.Join(t.TempDir(), "tree.buf")
 
 	// Create a tree and validate the data.
 	bt1, err := NewTreePersistent(path)
@@ -369,7 +365,7 @@ func BenchmarkWrite(b *testing.B) {
 
 // goos: linux
 // goarch: amd64
-// pkg: github.com/dgraph-io/ristretto/z
+// pkg: github.com/etecs-ru/ristretto/z
 // BenchmarkRead/map-4         	10845322	       109 ns/op
 // BenchmarkRead/btree-4       	 2744283	       430 ns/op
 // Cumulative for 10 runs.
@@ -438,8 +434,9 @@ func BenchmarkSearch(b *testing.B) {
 	}
 
 	jumpBy := []int{8, 16, 32, 64, 128, 196, 255}
+	tempDir := b.TempDir()
 	for _, sz := range jumpBy {
-		f, err := ioutil.TempFile(".", "tree")
+		f, err := os.CreateTemp(tempDir, "tree")
 		require.NoError(b, err)
 
 		mf, err := OpenMmapFileUsing(f, pageSize, true)

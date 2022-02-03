@@ -24,7 +24,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z/simd"
+	"github.com/etecs-ru/ristretto/z/simd"
 )
 
 var (
@@ -560,9 +560,11 @@ func (n node) setBit(b uint64) {
 	val |= b
 	n[vo] = val
 }
+
 func (n node) bits() uint64 {
 	return n.val(maxKeys) & 0xFF00000000000000
 }
+
 func (n node) isLeaf() bool {
 	return n.bits()&bitLeaf > 0
 }
@@ -607,6 +609,7 @@ func (n node) search(k uint64) int {
 	// }
 	// return N
 }
+
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()
 	// idx points to the first key which is zero.

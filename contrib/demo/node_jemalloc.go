@@ -1,3 +1,4 @@
+//go:build jemalloc && !allocator
 // +build jemalloc,!allocator
 
 package main
@@ -5,7 +6,7 @@ package main
 import (
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/etecs-ru/ristretto/z"
 )
 
 func newNode(val int) *node {

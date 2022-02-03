@@ -1,0 +1,59 @@
+name: release
+
+permissions:
+  contents: write
+
+on:
+  workflow_call:
+    inputs:
+      go:
+        description: 'Go version'
+        default: 1.17
+        required: false
+        type: string
+      tag:
+        description: 'Tag to create'
+        required: true
+        default: 'v0.0.0'
+        type: string
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+
+      - name: Checkout with tags
+        run: git fetch --prune --unshallow --tags
+
+      - name: Create release
+        run: |
+          git log --format="%C(auto) %H %s" `git tag --sort=-committerdate | head -1`...HEAD > changelog.txt
+          echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
+          gh release create ${{ github.event.inputs.tag }} -t ${{ github.event.inputs.tag }} -F changelog.txt
+
+      - name: Ping pkg.go.dev
+        run: |
+          curl --show-error --fail -w "HTTP %{http_code}\n" -o - 'https://pkg.go.dev/fetch/${{ steps.vars.outputs.module }}@${{ steps.vars.outputs.tag }}' \
+            --connect-timeout 5 \
+            --max-time 10 \
+            --retry 10 \
+            --retry-delay 30 \
+            --retry-max-time 600 \
+            -X 'POST' \
+            -H 'authority: pkg.go.dev' \
+            -H 'content-length: 0' \
+            -H 'sec-ch-ua: " Not;A Brand";v="99", "Google Chrome";v="97", "Chromium";v="97"' \
+            -H 'sec-ch-ua-mobile: ?0' \
+            -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36' \
+            -H 'sec-ch-ua-platform: "macOS"' \
+            -H 'accept: */*' \
+            -H 'origin: https://pkg.go.dev' \
+            -H 'sec-fetch-site: same-origin' \
+            -H 'sec-fetch-mode: cors' \
+            -H 'sec-fetch-dest: empty' \
+            -H 'referer: https://pkg.go.dev/${{ steps.vars.outputs.module }}@${{ steps.vars.outputs.tag }}' \
+            -H 'accept-language: en,en-GB;q=0.9,en-US;q=0.8' \
+            --compressed \
+            || true # we don't care about success

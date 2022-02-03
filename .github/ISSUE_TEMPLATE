@@ -1,1 +1,16 @@
-**GitHub Issues are deprecated. Use [Discuss Issues](https://discuss.dgraph.io/c/issues/35/ristretto/40) for reporting issues about this repository.**
+Hey there and thank you for using Issue Tracker!
+
+Do the checklist before filing an issue:
+
+- [ ] Is this something you can **debug and fix**? Send a pull request! Bug fixes and documentation fixes are welcome.
+- [ ] Have a usage question? Ask your question on [StackOverflow](http://stackoverflow.com). We use StackOverflow for usage question and GitHub for bugs.
+- [ ] Have an idea for a feature? Post the feature request on Product Pains. It has a voting system to surface the important issues. GitHub issues should only be used for bugs.
+
+
+None of the above, create a bug report
+------------------------------------------------------------------
+
+Make sure to add **all the information needed to understand the bug** so that someone can help. If the info is missing we'll add the 'Needs more information' label and close the issue until there is enough information.
+
+- [ ] Provide a **minimal code snippet** example that reproduces the bug.
+- [ ] Are you using Mac, Linux or Windows?

@@ -6,6 +6,17 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 
 ## Unreleased
 
+## [0.2.0] - 2022-02-03
+This release is adopted fork of the https://github.com/dgraph-io/ristretto. Only added is CI actions, code formatting, field alignment fix on structures.
+
+### Changed
+
+### Added
+  - GitHub Actions for build, lint, release, CodeQL
+
+### Fixed
+  - Field alignment on structs, potentially lowering memory consumption for Ristretto (needs benchmarking)
+
 ## [0.1.0] - 2021-06-03
 
 [0.1.0]: https://github.com/dgraph-io/ristretto/compare/v0.1.0..v0.0.3

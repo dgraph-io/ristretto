@@ -1,0 +1,46 @@
+# This workflow file requires a free account on Semgrep.dev to
+# manage rules, file ignores, notifications, and more.
+#
+# See https://semgrep.dev/docs
+
+name: Semgrep
+
+on:
+  #push:
+  #  branches: [ master ]
+  #pull_request:
+    # The branches below must be a subset of the branches above
+  #  branches: [ master ]
+  #schedule:
+  #  - cron: '18 22 * * 5'
+
+jobs:
+  semgrep:
+    name: Scan
+    runs-on: ubuntu-latest
+    # Skip any PR created by dependabot to avoid permission issues
+    if: (github.actor != 'dependabot[bot]')
+    steps:
+      # Checkout project source
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
+
+      # Scan code using project's configuration on https://semgrep.dev/manage
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          #publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+          #publishDeployment: ${{ secrets.SEMGREP_DEPLOYMENT_ID }}
+          generateSarif: "1"
+          config: >- # more at semgrep.dev/explore
+            p/security-audit
+            p/secrets
+            p/owasp-top-ten
+            p/r2c-ci
+            p/r2c-security-audit
+            p/golang
+
+      # Upload SARIF file generated in previous step
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@ff33f031e8e4c0a32194dcdab6bafbcd10c4589a # v1
+        with:
+          sarif_file: semgrep.sarif
+        if: always()
