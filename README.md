@@ -1,6 +1,7 @@
 # Ristretto
-[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/etecs-ru/ristretto)
+[![Go Reference](https://pkg.go.dev/badge/github.com/etecs-ru/ristretto.svg)](https://pkg.go.dev/github.com/etecs-ru/ristretto)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/etecs-ru/ristretto)
+[![Release](https://img.shields.io/github/release/etecs-ru/ristretto.svg)](https://github.com/etecs-ru/ristretto/releases/latest)
 [![Coverage](https://codecov.io/gh/etecs-ru/ristretto/branch/master/graph/badge.svg?token=UDWD7LBVTK)](https://codecov.io/gh/etecs-ru/ristretto)
 ![Tests](https://github.com/etecs-ru/ristretto/workflows/build/badge.svg)
 
@@ -48,7 +49,8 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 		* [Metrics](#Config)
 		* [OnEvict](#Config)
 		* [KeyToHash](#Config)
-        * [Cost](#Config)
+	        * [Cost](#Config)
+	* [Testing](#Testing)
 * [Benchmarks](#Benchmarks)
 	* [Hit Ratios](#Hit-Ratios)
 		* [Search](#Search)
@@ -61,6 +63,7 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 		* [Write](#Write)
 * [Projects using Ristretto](#projects-using-ristretto)
 * [FAQ](#FAQ)
+
 
 ## Usage
 
@@ -143,6 +146,11 @@ To signal to Ristretto that you'd like to use this Cost function:
 
 1. Set the Cost field to a non-nil function.
 2. When calling Set for new items or item updates, use a `cost` of 0.
+
+### Testing
+
+If you wish to mock out the caching functionality for use in your tests, you should use the `CacheInterface` in your code.
+This enables you to generate mocks using something like [mockery](https://github.com/vektra/mockery) or provide your own implementation.
 
 ## Benchmarks
 

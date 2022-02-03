@@ -35,6 +35,57 @@ type itemCallback func(*Item)
 
 const itemSize = int64(unsafe.Sizeof(storeItem{}))
 
+// CacheInterface exposes the common cache functions for the purpose of mocking
+// in unit tests.
+type CacheInterface interface {
+	// Get returns the value (if any) and a boolean representing whether the
+	// value was found or not. The value can be nil and the boolean can be true at
+	// the same time.
+	Get(key interface{}) (interface{}, bool)
+
+	// Set attempts to add the key-value item to the cache. If it returns false,
+	// then the Set was dropped and the key-value item isn't added to the cache. If
+	// it returns true, there's still a chance it could be dropped by the policy if
+	// its determined that the key-value item isn't worth keeping, but otherwise the
+	// item will be added and other items will be evicted in order to make room.
+	//
+	// To dynamically evaluate the items cost using the Config.Coster function, set
+	// the cost parameter to 0 and Coster will be ran when needed in order to find
+	// the items true cost.
+	Set(key, value interface{}, cost int64) bool
+
+	// SetWithTTL works like Set but adds a key-value pair to the cache that will expire
+	// after the specified TTL (time to live) has passed. A zero value means the value never
+	// expires, which is identical to calling Set. A negative value is a no-op and the value
+	// is discarded.
+	SetWithTTL(key, value interface{}, cost int64, ttl time.Duration) bool
+
+	// SetIfPresent is like Set, but only updates the value of an existing key. It
+	// does NOT add the key to cache if it's absent.
+	SetIfPresent(key, value interface{}, cost int64) bool
+
+	// Del deletes the key-value item from the cache if it exists.
+	Del(key interface{})
+
+	// GetTTL returns the TTL for the specified key and a bool that is true if the
+	// item was found and is not expired.
+	GetTTL(key interface{}) (time.Duration, bool)
+
+	// Close stops all goroutines and closes all channels.
+	Close()
+
+	// Clear empties the hashmap and zeroes all policy counters. Note that this is
+	// not an atomic operation (but that shouldn't be a problem as it's assumed that
+	// Set/Get calls won't be occurring until after this).
+	Clear()
+
+	// MaxCost returns the max cost of the cache.
+	MaxCost() int64
+
+	// UpdateMaxCost updates the maxCost of an existing cache.
+	UpdateMaxCost(maxCost int64)
+}
+
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
@@ -55,18 +106,66 @@ type Cache struct {
 	isClosed           bool
 }
 
+// Verify that Cache implements the CacheInterface.
+// https://golang.org/doc/faq#guarantee_satisfies_interface
+var _ CacheInterface = &Cache{}
+
 // Config is passed to NewCache for creating new Cache instances.
 type Config struct {
-	OnExit             func(val interface{})
-	KeyToHash          func(key interface{}) (uint64, uint64)
-	ShouldUpdate       func(prev, cur interface{}) bool
-	Cost               func(value interface{}) int64
-	OnEvict            func(item *Item)
-	OnReject           func(item *Item)
-	NumCounters        int64
-	MaxCost            int64
-	BufferItems        int64
-	Metrics            bool
+	// OnExit is called whenever a value is removed from cache. This can be
+	// used to do manual memory deallocation. Would also be called on eviction
+	// and rejection of the value.
+	OnExit func(val interface{})
+	// KeyToHash function is used to customize the key hashing algorithm.
+	// Each key will be hashed using the provided function. If keyToHash value
+	// is not set, the default keyToHash function is used.
+	KeyToHash func(key interface{}) (uint64, uint64)
+	// ShouldUpdate is called when a value already exists in cache and is being updated.
+	ShouldUpdate func(prev, cur interface{}) bool
+	// Cost evaluates a value and outputs a corresponding cost. This function
+	// is ran after Set is called for a new item or an item update with a cost
+	// param of 0.
+	Cost func(value interface{}) int64
+	// OnEvict is called for every eviction and passes the hashed key, value,
+	// and cost to the function.
+	OnEvict func(item *Item)
+	// OnReject is called for every rejection done via the policy.
+	OnReject func(item *Item)
+	// NumCounters determines the number of counters (keys) to keep that hold
+	// access frequency information. It's generally a good idea to have more
+	// counters than the max cache capacity, as this will improve eviction
+	// accuracy and subsequent hit ratios.
+	//
+	// For example, if you expect your cache to hold 1,000,000 items when full,
+	// NumCounters should be 10,000,000 (10x). Each counter takes up roughly
+	// 3 bytes (4 bits for each counter * 4 copies plus about a byte per
+	// counter for the bloom filter). Note that the number of counters is
+	// internally rounded up to the nearest power of 2, so the space usage
+	// may be a little larger than 3 bytes * NumCounters.
+	NumCounters int64
+	// MaxCost can be considered as the cache capacity, in whatever units you
+	// choose to use.
+	//
+	// For example, if you want the cache to have a max capacity of 100MB, you
+	// would set MaxCost to 100,000,000 and pass an item's number of bytes as
+	// the `cost` parameter for calls to Set. If new items are accepted, the
+	// eviction process will take care of making room for the new item and not
+	// overflowing the MaxCost value.
+	MaxCost int64
+	// BufferItems determines the size of Get buffers.
+	//
+	// Unless you have a rare use case, using `64` as the BufferItems value
+	// results in good performance.
+	BufferItems int64
+	// Metrics determines whether cache statistics are kept during the cache's
+	// lifetime. There *is* some overhead to keeping statistics, so you should
+	// only set this flag to true when testing or throughput performance isn't a
+	// major factor.
+	Metrics bool
+	// IgnoreInternalCost set to true indicates to the cache that the cost of
+	// internally storing the value should be ignored. This is useful when the
+	// cost passed to set is not using bytes as units. Keep in mind that setting
+	// this to true will increase the memory usage.
 	IgnoreInternalCost bool
 }
 

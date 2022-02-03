@@ -79,9 +79,9 @@ func TestStressHitRatio(t *testing.T) {
 // with Ristretto's. It looks ahead and evicts the absolute least valuable item,
 // which we try to approximate in a real cache.
 type Clairvoyant struct {
-	capacity uint64
 	hits     map[uint64]uint64
 	access   []uint64
+	capacity uint64
 }
 
 func NewClairvoyant(capacity uint64) *Clairvoyant {
