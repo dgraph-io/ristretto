@@ -1,23 +1,15 @@
-name: release
 on:
   push:
     branches:
       - master
 jobs:
-  release:
-    name: Release
+  push-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@master
+      - name: Bump version and push tag
+        uses: mathieudutour/github-tag-action@v6.0
         with:
-          fetch-depth: 0
-      - name: Setup Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: 'lts/*'
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: master
+          create_annotated_tag: true
