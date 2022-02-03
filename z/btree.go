@@ -587,7 +587,7 @@ func (n node) search(k uint64) int {
 	}
 	return int(simd.Search(n[:2*N], k))
 	// lo, hi := 0, N
-	// // Reduce the search space using binary seach and then do linear search.
+	// // Reduce the search space using binary search and then do linear search.
 	// for hi-lo > 32 {
 	// 	mid := (hi + lo) / 2
 	// 	km := n.key(mid)

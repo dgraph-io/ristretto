@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -43,6 +44,9 @@ func TestFlagDefault(t *testing.T) {
 }
 
 func TestGetPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("not ready for Windows")
+	}
 	usr, err := user.Current()
 	require.NoError(t, err)
 	homeDir := usr.HomeDir

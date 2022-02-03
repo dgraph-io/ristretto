@@ -10,11 +10,13 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 This release is adopted fork of the https://github.com/dgraph-io/ristretto. Only added is CI actions, code formatting, field alignment fix on structures.
 
 ### Changed
-  - removed glog dependency
-  - removed pkg/errors dependency
+  - Removed glog dependency
+  - Removed pkg/errors dependency
 
 ### Added
   - GitHub Actions for build, lint, release, CodeQL
+  - Code coverage calculating and uploading
+  - Matrix tests for Linux, MacOS, Windows
 
 ### Fixed
   - Field alignment on structs, potentially lowering memory consumption for Ristretto (needs benchmarking)

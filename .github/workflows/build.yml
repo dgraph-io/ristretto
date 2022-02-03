@@ -13,9 +13,13 @@ on:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    env:
+      OS: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -38,16 +42,24 @@ jobs:
       - name: Go Generate
         run: go generate ./... && git diff --exit-code
 
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.44.0
+
       - name: Go Build
         run: go build -v ./...
 
       - name: Go Test
-        run: go test -v -tags -race -shuffle=on -coverprofile=coverage.txt ./...
+        run: go test -v -tags -race -shuffle=on -coverprofile="coverage.txt" ./...
 
       - name: Upload Coverage
         uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b # v2.1.0
+        if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         with:
           token: ${{secrets.CODECOV_TOKEN}}
           file: ./coverage.txt
+          flags: unittests # optional
+          name: codecov-umbrella # optional
           fail_ci_if_error: false

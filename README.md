@@ -1,8 +1,10 @@
 # Ristretto
 [![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/etecs-ru/ristretto)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/etecs-ru/ristretto)
-[![Coverage](https://gocover.io/_badge/github.com/etecs-ru/ristretto)](https://gocover.io/github.com/etecs-ru/ristretto)
-![Tests](https://github.com/etecs-ru/ristretto/workflows/tests/badge.svg)
+[![Coverage](https://codecov.io/gh/etecs-ru/ristretto/branch/master/graph/badge.svg?token=UDWD7LBVTK)](https://codecov.io/gh/etecs-ru/ristretto)
+![Tests](https://github.com/etecs-ru/ristretto/workflows/build/badge.svg)
+
+
 
 ## This is the fork of the [github.com/dgraph-io/ristretto](https://github.com/dgraph-io/ristretto).
 

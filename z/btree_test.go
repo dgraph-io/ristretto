@@ -486,7 +486,7 @@ func BenchmarkSearch(b *testing.B) {
 func BenchmarkCustomSearch(b *testing.B) {
 	mixed := func(n node, k uint64, N int, threshold int) int {
 		lo, hi := 0, N
-		// Reduce the search space using binary seach and then do linear search.
+		// Reduce the search space using binary search and then do linear search.
 		for hi-lo > threshold {
 			mid := (hi + lo) / 2
 			km := n.key(mid)
