@@ -151,6 +151,8 @@ func viaLL() {
 	freeS(root)
 }
 
+const timeout = 5 * time.Second
+
 func main() {
 	check()
 	fill = make([]byte, maxMB<<20)
@@ -175,5 +177,5 @@ func main() {
 	}
 	runtime.GC()
 	fmt.Println("Done. Reduced to zero memory usage.")
-	time.Sleep(5 * time.Second)
+	time.Sleep(timeout)
 }

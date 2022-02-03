@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // SuperFlagHelp makes it really easy to generate command line `--help` output for a SuperFlag. For
@@ -204,10 +202,8 @@ func (sf *SuperFlag) GetBool(opt string) bool {
 	}
 	b, err := strconv.ParseBool(val)
 	if err != nil {
-		err = errors.Wrapf(err,
-			"Unable to parse %s as bool for key: %s. Options: %s\n",
-			val, opt, sf)
-		log.Fatal(err.Error())
+		log.Fatalf("unable to parse %s as bool for key: %s. Options: %s: %v",
+			val, opt, sf, err)
 	}
 	return b
 }
@@ -219,10 +215,8 @@ func (sf *SuperFlag) GetFloat64(opt string) float64 {
 	}
 	f, err := strconv.ParseFloat(val, 64)
 	if err != nil {
-		err = errors.Wrapf(err,
-			"Unable to parse %s as float64 for key: %s. Options: %s\n",
-			val, opt, sf)
-		log.Fatal(err.Error())
+		log.Fatalf("unable to parse %s as float64 for key: %s. Options: %s: %v",
+			val, opt, sf, err)
 	}
 	return f
 }
@@ -234,10 +228,8 @@ func (sf *SuperFlag) GetInt64(opt string) int64 {
 	}
 	i, err := strconv.ParseInt(val, 0, 64)
 	if err != nil {
-		err = errors.Wrapf(err,
-			"Unable to parse %s as int64 for key: %s. Options: %s\n",
-			val, opt, sf)
-		log.Fatal(err.Error())
+		log.Fatalf("unable to parse %s as int64 for key: %s. Options: %s: %v",
+			val, opt, sf, err)
 	}
 	return i
 }
@@ -249,10 +241,8 @@ func (sf *SuperFlag) GetUint64(opt string) uint64 {
 	}
 	u, err := strconv.ParseUint(val, 0, 64)
 	if err != nil {
-		err = errors.Wrapf(err,
-			"Unable to parse %s as uint64 for key: %s. Options: %s\n",
-			val, opt, sf)
-		log.Fatal(err.Error())
+		log.Fatalf("unable to parse %s as uint64 for key: %s. Options: %s: %v",
+			val, opt, sf, err)
 	}
 	return u
 }
@@ -264,10 +254,8 @@ func (sf *SuperFlag) GetUint32(opt string) uint32 {
 	}
 	u, err := strconv.ParseUint(val, 0, 32)
 	if err != nil {
-		err = errors.Wrapf(err,
-			"Unable to parse %s as uint32 for key: %s. Options: %s\n",
-			val, opt, sf)
-		log.Fatalf("%+v", err)
+		log.Fatalf("unable to parse %s as uint32 for key: %s. Options: %s: %v",
+			val, opt, sf, err)
 	}
 	return uint32(u)
 }
@@ -297,7 +285,7 @@ func expandPath(path string) (string, error) {
 	if path[0] == '~' && (len(path) == 1 || os.IsPathSeparator(path[1])) {
 		usr, err := user.Current()
 		if err != nil {
-			return "", errors.Wrap(err, "Failed to get the home directory of the user")
+			return "", fmt.Errorf("failed to get the home directory of the user: %w", err)
 		}
 		path = filepath.Join(usr.HomeDir, path[1:])
 	}
@@ -305,7 +293,8 @@ func expandPath(path string) (string, error) {
 	var err error
 	path, err = filepath.Abs(path)
 	if err != nil {
-		return "", errors.Wrap(err, "Failed to generate absolute path")
+		return "", fmt.Errorf("failed to generate absolute path: %w", err)
 	}
+
 	return path, nil
 }

@@ -18,12 +18,11 @@ package z
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/pkg/errors"
 )
 
 const filePerm = 0o666
@@ -35,13 +34,14 @@ type MmapFile struct {
 	Data []byte
 }
 
-var NewFile = errors.New("Create a new file")
+// ErrNewFileCreateFailed signals that creation of a new file has failed
+var ErrNewFileCreateFailed = errors.New("create a new file")
 
 func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 	filename := fd.Name()
 	fi, err := fd.Stat()
 	if err != nil {
-		return nil, errors.Wrapf(err, "cannot stat file: %s", filename)
+		return nil, fmt.Errorf("cannot stat file: %s: %w", filename, err)
 	}
 
 	var rerr error
@@ -49,16 +49,16 @@ func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 	if sz > 0 && fileSize == 0 {
 		// If file is empty, truncate it to sz.
 		if err := fd.Truncate(int64(sz)); err != nil {
-			return nil, errors.Wrapf(err, "error while truncation")
+			return nil, fmt.Errorf("error while truncation: %w", err)
 		}
 		fileSize = int64(sz)
-		rerr = NewFile
+		rerr = ErrNewFileCreateFailed
 	}
 
 	// fmt.Printf("Mmaping file: %s with writable: %v filesize: %d\n", fd.Name(), writable, fileSize)
 	buf, err := Mmap(fd, writable, fileSize) // Mmap up to file size.
 	if err != nil {
-		return nil, errors.Wrapf(err, "while mmapping %s with size: %d", fd.Name(), fileSize)
+		return nil, fmt.Errorf("%w while mmapping %s with size: %d", err, fd.Name(), fileSize)
 	}
 
 	if fileSize == 0 {
@@ -73,13 +73,13 @@ func OpenMmapFileUsing(fd *os.File, sz int, writable bool) (*MmapFile, error) {
 
 // OpenMmapFile opens an existing file or creates a new file. If the file is
 // created, it would truncate the file to maxSz. In both cases, it would mmap
-// the file to maxSz and returned it. In case the file is created, z.NewFile is
+// the file to maxSz and returned it. In case the file is created, z.ErrNewFileCreateFailed is
 // returned.
 func OpenMmapFile(filename string, flag int, maxSz int) (*MmapFile, error) {
 	// fmt.Printf("opening file %s with flag: %v\n", filename, flag)
 	fd, err := os.OpenFile(filename, flag, filePerm) //nolint:gosec //adopt fork, do not touch it
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to open: %s", filename)
+		return nil, fmt.Errorf("unable to open: %s: %w", filename, err)
 	}
 	writable := true
 	if flag == os.O_RDONLY {
@@ -207,13 +207,15 @@ func (m *MmapFile) Close(maxSz int64) error {
 func SyncDir(dir string) error {
 	df, err := os.Open(dir)
 	if err != nil {
-		return errors.Wrapf(err, "while opening %s", dir)
+		return fmt.Errorf("%w while opening %s", err, dir)
 	}
-	if err := df.Sync(); err != nil {
-		return errors.Wrapf(err, "while syncing %s", dir)
+
+	if err = df.Sync(); err != nil {
+		return fmt.Errorf("%w while syncing %s", err, dir)
 	}
-	if err := df.Close(); err != nil {
-		return errors.Wrapf(err, "while closing %s", dir)
+
+	if err = df.Close(); err != nil {
+		return fmt.Errorf("%w while closing %s", err, dir)
 	}
 	return nil
 }

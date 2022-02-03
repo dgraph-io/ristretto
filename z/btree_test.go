@@ -440,7 +440,7 @@ func BenchmarkSearch(b *testing.B) {
 		require.NoError(b, err)
 
 		mf, err := OpenMmapFileUsing(f, pageSize, true)
-		if err != NewFile {
+		if err != ErrNewFileCreateFailed {
 			require.NoError(b, err)
 		}
 

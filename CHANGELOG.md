@@ -11,6 +11,7 @@ This release is adopted fork of the https://github.com/dgraph-io/ristretto. Only
 
 ### Changed
   - removed glog dependency
+  - removed pkg/errors dependency
 
 ### Added
   - GitHub Actions for build, lint, release, CodeQL

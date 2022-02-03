@@ -18,13 +18,12 @@ package z
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"sort"
 	"sync/atomic"
-
-	"github.com/pkg/errors"
 )
 
 const (
@@ -104,9 +103,11 @@ func newBufferFile(file *os.File, capacity int) (*Buffer, error) {
 		capacity = defaultCapacity
 	}
 	mmapFile, err := OpenMmapFileUsing(file, capacity, true)
-	if err != nil && err != NewFile {
+
+	if err != nil && !errors.Is(err, ErrNewFileCreateFailed) {
 		return nil, err
 	}
+
 	buf := &Buffer{
 		buf:      mmapFile.Data,
 		bufType:  UseMmap,
@@ -205,7 +206,8 @@ func (b *Buffer) Grow(n int) {
 				panic(err)
 			}
 			mmapFile, err := OpenMmapFileUsing(file, b.curSz, true)
-			if err != nil && err != NewFile {
+
+			if err != nil && !errors.Is(err, ErrNewFileCreateFailed) {
 				panic(err)
 			}
 			assert(int(b.offset) == copy(mmapFile.Data, b.buf[:b.offset]))
@@ -224,9 +226,8 @@ func (b *Buffer) Grow(n int) {
 	case UseMmap:
 		// Truncate and remap the underlying file.
 		if err := b.mmapFile.Truncate(int64(b.curSz)); err != nil {
-			err = errors.Wrapf(err,
-				"while trying to truncate file: %s to size: %d", b.mmapFile.Fd.Name(), b.curSz)
-			panic(err)
+			panic(fmt.Sprintf("%v while trying to truncate file: %s to size: %d",
+				err, b.mmapFile.Fd.Name(), b.curSz))
 		}
 		b.buf = b.mmapFile.Data
 
@@ -537,11 +538,11 @@ func (b *Buffer) Release() error {
 		}
 		path := b.mmapFile.Fd.Name()
 		if err := b.mmapFile.Close(-1); err != nil {
-			return errors.Wrapf(err, "while closing file: %s", path)
+			return fmt.Errorf("%w while closing file: %s", err, path)
 		}
 		if !b.persistent {
 			if err := os.Remove(path); err != nil {
-				return errors.Wrapf(err, "while deleting file %s", path)
+				return fmt.Errorf("%w while deleting file %s", err, path)
 			}
 		}
 	}

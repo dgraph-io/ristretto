@@ -23,9 +23,11 @@ func Calloc(size int) []byte {
 	}
 	hdr := reflect.SliceHeader{Data: uintptr(ptr), Len: size, Cap: size}
 	atomic.AddInt64(&numbytes, int64(size))
-	return *(*[]byte)(unsafe.Pointer(&hdr))
+
+	return *(*[]byte)(unsafe.Pointer(&hdr)) //nolint:govet // do not change fork code
 }
 
+// Free ...
 func Free(bs []byte) {
 	if len(bs) == 0 {
 		return
@@ -33,11 +35,14 @@ func Free(bs []byte) {
 
 	if sz := cap(bs); sz != 0 {
 		bs = bs[:cap(bs)]
+
 		C.free(unsafe.Pointer(&bs[0]))
+
 		atomic.AddInt64(&numbytes, -int64(sz))
 	}
 }
 
+// NumAllocBytes returns a number of allocated bytes
 func NumAllocBytes() int64 { return atomic.LoadInt64(&numbytes) }
 
 func check() {}
