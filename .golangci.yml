@@ -158,13 +158,12 @@ linters-settings:
     # A list of packages for the list type specified.
     # Default: []
     packages:
-      - github.com/sirupsen/logrus
+      - log
 
     # A list of packages for the list type specified.
     # Specify an error message to output when a denied package is used.
     # Default: []
     packages-with-error-message:
-      - github.com/sirupsen/logrus: 'logging is allowed only by logutils.Log'
 
     # Create additional guards that follow the same configuration pattern.
     # Results from all guards are aggregated together.
@@ -199,16 +198,9 @@ linters-settings:
     # Default: false
     check-blank: true
 
-    # DEPRECATED comma-separated list of pairs of the form pkg:regex
-    #
-    # the regex is used to ignore names within pkg. (default "fmt:.*").
-    # see https://github.com/kisielk/errcheck#the-deprecated-method for details
-    ignore: fmt:.*,io/ioutil:^Read.*
-
     # List of functions to exclude from checking, where each entry is a single function to exclude.
     # See https://github.com/kisielk/errcheck#excluding-functions for details.
     exclude-functions:
-      - io/ioutil.ReadFile
       - io.Copy(*bytes.Buffer)
       - io.Copy(os.Stdout)
 
@@ -731,6 +723,8 @@ linters-settings:
     no-extra-aliases: true
     # List of aliases
     alias:
+      - pkg: log
+        alias:
 
 
   ireturn:
@@ -943,7 +937,7 @@ linters-settings:
       # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#deep-exit
       - name: deep-exit
         severity: warning
-        disabled: false
+        disabled: true # TODO: make false?
       # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#defer
       - name: defer
         severity: warning

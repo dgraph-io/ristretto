@@ -21,6 +21,7 @@ import "C"
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/etecs-ru/ristretto/z"
-	"github.com/golang/glog"
 )
 
 type S struct {
@@ -71,7 +71,7 @@ func newS(sz int) *S {
 	s.val = Calloc(sz)
 	copy(s.val, fill)
 	if s.next != nil {
-		glog.Fatalf("news.next must be nil: %p", s.next)
+		log.Fatalf("news.next must be nil: %p", s.next)
 	}
 	return s
 }
@@ -91,7 +91,7 @@ func (s *S) allocateNext(sz int) {
 
 func (s *S) deallocNext() {
 	if s.next == nil {
-		glog.Fatal("next should not be nil")
+		log.Fatal("next should not be nil")
 	}
 	next := s.next
 	s.next = next.next
@@ -165,13 +165,13 @@ func main() {
 	}()
 	go func() {
 		if err := http.ListenAndServe("0.0.0.0:8080", nil); err != nil {
-			glog.Fatalf("Error: %v", err)
+			log.Fatalf("Error: %v", err)
 		}
 	}()
 
 	viaLL()
 	if left := NumAllocBytes(); left != 0 {
-		glog.Fatalf("Unable to deallocate all memory: %v\n", left)
+		log.Fatalf("Unable to deallocate all memory: %v\n", left)
 	}
 	runtime.GC()
 	fmt.Println("Done. Reduced to zero memory usage.")
