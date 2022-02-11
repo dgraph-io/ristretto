@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # v2.4.0
 
       - name: Install Go
-        uses: actions/setup-go@424fc82d43fa5a37540bae62709ddcc23d9520d4 # v2.1.5
+        uses: actions/setup-go@bfdd3570ce990073878bf10f6b2d79082de49492 # v2.1.5
         with:
           go-version: ${{ inputs.go }}
 
