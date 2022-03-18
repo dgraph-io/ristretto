@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2
 	github.com/dustin/go-humanize v1.0.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/zeebo/xxh3 v1.0.2
 	golang.org/x/sys v0.0.0-20220128215802-99c3d69c2c27
 )
