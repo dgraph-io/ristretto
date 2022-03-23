@@ -28,7 +28,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab # v2.1.5
         with:
-          go-version: 1.17
+          go-version: 1.18
 
       - name: Go Format
         run: gofmt -s -w . && git diff --exit-code
@@ -45,7 +45,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3.1.0
         with:
-          version: v1.44.0
+          version: v1.45.0
 
       - name: Go Build
         run: go build -v ./...
