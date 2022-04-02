@@ -215,7 +215,7 @@ func NewCache(config *Config) (*Cache, error) {
 }
 
 func (c *Cache) Wait() {
-	if c == nil || atomic.c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	wg := &sync.WaitGroup{}
@@ -327,7 +327,7 @@ func (c *Cache) setInternal(key, value interface{},
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil || c.isClosed.load || key == nil {
+	if c == nil || c.isClosed.Load() || key == nil {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
