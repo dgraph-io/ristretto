@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
+	"go.uber.org/atomic"
 )
 
 var (
@@ -64,7 +65,7 @@ type Cache struct {
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
-	isClosed bool
+	isClosed atomic.Bool
 	// cost calculates cost from a value.
 	cost func(value interface{}) int64
 	// ignoreInternalCost dictates whether to ignore the cost of internally storing
@@ -216,7 +217,7 @@ func NewCache(config *Config) (*Cache, error) {
 // Wait blocks until all buffered writes have been applied. This ensures a call to Set()
 // will be visible to future calls to Get().
 func (c *Cache) Wait() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	wg := &sync.WaitGroup{}
@@ -229,7 +230,7 @@ func (c *Cache) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time. Get will not return expired items.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	if c == nil || c.isClosed || key == nil {
+	if c == nil || c.isClosed.Load() || key == nil {
 		return nil, false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -272,7 +273,7 @@ func (c *Cache) SetIfPresent(key, value interface{}, cost int64) bool {
 
 func (c *Cache) setInternal(key, value interface{},
 	cost int64, ttl time.Duration, onlyUpdate bool) bool {
-	if c == nil || c.isClosed || key == nil {
+	if c == nil || c.isClosed.Load() || key == nil {
 		return false
 	}
 
@@ -328,7 +329,7 @@ func (c *Cache) setInternal(key, value interface{},
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache) Del(key interface{}) {
-	if c == nil || c.isClosed || key == nil {
+	if c == nil || c.isClosed.Load() || key == nil {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -375,7 +376,7 @@ func (c *Cache) GetTTL(key interface{}) (time.Duration, bool) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache) Close() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	c.Clear()
@@ -385,14 +386,14 @@ func (c *Cache) Close() {
 	close(c.stop)
 	close(c.setBuf)
 	c.policy.Close()
-	c.isClosed = true
+	c.isClosed.Store(true)
 }
 
 // Clear empties the hashmap and zeroes all policy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache) Clear() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	// Block until processItems goroutine is returned.
