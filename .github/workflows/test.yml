@@ -28,7 +28,7 @@ jobs:
         run: go test -v -race -shuffle=on -coverprofile=coverage.txt ./...
 
       - name: Upload Coverage
-        uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b # v2.1.0
+        uses: codecov/codecov-action@e3c560433a6cc60aec8812599b7844a7b4fa0d71 # v2.1.0
         continue-on-error: true
         with:
           token: ${{secrets.CODECOV_TOKEN}}
