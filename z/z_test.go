@@ -53,3 +53,55 @@ func TestKeyToHash(t *testing.T) {
 	key, conflict = KeyToHash(int64(3))
 	verifyHashProduct(t, 3, 0, key, conflict)
 }
+
+func TestMulipleSignals(t *testing.T) {
+	closer := NewCloser(0)
+	require.NotPanics(t, func() { closer.Signal() })
+	// Should not panic.
+	require.NotPanics(t, func() { closer.Signal() })
+	require.NotPanics(t, func() { closer.SignalAndWait() })
+
+	// Attempt 2.
+	closer = NewCloser(1)
+	require.NotPanics(t, func() { closer.Done() })
+
+	require.NotPanics(t, func() { closer.SignalAndWait() })
+	// Should not panic.
+	require.NotPanics(t, func() { closer.SignalAndWait() })
+	require.NotPanics(t, func() { closer.Signal() })
+}
+
+func TestCloser(t *testing.T) {
+	closer := NewCloser(1)
+	go func() {
+		defer closer.Done()
+		<-closer.Ctx().Done()
+	}()
+	closer.SignalAndWait()
+}
+
+func TestZeroOut(t *testing.T) {
+	dst := make([]byte, 4*1024)
+	fill := func() {
+		for i := 0; i < len(dst); i++ {
+			dst[i] = 0xFF
+		}
+	}
+	check := func(buf []byte, b byte) {
+		for i := 0; i < len(buf); i++ {
+			require.Equalf(t, b, buf[i], "idx: %d", i)
+		}
+	}
+	fill()
+
+	ZeroOut(dst, 0, 1)
+	check(dst[:1], 0x00)
+	check(dst[1:], 0xFF)
+
+	ZeroOut(dst, 0, 1024)
+	check(dst[:1024], 0x00)
+	check(dst[1024:], 0xFF)
+
+	ZeroOut(dst, 0, len(dst))
+	check(dst, 0x00)
+}

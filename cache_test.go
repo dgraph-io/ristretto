@@ -3,6 +3,7 @@ package ristretto
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,9 +19,10 @@ var wait = time.Millisecond * 10
 func TestCacheKeyToHash(t *testing.T) {
 	keyToHashCount := 0
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        10,
+		MaxCost:            1000,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
 		KeyToHash: func(key interface{}) (uint64, uint64) {
 			keyToHashCount++
 			return z.KeyToHash(key)
@@ -88,6 +90,32 @@ func TestCacheMaxCost(t *testing.T) {
 	}
 }
 
+func TestUpdateMaxCost(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 10,
+		MaxCost:     10,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(10), c.MaxCost())
+	require.True(t, c.Set(1, 1, 1))
+	time.Sleep(wait)
+	_, ok := c.Get(1)
+	// Set is rejected because the cost of the entry is too high
+	// when accounting for the internal cost of storing the entry.
+	require.False(t, ok)
+
+	// Update the max cost of the cache and retry.
+	c.UpdateMaxCost(1000)
+	require.Equal(t, int64(1000), c.MaxCost())
+	require.True(t, c.Set(1, 1, 1))
+	time.Sleep(wait)
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.NotNil(t, val)
+	c.Del(1)
+}
+
 func TestNewCache(t *testing.T) {
 	_, err := NewCache(&Config{
 		NumCounters: 0,
@@ -145,20 +173,62 @@ func TestMultipleClose(t *testing.T) {
 	c.Close()
 }
 
+func TestSetAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	c.Close()
+	require.False(t, c.Set(1, 1, 1))
+}
+
+func TestClearAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	c.Close()
+	c.Clear()
+}
+
+func TestGetAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	require.True(t, c.Set(1, 1, 1))
+	c.Close()
+
+	_, ok := c.Get(1)
+	require.False(t, ok)
+}
+
+func TestDelAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	require.True(t, c.Set(1, 1, 1))
+	c.Close()
+
+	c.Del(1)
+}
+
 func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -167,33 +237,33 @@ func TestCacheProcessItems(t *testing.T) {
 	var conflict uint64
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    1,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.True(t, c.policy.Has(1))
 	require.Equal(t, int64(1), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemUpdate,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     0,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     0,
 	}
 	time.Sleep(wait)
 	require.Equal(t, int64(2), c.policy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemDelete,
-		key:      key,
-		conflict: conflict,
+		Key:      key,
+		Conflict: conflict,
 	}
 	time.Sleep(wait)
 	key, conflict = z.KeyToHash(1)
@@ -203,36 +273,36 @@ func TestCacheProcessItems(t *testing.T) {
 	require.False(t, c.policy.Has(1))
 
 	key, conflict = z.KeyToHash(2)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    2,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(3)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(4)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     3,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     3,
 	}
 	key, conflict = z.KeyToHash(5)
-	c.setBuf <- &item{
+	c.setBuf <- &Item{
 		flag:     itemNew,
-		key:      key,
-		conflict: conflict,
-		value:    3,
-		cost:     5,
+		Key:      key,
+		Conflict: conflict,
+		Value:    3,
+		Cost:     5,
 	}
 	time.Sleep(wait)
 	m.Lock()
@@ -243,23 +313,24 @@ func TestCacheProcessItems(t *testing.T) {
 		require.NotNil(t, recover())
 	}()
 	c.Close()
-	c.setBuf <- &item{flag: itemNew}
+	c.setBuf <- &Item{flag: itemNew}
 }
 
 func TestCacheGet(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
 	key, conflict := z.KeyToHash(1)
-	i := item{
-		key:      key,
-		conflict: conflict,
-		value:    1,
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
 	}
 	c.store.Set(&i)
 	val, ok := c.Get(1)
@@ -298,10 +369,11 @@ func retrySet(t *testing.T, c *Cache, key, value int, cost int64, ttl time.Durat
 
 func TestCacheSet(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -315,12 +387,12 @@ func TestCacheSet(t *testing.T) {
 	c.stop <- struct{}{}
 	for i := 0; i < setBufSize; i++ {
 		key, conflict := z.KeyToHash(1)
-		c.setBuf <- &item{
+		c.setBuf <- &Item{
 			flag:     itemUpdate,
-			key:      key,
-			conflict: conflict,
-			value:    1,
-			cost:     1,
+			Key:      key,
+			Conflict: conflict,
+			Value:    1,
+			Cost:     1,
 		}
 	}
 	require.False(t, c.Set(2, 2, 1))
@@ -332,12 +404,30 @@ func TestCacheSet(t *testing.T) {
 	require.False(t, c.Set(1, 1, 1))
 }
 
-func TestRecacheWithTTL(t *testing.T) {
+func TestCacheInternalCost(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
+	})
+	require.NoError(t, err)
+
+	// Get should return false because the cache's cost is too small to store the item
+	// when accounting for the internal cost.
+	c.SetWithTTL(1, 1, 1, 0)
+	time.Sleep(wait)
+	_, ok := c.Get(1)
+	require.False(t, ok)
+}
+
+func TestRecacheWithTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 
 	require.NoError(t, err)
@@ -377,14 +467,15 @@ func TestCacheSetWithTTL(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
-		OnEvict: func(key, conflict uint64, value interface{}, cost int64) {
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+		OnEvict: func(item *Item) {
 			m.Lock()
 			defer m.Unlock()
-			evicted[key] = struct{}{}
+			evicted[item.Key] = struct{}{}
 		},
 	})
 	require.NoError(t, err)
@@ -450,9 +541,10 @@ func TestCacheDel(t *testing.T) {
 
 func TestCacheDelWithTTL(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
 	})
 	require.NoError(t, err)
 	retrySet(t, c, 3, 1, 1, 10*time.Second)
@@ -465,12 +557,78 @@ func TestCacheDelWithTTL(t *testing.T) {
 	require.Nil(t, val)
 }
 
+func TestCacheGetTTL(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	// try expiration with valid ttl item
+	{
+		expiration := time.Second * 5
+		retrySet(t, c, 1, 1, 1, expiration)
+
+		val, ok := c.Get(1)
+		require.True(t, ok)
+		require.Equal(t, 1, val.(int))
+
+		ttl, ok := c.GetTTL(1)
+		require.True(t, ok)
+		require.WithinDuration(t,
+			time.Now().Add(expiration), time.Now().Add(ttl), 1*time.Second)
+
+		c.Del(1)
+
+		ttl, ok = c.GetTTL(1)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with no ttl
+	{
+		retrySet(t, c, 2, 2, 1, time.Duration(0))
+
+		val, ok := c.Get(2)
+		require.True(t, ok)
+		require.Equal(t, 2, val.(int))
+
+		ttl, ok := c.GetTTL(2)
+		require.True(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with missing item
+	{
+		ttl, ok := c.GetTTL(3)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+	// try expiration with expired item
+	{
+		expiration := time.Second
+		retrySet(t, c, 3, 3, 1, expiration)
+
+		val, ok := c.Get(3)
+		require.True(t, ok)
+		require.Equal(t, 3, val.(int))
+
+		time.Sleep(time.Second)
+
+		ttl, ok := c.GetTTL(3)
+		require.False(t, ok)
+		require.Equal(t, ttl, time.Duration(0))
+	}
+}
+
 func TestCacheClear(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -492,10 +650,11 @@ func TestCacheClear(t *testing.T) {
 
 func TestCacheMetrics(t *testing.T) {
 	c, err := NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 64,
-		Metrics:     true,
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
 	})
 	require.NoError(t, err)
 
@@ -621,6 +780,37 @@ func init() {
 	bucketDurationSecs = 1
 }
 
+func TestBlockOnClear(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     false,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			c.Wait()
+		}
+		close(done)
+	}()
+
+	for i := 0; i < 10; i++ {
+		c.Clear()
+	}
+
+	select {
+	case <-done:
+		// We're OK
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out while waiting on cache")
+	}
+}
+
 // Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
@@ -655,8 +845,8 @@ func TestDropUpdates(t *testing.T) {
 			MaxCost:     10,
 			BufferItems: 64,
 			Metrics:     true,
-			OnEvict: func(_, _ uint64, value interface{}, _ int64) {
-				handler(nil, value)
+			OnEvict: func(item *Item) {
+				handler(nil, item.Value)
 			},
 		})
 		require.NoError(t, err)
@@ -680,5 +870,130 @@ func TestDropUpdates(t *testing.T) {
 	// Run the test 100 times since it's not reliable.
 	for i := 0; i < 100; i++ {
 		test()
+	}
+}
+
+func TestRistrettoCalloc(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256, "test")
+				rd.Read(v)
+				if !r.Set(k, v, 256) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	r.Clear()
+	require.Zero(t, z.NumAllocBytes())
+}
+
+func TestRistrettoCallocTTL(t *testing.T) {
+	maxCacheSize := 1 << 20
+	config := &Config{
+		// Use 5% of cache memory for storing counters.
+		NumCounters: int64(float64(maxCacheSize) * 0.05 * 2),
+		MaxCost:     int64(float64(maxCacheSize) * 0.95),
+		BufferItems: 64,
+		Metrics:     true,
+		OnExit: func(val interface{}) {
+			z.Free(val.([]byte))
+		},
+	}
+	r, err := NewCache(config)
+	require.NoError(t, err)
+	defer r.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for i := 0; i < 10000; i++ {
+				k := rd.Intn(10000)
+				v := z.Calloc(256, "test")
+				rd.Read(v)
+				if !r.SetWithTTL(k, v, 256, time.Second) {
+					z.Free(v)
+				}
+				if rd.Intn(10) == 0 {
+					r.Del(k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	time.Sleep(5 * time.Second)
+	require.Zero(t, z.NumAllocBytes())
+}
+
+func newTestCache() (*Cache, error) {
+	return NewCache(&Config{
+		NumCounters: 100,
+		MaxCost:     10,
+		BufferItems: 64,
+		Metrics:     true,
+	})
+}
+
+func TestCacheWithTTL(t *testing.T) {
+	// There may be a race condition, so run the test multiple times.
+	const try = 10
+
+	for i := 0; i < try; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			c, err := NewCache(&Config{
+				NumCounters: 100,
+				MaxCost:     1000,
+				BufferItems: 64,
+				Metrics:     true,
+			})
+
+			require.NoError(t, err)
+
+			// Set initial value for key = 1
+			insert := c.SetWithTTL(1, 1, 1, 800*time.Millisecond)
+			require.True(t, insert)
+
+			time.Sleep(100 * time.Millisecond)
+
+			// Get value from cache for key = 1
+			val, ok := c.Get(1)
+			require.True(t, ok)
+			require.NotNil(t, val)
+			require.Equal(t, 1, val)
+
+			time.Sleep(1200 * time.Millisecond)
+
+			val, ok = c.Get(1)
+			require.False(t, ok)
+			require.Nil(t, val)
+		})
 	}
 }

@@ -62,3 +62,14 @@ func MemHashString(str string) uint64 {
 // FastRand is a fast thread local random function.
 //go:linkname FastRand runtime.fastrand
 func FastRand() uint32
+
+//go:linkname memclrNoHeapPointers runtime.memclrNoHeapPointers
+func memclrNoHeapPointers(p unsafe.Pointer, n uintptr)
+
+func Memclr(b []byte) {
+	if len(b) == 0 {
+		return
+	}
+	p := unsafe.Pointer(&b[0])
+	memclrNoHeapPointers(p, uintptr(len(b)))
+}

@@ -1,7 +1,7 @@
 # Ristretto
 [![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/dgraph-io/ristretto)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://gocover.io/github.com/dgraph-io/ristretto)
+[![Coverage](https://gocover.io/_badge/github.com/dgraph-io/ristretto)](https://gocover.io/github.com/dgraph-io/ristretto)
 ![Tests](https://github.com/dgraph-io/ristretto/workflows/tests/badge.svg)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
@@ -26,7 +26,7 @@ cache in [Dgraph][].
 
 ## Status
 
-Ristretto is usable but still under active development. We expect it to be production ready in the near future.
+Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ristretto).
 
 ## Table of Contents
 
@@ -50,6 +50,7 @@ Ristretto is usable but still under active development. We expect it to be produ
 		* [Mixed](#Mixed)
 		* [Read](#Read)
 		* [Write](#Write)
+* [Projects using Ristretto](#projects-using-ristretto)
 * [FAQ](#FAQ)
 
 ## Usage
@@ -71,7 +72,7 @@ func main() {
 	cache.Set("key", "value", 1)
 	
 	// wait for value to pass through buffers
-	time.Sleep(10 * time.Millisecond)
+	cache.Wait()
 
 	value, found := cache.Get("key")
 	if !found {
@@ -197,6 +198,15 @@ of RAM.
 <p align="center">
 	<img src="https://raw.githubusercontent.com/dgraph-io/ristretto/master/benchmarks/Throughput%20-%20Write%20(Zipfian).svg">
 </p>
+
+## Projects Using Ristretto
+
+Below is a list of known projects that use Ristretto:
+
+- [Badger](https://github.com/dgraph-io/badger) - Embeddable key-value DB in Go
+- [Dgraph](https://github.com/dgraph-io/dgraph) - Horizontally scalable and distributed GraphQL database with a graph backend
+- [Vitess](https://github.com/vitessio/vitess) - Database clustering system for horizontal scaling of MySQL
+- [SpiceDB](https://github.com/authzed/spicedb) - Horizontally scalable permissions database
 
 ## FAQ
 
