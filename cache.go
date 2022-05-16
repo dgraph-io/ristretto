@@ -104,17 +104,6 @@ type Config struct {
 	// eviction process will take care of making room for the new item and not
 	// overflowing the MaxCost value.
 	MaxCost int64
-	// NumCounters determines the number of counters (keys) to keep that hold
-	// access frequency information. It's generally a good idea to have more
-	// counters than the max cache capacity, as this will improve eviction
-	// accuracy and subsequent hit ratios.
-	//
-	// Defaults to 10*MaxCost if unset.
-	//
-	// For example, if you expect your cache to hold 1,000,000 items when full,
-	// NumCounters should be 10,000,000 (10x). Each counter takes up 4 bits, so
-	// keeping 10,000,000 counters would require 5MB of memory.
-	NumCounters int64
 	// BufferItems determines the size of Get buffers.
 	//
 	// Defaults to `64` if unset. Unless you have a rare use case, using
