@@ -218,10 +218,11 @@ func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters:        100,
-		MaxCost:            10,
-		BufferItems:        64,
-		IgnoreInternalCost: true,
+		NumCounters:         100,
+		MaxCost:             10,
+		BufferItems:         64,
+		IgnoreInternalCost:  true,
+		AlwaysAdmitNewItems: true,
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
