@@ -1,4 +1,4 @@
-module github.com/dgraph-io/ristretto
+module github.com/tushar-zomato/ristretto
 
 go 1.12
 

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 var wait = time.Millisecond * 10
@@ -812,7 +812,7 @@ func TestBlockOnClear(t *testing.T) {
 	}
 }
 
-// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+// Regression test for bug https://github.com/tushar-zomato/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
 	defer func() { setBufSize = originalSetBugSize }()

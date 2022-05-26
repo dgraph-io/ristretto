@@ -8,7 +8,7 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 
 ## [0.1.0] - 2021-06-03
 
-[0.1.0]: https://github.com/dgraph-io/ristretto/compare/v0.1.0..v0.0.3
+[0.1.0]: https://github.com/tushar-zomato/ristretto/compare/v0.1.0..v0.0.3
 This release contains bug fixes and improvements to Ristretto. It also contains
 major updates to the z package. The z package contains types such as Tree (B+
 tree), Buffer, Mmap file, etc. All these types are used in Badger and Dgraph to
@@ -132,7 +132,7 @@ improve performance and reduce memory requirements.
 
 ## [0.0.3] - 2020-07-06
 
-[0.0.3]: https://github.com/dgraph-io/ristretto/compare/v0.0.2..v0.0.3
+[0.0.3]: https://github.com/tushar-zomato/ristretto/compare/v0.0.2..v0.0.3
 
 ### Changed
 
@@ -148,7 +148,7 @@ improve performance and reduce memory requirements.
 
 ## [0.0.2] - 2020-02-24
 
-[0.0.2]: https://github.com/dgraph-io/ristretto/compare/v0.0.1..v0.0.2
+[0.0.2]: https://github.com/tushar-zomato/ristretto/compare/v0.0.1..v0.0.2
 
 ### Added
 
@@ -161,11 +161,11 @@ improve performance and reduce memory requirements.
 - Delete item immediately. ([#113][])
 - Remove key from policy after TTL eviction. ([#130][])
 
-[#111]: https://github.com/dgraph-io/ristretto/issues/111
-[#113]: https://github.com/dgraph-io/ristretto/issues/113
-[#119]: https://github.com/dgraph-io/ristretto/issues/119
-[#122]: https://github.com/dgraph-io/ristretto/issues/122
-[#130]: https://github.com/dgraph-io/ristretto/issues/130
+[#111]: https://github.com/tushar-zomato/ristretto/issues/111
+[#113]: https://github.com/tushar-zomato/ristretto/issues/113
+[#119]: https://github.com/tushar-zomato/ristretto/issues/119
+[#122]: https://github.com/tushar-zomato/ristretto/issues/122
+[#130]: https://github.com/tushar-zomato/ristretto/issues/130
 
 ## 0.0.1
 

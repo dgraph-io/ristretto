@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/sim"
 	"github.com/stretchr/testify/require"
+	"github.com/tushar-zomato/ristretto/sim"
 )
 
 func TestStressSetGet(t *testing.T) {

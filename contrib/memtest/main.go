@@ -31,9 +31,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/dustin/go-humanize"
 	"github.com/golang/glog"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 type S struct {
