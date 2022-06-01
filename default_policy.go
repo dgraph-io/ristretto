@@ -22,29 +22,36 @@ import (
 )
 
 const (
-	// lfuSample is the number of items to sample when looking at eviction
+	// lfuSampleSize is the number of items to sample when looking at eviction
 	// candidates. 5 seems to be the most optimal number [citation needed].
-	lfuSample = 5
+	lfuSampleSize = 5
 )
 
 // lfuPolicy encapsulates eviction/admission behavior.
 type lfuPolicy struct {
 	sync.Mutex
-	admit    *tinyLFU
-	costs    *keyCosts
-	itemsCh  chan []uint64
-	stop     chan struct{}
-	isClosed bool
-	metrics  *Metrics
+	admit         *tinyLFU
+	costs         *keyCosts
+	lfuSampleSize int
+	itemsCh       chan []uint64
+	stop          chan struct{}
+	isClosed      bool
+	metrics       *Metrics
 }
 
 func newPolicy(numCounters, maxCost int64) *lfuPolicy {
+	return newPolicyWithSampleSize(numCounters, maxCost, lfuSampleSize)
+}
+
+func newPolicyWithSampleSize(numCounters, maxCost int64, lfuSampleSize int) *lfuPolicy {
 	p := &lfuPolicy{
-		admit:   newTinyLFU(numCounters),
-		costs:   newSampledLFU(maxCost),
-		itemsCh: make(chan []uint64, 3),
-		stop:    make(chan struct{}),
+		admit:         newTinyLFU(numCounters),
+		costs:         newSampledLFU(maxCost),
+		itemsCh:       make(chan []uint64, 3),
+		stop:          make(chan struct{}),
+		lfuSampleSize: lfuSampleSize,
 	}
+
 	go p.processItems()
 	return p
 }
@@ -126,7 +133,7 @@ func (p *lfuPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	// TODO: perhaps we should use a min heap here. Right now our time
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
-	sample := make([]*policyPair, 0, lfuSample)
+	sample := make([]*policyPair, 0, p.lfuSampleSize)
 	// As items are evicted they will be appended to victims.
 	victims := make([]*Item, 0)
 
@@ -134,7 +141,7 @@ func (p *lfuPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	// more hits than incoming item.
 	for ; room < 0; room = p.costs.roomLeft(cost) {
 		// Fill up empty slots in sample.
-		sample = p.costs.fillSample(sample)
+		sample = p.costs.fillSample(sample, p.lfuSampleSize)
 
 		// Find minimally used item in sample.
 		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)

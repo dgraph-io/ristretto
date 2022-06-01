@@ -138,6 +138,9 @@ type Config struct {
 	// AlwaysAdmitNewItems set to true indicates to the cache that new items
 	// should never be rejected.
 	AlwaysAdmitNewItems bool
+	// LFUSampleSize determines the number of existing items to look at before deciding
+	// what should be evicted.
+	LFUSampleSize int
 }
 
 type itemFlag byte
@@ -170,11 +173,15 @@ func NewCache(config *Config) (*Cache, error) {
 		return nil, errors.New("BufferItems can't be zero")
 	}
 
+	if config.LFUSampleSize <= 0 {
+		config.LFUSampleSize = lfuSampleSize
+	}
+
 	var policy policy
 	if config.AlwaysAdmitNewItems {
-		policy = newAlwaysAdmitPolicy(config.NumCounters, config.MaxCost)
+		policy = newAlwaysAdmitPolicy(config.NumCounters, config.MaxCost, config.LFUSampleSize)
 	} else {
-		policy = newPolicy(config.NumCounters, config.MaxCost)
+		policy = newPolicyWithSampleSize(config.NumCounters, config.MaxCost, config.LFUSampleSize)
 	}
 
 	cache := &Cache{

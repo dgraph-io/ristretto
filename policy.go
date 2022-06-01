@@ -70,16 +70,18 @@ func (p *keyCosts) roomLeft(cost int64) int64 {
 	return p.getMaxCost() - (p.used + cost)
 }
 
-func (p *keyCosts) fillSample(in []*policyPair) []*policyPair {
-	if len(in) >= lfuSample {
+func (p *keyCosts) fillSample(in []*policyPair, evictionSampleSize int) []*policyPair {
+	if len(in) >= evictionSampleSize {
 		return in
 	}
+
 	for key, cost := range p.keyCosts {
 		in = append(in, &policyPair{key, cost})
-		if len(in) >= lfuSample {
+		if len(in) >= evictionSampleSize {
 			return in
 		}
 	}
+
 	return in
 }
 

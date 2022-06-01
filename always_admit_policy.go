@@ -21,24 +21,27 @@ import (
 	"sync"
 )
 
-// lfuPolicy encapsulates eviction/admission behavior.
+// lfuAlwaysAdmitPolicy encapsulates eviction/admission behavior.
 type lfuAlwaysAdmitPolicy struct {
 	sync.Mutex
-	admit    *tinyLFU
-	costs    *keyCosts
-	itemsCh  chan []uint64
-	stop     chan struct{}
-	isClosed bool
-	metrics  *Metrics
+	admit         *tinyLFU
+	costs         *keyCosts
+	itemsCh       chan []uint64
+	stop          chan struct{}
+	isClosed      bool
+	metrics       *Metrics
+	lfuSampleSize int
 }
 
-func newAlwaysAdmitPolicy(numCounters, maxCost int64) *lfuAlwaysAdmitPolicy {
+func newAlwaysAdmitPolicy(numCounters, maxCost int64, lfuSampleSize int) *lfuAlwaysAdmitPolicy {
 	p := &lfuAlwaysAdmitPolicy{
-		admit:   newTinyLFU(numCounters),
-		costs:   newSampledLFU(maxCost),
-		itemsCh: make(chan []uint64, 3),
-		stop:    make(chan struct{}),
+		admit:         newTinyLFU(numCounters),
+		costs:         newSampledLFU(maxCost),
+		itemsCh:       make(chan []uint64, 3),
+		stop:          make(chan struct{}),
+		lfuSampleSize: lfuSampleSize,
 	}
+
 	go p.processItems()
 	return p
 }
@@ -113,7 +116,7 @@ func (p *lfuAlwaysAdmitPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	// TODO: perhaps we should use a min heap here. Right now our time
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
-	sample := make([]*policyPair, 0, lfuSample)
+	sample := make([]*policyPair, 0, p.lfuSampleSize)
 	// As items are evicted they will be appended to victims.
 	victims := make([]*Item, 0)
 
@@ -121,7 +124,7 @@ func (p *lfuAlwaysAdmitPolicy) Add(key uint64, cost int64) ([]*Item, bool) {
 	// more hits than incoming item.
 	for ; room < 0; room = p.costs.roomLeft(cost) {
 		// Fill up empty slots in sample.
-		sample = p.costs.fillSample(sample)
+		sample = p.costs.fillSample(sample, p.lfuSampleSize)
 
 		// Find minimally used item in sample.
 		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
@@ -190,7 +193,6 @@ func (p *lfuAlwaysAdmitPolicy) Cost(key uint64) int64 {
 
 func (p *lfuAlwaysAdmitPolicy) Clear() {
 	p.Lock()
-	//
 	p.admit.clear()
 	p.costs.clear()
 	p.Unlock()
