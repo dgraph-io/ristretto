@@ -80,7 +80,7 @@ func (sm *shardedMap) Update(newItem *Item) (interface{}, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
-func (sm *shardedMap) Cleanup(policy *lfuPolicy, onEvict itemCallback) {
+func (sm *shardedMap) Cleanup(policy policy, onEvict itemCallback) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 

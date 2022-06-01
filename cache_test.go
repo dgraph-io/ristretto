@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 var wait = time.Millisecond * 10
@@ -218,10 +218,11 @@ func TestCacheProcessItems(t *testing.T) {
 	m := &sync.Mutex{}
 	evicted := make(map[uint64]struct{})
 	c, err := NewCache(&Config{
-		NumCounters:        100,
-		MaxCost:            10,
-		BufferItems:        64,
-		IgnoreInternalCost: true,
+		NumCounters:         100,
+		MaxCost:             10,
+		BufferItems:         64,
+		IgnoreInternalCost:  true,
+		AlwaysAdmitNewItems: true,
 		Cost: func(value interface{}) int64 {
 			return int64(value.(int))
 		},
@@ -811,7 +812,7 @@ func TestBlockOnClear(t *testing.T) {
 	}
 }
 
-// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+// Regression test for bug https://github.com/tushar-zomato/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBugSize := setBufSize
 	defer func() { setBufSize = originalSetBugSize }()

@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/dustin/go-humanize"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 type node struct {

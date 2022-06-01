@@ -1,10 +1,11 @@
-//+build jemalloc
+//go:build jemalloc
+// +build jemalloc
 
 package main
 
 import (
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/golang/glog"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 func Calloc(size int) []byte { return z.Calloc(size, "memtest") }

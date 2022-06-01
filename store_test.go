@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
+	"github.com/tushar-zomato/ristretto/z"
 )
 
 func TestStoreSetGet(t *testing.T) {

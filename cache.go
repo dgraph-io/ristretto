@@ -25,7 +25,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/tushar-zomato/ristretto/z"
 	"go.uber.org/atomic"
 )
 
@@ -45,7 +45,7 @@ type Cache struct {
 	// store is the central concurrent hashmap where key-value items are stored.
 	store *shardedMap
 	// policy determines what gets let in to the cache and what gets kicked out.
-	policy *lfuPolicy
+	policy policy
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	getBuf *ringBuffer
@@ -135,6 +135,12 @@ type Config struct {
 	// cost passed to set is not using bytes as units. Keep in mind that setting
 	// this to true will increase the memory usage.
 	IgnoreInternalCost bool
+	// AlwaysAdmitNewItems set to true indicates to the cache that new items
+	// should never be rejected.
+	AlwaysAdmitNewItems bool
+	// LFUSampleSize determines the number of existing items to look at before deciding
+	// what should be evicted.
+	LFUSampleSize int
 }
 
 type itemFlag byte
@@ -166,7 +172,18 @@ func NewCache(config *Config) (*Cache, error) {
 	case config.BufferItems == 0:
 		return nil, errors.New("BufferItems can't be zero")
 	}
-	policy := newPolicy(config.NumCounters, config.MaxCost)
+
+	if config.LFUSampleSize <= 0 {
+		config.LFUSampleSize = lfuSampleSize
+	}
+
+	var policy policy
+	if config.AlwaysAdmitNewItems {
+		policy = newAlwaysAdmitPolicy(config.NumCounters, config.MaxCost, config.LFUSampleSize)
+	} else {
+		policy = newPolicyWithSampleSize(config.NumCounters, config.MaxCost, config.LFUSampleSize)
+	}
+
 	cache := &Cache{
 		store:              newShardedMap(config.ShouldUpdate),
 		policy:             policy,
