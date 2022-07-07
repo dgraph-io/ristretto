@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 DEFAULT_VERSION="1.17"
 GOVERSION=$({ [ -f .go-version ] && cat .go-version; } || echo $DEFAULT_VERSION)
 
