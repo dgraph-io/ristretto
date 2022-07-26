@@ -120,28 +120,27 @@ func TestNewCache(t *testing.T) {
 	_, err := NewCache(&Config{
 		NumCounters: 0,
 	})
-	require.Error(t, err)
+	require.Error(t, err, "instantiating without explicit Config.MaxCost should fail")
 
 	_, err = NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     0,
 	})
-	require.Error(t, err)
-
-	_, err = NewCache(&Config{
-		NumCounters: 100,
-		MaxCost:     10,
-		BufferItems: 0,
-	})
-	require.NoError(t, err)
+	require.Error(t, err, "instantiating with Config.MaxCost == 0 should fail")
 
 	c, err := NewCache(&Config{
+		MaxCost: 10,
+	})
+	require.NoError(t, err, "instantiating with Config.MaxCost != 0 should not fail")
+	require.NotNil(t, c)
+
+	c, err = NewCache(&Config{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 		Metrics:     true,
 	})
-	require.NoError(t, err)
+	require.NoError(t, err, "instantiating with all explicit values should not fail")
 	require.NotNil(t, c)
 }
 
