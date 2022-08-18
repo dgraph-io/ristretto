@@ -1004,3 +1004,51 @@ func TestCacheWithTTL(t *testing.T) {
 		})
 	}
 }
+
+func TestConcurrentSetAfterClose(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	// Spin up a bunch of goroutines that simply call Set over and over.
+	for i := 0; i <= 200; i += 5 {
+		wg.Add(1)
+		go (func(duration int) {
+			wg.Done()
+
+			tc := time.Tick(time.Duration(duration) * time.Millisecond)
+		outer:
+			for {
+				select {
+				case <-tc:
+					c.Set("somekey", duration, 1)
+
+				case <-done:
+					break outer
+				}
+			}
+		})(i)
+	}
+
+	wg.Wait()
+
+	// Wait some time so Set can run a few times.
+	tc := time.Tick(50 * time.Millisecond)
+	<-tc
+
+	// Run close to ensure nothing panics.
+	c.Close()
+
+	// Wait some more time so Set can run a few additional times.
+	tcd := time.Tick(250 * time.Millisecond)
+	<-tcd
+	close(done)
+}
