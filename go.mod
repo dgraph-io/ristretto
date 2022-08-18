@@ -10,7 +10,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
 	go.uber.org/atomic v1.9.0
-	golang.org/x/sys v0.0.0-20220704084225-05e143d24a9e
+	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b
 )
 
 require (
