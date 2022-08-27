@@ -18,6 +18,8 @@ package z
 
 import (
 	"context"
+	"encoding"
+	"fmt"
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
@@ -53,6 +55,27 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 	case int64:
 		return uint64(k), 0
 	default:
+		if k, ok := key.(fmt.Stringer); ok {
+			v := k.String()
+			return MemHashString(v), xxhash.Sum64String(v)
+		}
+
+		if k, ok := key.(encoding.TextMarshaler); ok {
+			v, err := k.MarshalText()
+			if err != nil {
+				panic("marshal text failed")
+			}
+			return MemHash(v), xxhash.Sum64(v)
+		}
+
+		if k, ok := key.(encoding.BinaryMarshaler); ok {
+			v, err := k.MarshalBinary()
+			if err != nil {
+				panic("marshal binary failed")
+			}
+			return MemHash(v), xxhash.Sum64(v)
+		}
+
 		panic("Key type not supported")
 	}
 }
