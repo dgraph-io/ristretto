@@ -32,6 +32,9 @@ import (
 var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
+
+	defaultBufferItems     int64 = 64
+	defaultNumCountersMult int64 = 10
 )
 
 type itemCallback func(*Item)
@@ -103,8 +106,8 @@ type Config struct {
 	MaxCost int64
 	// BufferItems determines the size of Get buffers.
 	//
-	// Unless you have a rare use case, using `64` as the BufferItems value
-	// results in good performance.
+	// Defaults to `64` if unset. Unless you have a rare use case, using
+	// this default results in good performance.
 	BufferItems int64
 	// Metrics determines whether cache statistics are kept during the cache's
 	// lifetime. There *is* some overhead to keeping statistics, so you should
@@ -158,14 +161,18 @@ type Item struct {
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
 func NewCache(config *Config) (*Cache, error) {
-	switch {
-	case config.NumCounters == 0:
-		return nil, errors.New("NumCounters can't be zero")
-	case config.MaxCost == 0:
+	if config.MaxCost == 0 {
 		return nil, errors.New("MaxCost can't be zero")
-	case config.BufferItems == 0:
-		return nil, errors.New("BufferItems can't be zero")
 	}
+
+	if config.NumCounters == 0 {
+		config.NumCounters = config.MaxCost * defaultNumCountersMult // sensible default
+	}
+
+	if config.BufferItems == 0 {
+		config.BufferItems = defaultBufferItems
+	}
+
 	policy := newPolicy(config.NumCounters, config.MaxCost)
 	cache := &Cache{
 		store:              newShardedMap(config.ShouldUpdate),
@@ -270,7 +277,8 @@ func (c *Cache) SetIfPresent(key, value interface{}, cost int64) bool {
 }
 
 func (c *Cache) setInternal(key, value interface{},
-	cost int64, ttl time.Duration, onlyUpdate bool) bool {
+	cost int64, ttl time.Duration, onlyUpdate bool,
+) bool {
 	if c == nil || c.isClosed.Load() || key == nil {
 		return false
 	}
