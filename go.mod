@@ -9,7 +9,7 @@ require (
 	github.com/golang/glog v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
-	golang.org/x/sys v0.0.0-20200930185726-fdedc70b468f
+	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b
 )
 
 require (
