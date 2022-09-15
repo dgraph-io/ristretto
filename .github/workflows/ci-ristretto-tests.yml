@@ -1,0 +1,21 @@
+name: ci-ristretto-tests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  schedule:
+    - cron: "*/30 * * * *"
+jobs:
+  ristretto-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+      - name: Run Ristretto tests
+        run: bash test.sh
