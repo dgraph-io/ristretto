@@ -30,28 +30,27 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 
 ## Table of Contents
 
-* [Usage](#Usage)
-	* [Example](#Example)
-	* [Config](#Config)
-		* [NumCounters](#Config)
-		* [MaxCost](#Config)
-		* [BufferItems](#Config)
-		* [Metrics](#Config)
-		* [OnEvict](#Config)
-		* [KeyToHash](#Config)
-        * [Cost](#Config)
-* [Benchmarks](#Benchmarks)
-	* [Hit Ratios](#Hit-Ratios)
-		* [Search](#Search)
-		* [Database](#Database)
-		* [Looping](#Looping)
-		* [CODASYL](#CODASYL)
-	* [Throughput](#Throughput)
-		* [Mixed](#Mixed)
-		* [Read](#Read)
-		* [Write](#Write)
-* [Projects using Ristretto](#projects-using-ristretto)
-* [FAQ](#FAQ)
+- [Ristretto](#ristretto)
+	- [Features](#features)
+	- [Status](#status)
+	- [Table of Contents](#table-of-contents)
+	- [Usage](#usage)
+		- [Example](#example)
+		- [Config](#config)
+	- [Benchmarks](#benchmarks)
+		- [Hit Ratios](#hit-ratios)
+			- [Search](#search)
+			- [Database](#database)
+			- [Looping](#looping)
+			- [CODASYL](#codasyl)
+		- [Throughput](#throughput)
+			- [Mixed](#mixed)
+			- [Read](#read)
+			- [Write](#write)
+	- [Projects Using Ristretto](#projects-using-ristretto)
+	- [FAQ](#faq)
+		- [How are you achieving this performance? What shortcuts are you taking?](#how-are-you-achieving-this-performance-what-shortcuts-are-you-taking)
+		- [Is Ristretto distributed?](#is-ristretto-distributed)
 
 ## Usage
 
@@ -206,6 +205,7 @@ Below is a list of known projects that use Ristretto:
 - [Badger](https://github.com/dgraph-io/badger) - Embeddable key-value DB in Go
 - [Dgraph](https://github.com/dgraph-io/dgraph) - Horizontally scalable and distributed GraphQL database with a graph backend
 - [Vitess](https://github.com/vitessio/vitess) - database clustering system for horizontal scaling of MySQL
+- [SpiceDB](https://github.com/authzed/spicedb) - Horizontally scalable permissions database
 
 ## FAQ
 
