@@ -31,7 +31,7 @@ import (
 
 var (
 	// TODO: find the optimal value for this or make it configurable
-	setBufSize = 32 * 1024
+	defaultSetBufSize = 32 * 1024
 )
 
 type itemCallback func(*Item)
@@ -111,6 +111,9 @@ type Config struct {
 	// only set this flag to true when testing or throughput performance isn't a
 	// major factor.
 	Metrics bool
+	// SetBufSize determines the length of the setBuf channel.
+	// If not set, the default value is used.
+	SefBufSize int
 	// OnEvict is called for every eviction and passes the hashed key, value,
 	// and cost to the function.
 	OnEvict func(item *Item)
@@ -167,11 +170,14 @@ func NewCache(config *Config) (*Cache, error) {
 		return nil, errors.New("BufferItems can't be zero")
 	}
 	policy := newPolicy(config.NumCounters, config.MaxCost)
+	if config.SefBufSize <=0 {
+		config.SefBufSize = defaultSetBufSize
+	}
 	cache := &Cache{
 		store:              newShardedMap(config.ShouldUpdate),
 		policy:             policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
-		setBuf:             make(chan *Item, setBufSize),
+		setBuf:             make(chan *Item, config.SefBufSize),
 		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
 		cost:               config.Cost,
