@@ -9,8 +9,6 @@ Ristretto is a fast, concurrent cache library built with a focus on performance 
 The motivation to build Ristretto comes from the need for a contention-free
 cache in [Dgraph][].
 
-**Use [Discuss Issues](https://discuss.dgraph.io/tags/c/issues/35/ristretto/40) for reporting issues about this repository.**
-
 [Dgraph]: https://github.com/dgraph-io/dgraph
 
 ## Features
@@ -30,28 +28,27 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 
 ## Table of Contents
 
-* [Usage](#Usage)
-	* [Example](#Example)
-	* [Config](#Config)
-		* [NumCounters](#Config)
-		* [MaxCost](#Config)
-		* [BufferItems](#Config)
-		* [Metrics](#Config)
-		* [OnEvict](#Config)
-		* [KeyToHash](#Config)
-        * [Cost](#Config)
-* [Benchmarks](#Benchmarks)
-	* [Hit Ratios](#Hit-Ratios)
-		* [Search](#Search)
-		* [Database](#Database)
-		* [Looping](#Looping)
-		* [CODASYL](#CODASYL)
-	* [Throughput](#Throughput)
-		* [Mixed](#Mixed)
-		* [Read](#Read)
-		* [Write](#Write)
-* [Projects using Ristretto](#projects-using-ristretto)
-* [FAQ](#FAQ)
+- [Ristretto](#ristretto)
+	- [Features](#features)
+	- [Status](#status)
+	- [Table of Contents](#table-of-contents)
+	- [Usage](#usage)
+		- [Example](#example)
+		- [Config](#config)
+	- [Benchmarks](#benchmarks)
+		- [Hit Ratios](#hit-ratios)
+			- [Search](#search)
+			- [Database](#database)
+			- [Looping](#looping)
+			- [CODASYL](#codasyl)
+		- [Throughput](#throughput)
+			- [Mixed](#mixed)
+			- [Read](#read)
+			- [Write](#write)
+	- [Projects Using Ristretto](#projects-using-ristretto)
+	- [FAQ](#faq)
+		- [How are you achieving this performance? What shortcuts are you taking?](#how-are-you-achieving-this-performance-what-shortcuts-are-you-taking)
+		- [Is Ristretto distributed?](#is-ristretto-distributed)
 
 ## Usage
 
