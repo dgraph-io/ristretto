@@ -4,7 +4,6 @@
 [![ci-ristretto-lint](https://github.com/dgraph-io/ristretto/actions/workflows/ci-ristretto-lint.yml/badge.svg)](https://github.com/dgraph-io/ristretto/actions/workflows/ci-ristretto-lint.yml)
 [![Coverage Status](https://coveralls.io/repos/github/dgraph-io/ristretto/badge.svg?branch=main)](https://coveralls.io/github/dgraph-io/ristretto?branch=main)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
-[![Coverage](https://gocover.io/_badge/github.com/dgraph-io/ristretto)](https://gocover.io/github.com/dgraph-io/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
