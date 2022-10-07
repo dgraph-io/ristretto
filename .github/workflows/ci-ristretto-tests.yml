@@ -1,0 +1,34 @@
+name: ci-ristretto-tests
+on:
+  push:
+    branches:
+      - main 
+  pull_request:
+    branches:
+      - main 
+  schedule:
+    - cron: "30 * * * *"
+jobs:
+  ristretto-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get Go Version
+        run: |
+          #!/bin/bash
+          DEFAULT_VERSION="1.17"
+          GOVERSION=$({ [ -f .go-version ] && cat .go-version; } || echo $DEFAULT_VERSION)
+          echo "GOVERSION=$GOVERSION" >> $GITHUB_ENV
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ env.GOVERSION }}
+      - name: Run Unit Tests
+        run: go test -race -covermode atomic -coverprofile=covprofile ./...
+      - name: Install Goveralls
+        run: go install github.com/mattn/goveralls@latest
+      - name: Send Coverage Results
+        env:
+          COVERALLS_TOKEN: ${{ secrets.COVERALLSIO_TOKEN }}
+        run: goveralls -coverprofile=covprofile
+
