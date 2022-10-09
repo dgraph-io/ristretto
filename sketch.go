@@ -82,15 +82,21 @@ func (s *cmSketch) Estimate(hashed uint64) int64 {
 
 // Reset halves all counter values.
 func (s *cmSketch) Reset() {
-	for _, r := range s.rows {
-		r.reset()
+	for i := range s.rows[0] {
+		s.rows[0].resetAt(i)
+		s.rows[1].resetAt(i)
+		s.rows[2].resetAt(i)
+		s.rows[3].resetAt(i)
 	}
 }
 
 // Clear zeroes all counters.
 func (s *cmSketch) Clear() {
-	for _, r := range s.rows {
-		r.clear()
+	for i := range s.rows[0] {
+		s.rows[0].clearAt(i)
+		s.rows[1].clearAt(i)
+		s.rows[2].clearAt(i)
+		s.rows[3].clearAt(i)
 	}
 }
 
@@ -118,18 +124,14 @@ func (r cmRow) increment(n uint64) {
 	}
 }
 
-func (r cmRow) reset() {
-	// Halve each counter.
-	for i := range r {
-		r[i] = (r[i] >> 1) & 0x77
-	}
+func (r cmRow) resetAt(i int) {
+	// Halve a counter.
+	r[i] = (r[i] >> 1) & 0x77
 }
 
-func (r cmRow) clear() {
-	// Zero each counter.
-	for i := range r {
-		r[i] = 0
-	}
+func (r cmRow) clearAt(i int) {
+	// Zero a counter.
+	r[i] = 0
 }
 
 func (r cmRow) string() string {
