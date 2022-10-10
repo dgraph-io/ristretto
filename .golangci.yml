@@ -2,6 +2,7 @@ run:
   tests: false
   skip-dirs:
     - contrib
+    - sim
 
 linters-settings:
   lll:
