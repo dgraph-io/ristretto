@@ -17,8 +17,6 @@
 package z
 
 import (
-	"fmt"
-	"os"
 	"reflect"
 	"unsafe"
 

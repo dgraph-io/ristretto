@@ -17,9 +17,7 @@
 package z
 
 import (
-	"fmt"
 	"os"
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
