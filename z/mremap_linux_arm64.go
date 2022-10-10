@@ -29,6 +29,8 @@ func mremap(data []byte, size int) ([]byte, error) {
 	const MREMAP_MAYMOVE = 0x1
 
 	header := (*reflect.SliceHeader)(unsafe.Pointer(&data))
+	// For ARM64, the second return argument for SYS_MREMAP is inconsistent (prior allocated size) with
+	// other architectures, which return the size allocated
 	mmapAddr, _, errno := unix.Syscall6(
 		unix.SYS_MREMAP,
 		header.Data,
