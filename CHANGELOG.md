@@ -10,11 +10,16 @@ and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.
 This release fixes certain arm64 build issues in the z package.  It also
 incorporates CI steps in our repository.
 
+### Changed
+- [chore(docs): Include SpiceDB in the list of projects using Ristretto (#285)](https://github.com/dgraph-io/ristretto/pull/311)
+
 ### Added
-- todo
+- [Run CI Jobs via Github Actions #304](https://github.com/dgraph-io/ristretto/pull/304)
 
 ### Fixed
-- todo
+- [fix(build): update x/sys dependency](https://github.com/dgraph-io/ristretto/pull/308)
+- [fix(z): Address inconsistent mremap return arguments with arm64](https://github.com/dgraph-io/ristretto/pull/309)
+- [fix(z): runtime error: index out of range for !amd64 env #287](https://github.com/dgraph-io/ristretto/pull/307)
 
 ## [0.1.0] - 2021-06-03
 
