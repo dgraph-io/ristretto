@@ -43,7 +43,7 @@ jobs:
         run: go generate ./... && git diff --exit-code
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3.2.0
+        uses: golangci/golangci-lint-action@v3.3.0
         with:
           version: v1.45.0
 
