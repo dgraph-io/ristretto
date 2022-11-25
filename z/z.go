@@ -18,23 +18,24 @@ package z
 
 import (
 	"context"
-	"sync"
-
 	"github.com/cespare/xxhash/v2"
+	"sync"
 )
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash, we
-//       already know that appending bytes isn't reliable for generating a
-//       second hash (see Ristretto PR #88).
 //
-//       We also know that while the Go runtime has a runtime memhash128
-//       function, it's not possible to use it to generate [2]uint64 or
-//       anything resembling a 128bit hash, even though that's exactly what
-//       we need in this situation.
-func KeyToHash(key interface{}) (uint64, uint64) {
+//	already know that appending bytes isn't reliable for generating a
+//	second hash (see Ristretto PR #88).
+//
+//	We also know that while the Go runtime has a runtime memhash128
+//	function, it's not possible to use it to generate [2]uint64 or
+//	anything resembling a 128bit hash, even though that's exactly what
+//	we need in this situation.
+func KeyToHash(key any) (uint64, uint64) {
 	if key == nil {
 		return 0, 0
 	}
+
 	switch k := key.(type) {
 	case uint64:
 		return k, 0
@@ -55,6 +56,14 @@ func KeyToHash(key interface{}) (uint64, uint64) {
 	default:
 		panic("Key type not supported")
 	}
+
+	return 0, 0
+}
+
+type stringK string
+
+func (s stringK) KeyToHash() (uint64, uint64) {
+	return MemHashString(string(s)), xxhash.Sum64String(string(s))
 }
 
 var (
