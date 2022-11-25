@@ -60,9 +60,9 @@ func KeyToHash(key any) (uint64, uint64) {
 	return 0, 0
 }
 
-type stringK string
+type StringK string
 
-func (s stringK) KeyToHash() (uint64, uint64) {
+func (s StringK) KeyToHash() (uint64, uint64) {
 	return MemHashString(string(s)), xxhash.Sum64String(string(s))
 }
 
