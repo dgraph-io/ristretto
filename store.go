@@ -186,11 +186,11 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	item, ok := m.data[key]
 	if !ok {
 		m.Unlock()
-		return 0, nil
+		return 0, Zero[V]()
 	}
 	if conflict != 0 && (conflict != item.conflict) {
 		m.Unlock()
-		return 0, nil
+		return 0, Zero[V]()
 	}
 
 	if !item.expiration.IsZero() {

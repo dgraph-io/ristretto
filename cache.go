@@ -186,7 +186,7 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
 	}
 	cache.onExit = func(val V) {
-		if config.OnExit != nil && val != nil {
+		if config.OnExit != nil {
 			config.OnExit(val)
 		}
 	}
