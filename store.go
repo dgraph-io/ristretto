@@ -131,15 +131,15 @@ func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
 	item, ok := m.data[key]
 	m.RUnlock()
 	if !ok {
-		return nil, false
+		return Zero[V](), false
 	}
 	if conflict != 0 && (conflict != item.conflict) {
-		return nil, false
+		return Zero[V](), false
 	}
 
 	// Handle expired items.
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		return nil, false
+		return Zero[V](), false
 	}
 	return item.value, true
 }
@@ -207,11 +207,11 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	item, ok := m.data[newItem.Key]
 	if !ok {
 		m.Unlock()
-		return nil, false
+		return Zero[V](), false
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		m.Unlock()
-		return nil, false
+		return Zero[V](), false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)

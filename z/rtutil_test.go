@@ -284,13 +284,13 @@ func BenchmarkCPUTicks(b *testing.B) {
 
 // goos: linux
 // goarch: amd64
-// pkg: github.com/dgraph-io/ristretto/z
+// pkg: github.com/aryehlev/ristretto/z
 // BenchmarkFastRand-16      	1000000000	         0.292 ns/op
 // BenchmarkRandSource-16    	1000000000	         0.747 ns/op
 // BenchmarkRandGlobal-16    	 6822332	       176 ns/op
 // BenchmarkRandAtomic-16    	77950322	        15.4 ns/op
 // PASS
-// ok  	github.com/dgraph-io/ristretto/z	4.808s
+// ok  	github.com/aryehlev/ristretto/z	4.808s
 func benchmarkRand(b *testing.B, fab func() func() uint32) {
 	b.RunParallel(func(pb *testing.PB) {
 		gen := fab()

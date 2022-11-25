@@ -38,14 +38,19 @@ var (
 
 const itemSize = int64(unsafe.Sizeof(storeItem[any]{}))
 
-type HashableKey interface {
-	KeyToHash() (uint64, uint64)
+//type HashableKey interface {
+//	KeyToHash() (uint64, uint64)
+//}
+
+func Zero[T any]() T {
+	var zero T
+	return zero
 }
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
-type Cache[K HashableKey, V any] struct {
+type Cache[K comparable, V any] struct {
 	// store is the central concurrent hashmap where key-value items are stored.
 	store store[V]
 	// policy determines what gets let in to the cache and what gets kicked out.
@@ -65,7 +70,7 @@ type Cache[K HashableKey, V any] struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	//keyToHash func(K) (uint64, uint64)
+	keyToHash func(any) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
@@ -83,7 +88,7 @@ type Cache[K HashableKey, V any] struct {
 }
 
 // Config is passed to NewCache for creating new Cache instances.
-type Config[K HashableKey, V any] struct {
+type Config[K comparable, V any] struct {
 	// NumCounters determines the number of counters (keys) to keep that hold
 	// access frequency information. It's generally a good idea to have more
 	// counters than the max cache capacity, as this will improve eviction
@@ -159,7 +164,7 @@ type Item[V any] struct {
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
-func NewCache[K HashableKey, V any](config *Config[K, V]) (*Cache[K, V], error) {
+func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	switch {
 	case config.NumCounters == 0:
 		return nil, errors.New("NumCounters can't be zero")
@@ -197,9 +202,9 @@ func NewCache[K HashableKey, V any](config *Config[K, V]) (*Cache[K, V], error) 
 		}
 		cache.onExit(item.Value)
 	}
-	//if cache.keyToHash == nil {
-	//	cache.keyToHash = z.KeyToHash[K]
-	//}
+	if cache.keyToHash == nil {
+		cache.keyToHash = z.KeyToHash
+	}
 	if config.Metrics {
 		cache.collectMetrics()
 	}
@@ -224,10 +229,11 @@ func (c *Cache[K, V]) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
-	if c == nil || c.isClosed || key == nil {
-		return nil, false
+
+	if c == nil || c.isClosed || key == Zero[K]() {
+		return Zero[V](), false
 	}
-	keyHash, conflictHash := key.KeyToHash()
+	keyHash, conflictHash := c.keyToHash(key)
 	c.getBuf.Push(keyHash)
 	value, ok := c.store.Get(keyHash, conflictHash)
 	if ok {
@@ -256,7 +262,7 @@ func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) bool {
-	if c == nil || c.isClosed || key == nil {
+	if c == nil || c.isClosed || key == Zero[K]() {
 		return false
 	}
 
@@ -272,7 +278,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 		expiration = time.Now().Add(ttl)
 	}
 
-	keyHash, conflictHash := key.KeyToHash()
+	keyHash, conflictHash := c.keyToHash(key)
 	i := &Item[V]{
 		flag:       itemNew,
 		Key:        keyHash,
@@ -305,10 +311,10 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache[K, V]) Del(key K) {
-	if c == nil || c.isClosed || key == nil {
+	if c == nil || c.isClosed || key == Zero[K]() {
 		return
 	}
-	keyHash, conflictHash := key.KeyToHash()
+	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
 	_, prev := c.store.Del(keyHash, conflictHash)
 	c.onExit(prev)
@@ -326,11 +332,11 @@ func (c *Cache[K, V]) Del(key K) {
 // GetTTL returns the TTL for the specified key and a bool that is true if the
 // item was found and is not expired.
 func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
-	if c == nil || key == nil {
+	if c == nil || key == Zero[K]() {
 		return 0, false
 	}
 
-	keyHash, conflictHash := key.KeyToHash()
+	keyHash, conflictHash := c.keyToHash(key)
 	if _, ok := c.store.Get(keyHash, conflictHash); !ok {
 		// not found
 		return 0, false
