@@ -34,11 +34,13 @@ import (
 var (
 	// TODO: find the optimal value for this or make it configurable
 	setBufSize = 32 * 1024
+	itemSize   = int64(roundupsize(unsafe.Sizeof(storeItem{})))
 )
 
-type itemCallback func(*Item)
+//go:linkname roundupsize runtime.roundupsize
+func roundupsize(size uintptr) uintptr
 
-const itemSize = int64(unsafe.Sizeof(storeItem{}))
+type itemCallback func(*Item)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
