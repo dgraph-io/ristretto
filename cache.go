@@ -28,7 +28,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/aryehlev/ristretto/z"
+	"github.com/dgraph-io/ristretto/z"
 )
 
 var (
@@ -50,7 +50,7 @@ func Zero[T any]() T {
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
-type Cache[K comparable, V any] struct {
+type Cache[K any, V any] struct {
 	// store is the central concurrent hashmap where key-value items are stored.
 	store store[V]
 	// policy determines what gets let in to the cache and what gets kicked out.
@@ -70,7 +70,7 @@ type Cache[K comparable, V any] struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(any) (uint64, uint64)
+	keyToHash func(K) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
@@ -88,7 +88,7 @@ type Cache[K comparable, V any] struct {
 }
 
 // Config is passed to NewCache for creating new Cache instances.
-type Config[K comparable, V any] struct {
+type Config[K any, V any] struct {
 	// NumCounters determines the number of counters (keys) to keep that hold
 	// access frequency information. It's generally a good idea to have more
 	// counters than the max cache capacity, as this will improve eviction
@@ -164,7 +164,7 @@ type Item[V any] struct {
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
-func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
+func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	switch {
 	case config.NumCounters == 0:
 		return nil, errors.New("NumCounters can't be zero")
@@ -175,11 +175,11 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
-		store:  newStore[V](),
-		policy: policy,
-		getBuf: newRingBuffer(policy, config.BufferItems),
-		setBuf: make(chan *Item[V], setBufSize),
-		//keyToHash:          config.KeyToHash,
+		store:              newStore[V](),
+		policy:             policy,
+		getBuf:             newRingBuffer(policy, config.BufferItems),
+		setBuf:             make(chan *Item[V], setBufSize),
+		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
@@ -203,7 +203,7 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cache.onExit(item.Value)
 	}
 	if cache.keyToHash == nil {
-		cache.keyToHash = z.KeyToHash
+		cache.keyToHash = z.KeyToHash[K]
 	}
 	if config.Metrics {
 		cache.collectMetrics()
@@ -212,6 +212,7 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
 	go cache.processItems()
+
 	return cache, nil
 }
 
@@ -230,7 +231,7 @@ func (c *Cache[K, V]) Wait() {
 // the same time.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
 
-	if c == nil || c.isClosed || key == Zero[K]() {
+	if c == nil || c.isClosed || &key == nil {
 		return Zero[V](), false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -262,7 +263,7 @@ func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) bool {
-	if c == nil || c.isClosed || key == Zero[K]() {
+	if c == nil || c.isClosed || &key == nil {
 		return false
 	}
 
@@ -311,7 +312,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache[K, V]) Del(key K) {
-	if c == nil || c.isClosed || key == Zero[K]() {
+	if c == nil || c.isClosed || &key == nil {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -332,7 +333,7 @@ func (c *Cache[K, V]) Del(key K) {
 // GetTTL returns the TTL for the specified key and a bool that is true if the
 // item was found and is not expired.
 func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
-	if c == nil || key == Zero[K]() {
+	if c == nil || &key == nil {
 		return 0, false
 	}
 

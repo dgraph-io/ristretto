@@ -14,4 +14,4 @@ enabled = true
 
 
   [analyzers.meta]
-  import_path = 'github.com/aryehlev/ristretto'
+  import_path = 'github.com/dgraph-io/ristretto'

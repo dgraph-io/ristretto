@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aryehlev/ristretto/sim"
+	"github.com/dgraph-io/ristretto/sim"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStressSetGet(t *testing.T) {
-	c, err := NewCache(&Config{
+	c, err := NewCache(&Config[int, int]{
 		NumCounters:        1000,
 		MaxCost:            100,
 		IgnoreInternalCost: true,
@@ -34,11 +34,11 @@ func TestStressSetGet(t *testing.T) {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for a := 0; a < 1000; a++ {
 				k := r.Int() % 10
-				if val, ok := c.Get(k); val == nil || !ok {
+				if val, ok := c.Get(k); &val == nil || !ok {
 					err = fmt.Errorf("expected %d but got nil", k)
 					break
-				} else if val != nil && val.(int) != k {
-					err = fmt.Errorf("expected %d but got %d", k, val.(int))
+				} else if val != 0 && val != k {
+					err = fmt.Errorf("expected %d but got %d", k, val)
 					break
 				}
 			}
@@ -52,7 +52,7 @@ func TestStressSetGet(t *testing.T) {
 
 func TestStressHitRatio(t *testing.T) {
 	key := sim.NewZipfian(1.0001, 1, 1000)
-	c, err := NewCache(&Config{
+	c, err := NewCache(&Config[uint64, uint64]{
 		NumCounters: 1000,
 		MaxCost:     100,
 		BufferItems: 64,

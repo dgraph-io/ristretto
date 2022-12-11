@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aryehlev/ristretto/z/simd"
+	"github.com/dgraph-io/ristretto/z/simd"
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 )
@@ -369,7 +369,7 @@ func BenchmarkWrite(b *testing.B) {
 
 // goos: linux
 // goarch: amd64
-// pkg: github.com/aryehlev/ristretto/z
+// pkg: github.com/dgraph-io/ristretto/z
 // BenchmarkRead/map-4         	10845322	       109 ns/op
 // BenchmarkRead/btree-4       	 2744283	       430 ns/op
 // Cumulative for 10 runs.

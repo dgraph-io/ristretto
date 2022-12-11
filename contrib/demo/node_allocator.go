@@ -6,7 +6,7 @@ package main
 import (
 	"unsafe"
 
-	"github.com/aryehlev/ristretto/z"
+	"github.com/dgraph-io/ristretto/z"
 )
 
 // Defined in node.go.
