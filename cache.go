@@ -208,6 +208,8 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
+// Wait for all values to pass through buffers, so that the cache is consistent.
+// This is useful where consistency is required, or when writing unit tests.
 func (c *Cache) Wait() {
 	if c == nil || c.isClosed {
 		return
