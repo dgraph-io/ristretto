@@ -38,11 +38,7 @@ var (
 
 const itemSize = int64(unsafe.Sizeof(storeItem[any]{}))
 
-//type HashableKey interface {
-//	KeyToHash() (uint64, uint64)
-//}
-
-func Zero[T any]() T {
+func zeroValue[T any]() T {
 	var zero T
 	return zero
 }
@@ -51,10 +47,10 @@ func Zero[T any]() T {
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
 type Cache[K any, V any] struct {
-	// store is the central concurrent hashmap where key-value items are stored.
-	store store[V]
-	// policy determines what gets let in to the cache and what gets kicked out.
-	policy policy[V]
+	// storedItems is the central concurrent hashmap where key-value items are stored.
+	storedItems store[V]
+	// cachePolicy determines what gets let in to the cache and what gets kicked out.
+	cachePolicy policy[V]
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	getBuf *ringBuffer
@@ -175,8 +171,8 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
-		store:              newStore[V](),
-		policy:             policy,
+		storedItems:        newStore[V](),
+		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item[V], setBufSize),
 		keyToHash:          config.KeyToHash,
@@ -230,13 +226,17 @@ func (c *Cache[K, V]) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
-
-	if c == nil || c.isClosed || &key == nil {
-		return Zero[V](), false
+	if c == nil || c.isClosed {
+		return zeroValue[V](), false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
+
+	// If key in a pointer type and nil the default keyToHash function will return 0,0
+	if keyHash == 0 && conflictHash == 0 {
+		return zeroValue[V](), false
+	}
 	c.getBuf.Push(keyHash)
-	value, ok := c.store.Get(keyHash, conflictHash)
+	value, ok := c.storedItems.Get(keyHash, conflictHash)
 	if ok {
 		c.Metrics.add(hit, keyHash, 1)
 	} else {
@@ -290,18 +290,18 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 	}
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
-	if prev, ok := c.store.Update(i); ok {
+	if prev, ok := c.storedItems.Update(i); ok {
 		c.onExit(prev)
 		i.flag = itemUpdate
 	}
-	// Attempt to send item to policy.
+	// Attempt to send item to cachePolicy.
 	select {
 	case c.setBuf <- i:
 		return true
 	default:
 		if i.flag == itemUpdate {
 			// Return true if this was an update operation since we've already
-			// updated the store. For all the other operations (set/delete), we
+			// updated the storedItems. For all the other operations (set/delete), we
 			// return false which means the item was not inserted.
 			return true
 		}
@@ -317,7 +317,7 @@ func (c *Cache[K, V]) Del(key K) {
 	}
 	keyHash, conflictHash := c.keyToHash(key)
 	// Delete immediately.
-	_, prev := c.store.Del(keyHash, conflictHash)
+	_, prev := c.storedItems.Del(keyHash, conflictHash)
 	c.onExit(prev)
 	// If we've set an item, it would be applied slightly later.
 	// So we must push the same item to `setBuf` with the deletion flag.
@@ -338,12 +338,12 @@ func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)
-	if _, ok := c.store.Get(keyHash, conflictHash); !ok {
+	if _, ok := c.storedItems.Get(keyHash, conflictHash); !ok {
 		// not found
 		return 0, false
 	}
 
-	expiration := c.store.Expiration(keyHash)
+	expiration := c.storedItems.Expiration(keyHash)
 	if expiration.IsZero() {
 		// found but no expiration
 		return 0, true
@@ -368,11 +368,11 @@ func (c *Cache[K, V]) Close() {
 	c.stop <- struct{}{}
 	close(c.stop)
 	close(c.setBuf)
-	c.policy.Close()
+	c.cachePolicy.Close()
 	c.isClosed = true
 }
 
-// Clear empties the hashmap and zeroes all policy counters. Note that this is
+// Clear empties the hashmap and zeroes all cachePolicy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache[K, V]) Clear() {
@@ -392,7 +392,7 @@ loop:
 				continue
 			}
 			if i.flag != itemUpdate {
-				// In itemUpdate, the value is already set in the store.  So, no need to call
+				// In itemUpdate, the value is already set in the storedItems.  So, no need to call
 				// onEvict here.
 				c.onEvict(i)
 			}
@@ -401,9 +401,9 @@ loop:
 		}
 	}
 
-	// Clear value hashmap and policy data.
-	c.policy.Clear()
-	c.store.Clear(c.onEvict)
+	// Clear value hashmap and cachePolicy data.
+	c.cachePolicy.Clear()
+	c.storedItems.Clear(c.onEvict)
 	// Only reset metrics if they're enabled.
 	if c.Metrics != nil {
 		c.Metrics.Clear()
@@ -417,7 +417,7 @@ func (c *Cache[K, V]) MaxCost() int64 {
 	if c == nil {
 		return 0
 	}
-	return c.policy.MaxCost()
+	return c.cachePolicy.MaxCost()
 }
 
 // UpdateMaxCost updates the maxCost of an existing cache.
@@ -425,7 +425,7 @@ func (c *Cache[K, V]) UpdateMaxCost(maxCost int64) {
 	if c == nil {
 		return
 	}
-	c.policy.UpdateMaxCost(maxCost)
+	c.cachePolicy.UpdateMaxCost(maxCost)
 }
 
 // processItems is ran by goroutines processing the Set buffer.
@@ -475,29 +475,29 @@ func (c *Cache[K, V]) processItems() {
 
 			switch i.flag {
 			case itemNew:
-				victims, added := c.policy.Add(i.Key, i.Cost)
+				victims, added := c.cachePolicy.Add(i.Key, i.Cost)
 				if added {
-					c.store.Set(i)
+					c.storedItems.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
 					trackAdmission(i.Key)
 				} else {
 					c.onReject(i)
 				}
 				for _, victim := range victims {
-					victim.Conflict, victim.Value = c.store.Del(victim.Key, 0)
+					victim.Conflict, victim.Value = c.storedItems.Del(victim.Key, 0)
 					onEvict(victim)
 				}
 
 			case itemUpdate:
-				c.policy.Update(i.Key, i.Cost)
+				c.cachePolicy.Update(i.Key, i.Cost)
 
 			case itemDelete:
-				c.policy.Del(i.Key) // Deals with metrics updates.
-				_, val := c.store.Del(i.Key, i.Conflict)
+				c.cachePolicy.Del(i.Key) // Deals with metrics updates.
+				_, val := c.storedItems.Del(i.Key, i.Conflict)
 				c.onExit(val)
 			}
 		case <-c.cleanupTicker.C:
-			c.store.Cleanup(c.policy, onEvict)
+			c.storedItems.Cleanup(c.cachePolicy, onEvict)
 		case <-c.stop:
 			return
 		}
@@ -508,7 +508,7 @@ func (c *Cache[K, V]) processItems() {
 // to the cache and policy instances.
 func (c *Cache[K, V]) collectMetrics() {
 	c.Metrics = newMetrics()
-	c.policy.CollectMetrics(c.Metrics)
+	c.cachePolicy.CollectMetrics(c.Metrics)
 }
 
 type metricType int

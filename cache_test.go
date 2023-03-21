@@ -194,8 +194,8 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     0,
 	}
 	time.Sleep(wait)
-	require.True(t, c.policy.Has(1))
-	require.Equal(t, int64(1), c.policy.Cost(1))
+	require.True(t, c.cachePolicy.Has(1))
+	require.Equal(t, int64(1), c.cachePolicy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &Item[int]{
@@ -206,7 +206,7 @@ func TestCacheProcessItems(t *testing.T) {
 		Cost:     0,
 	}
 	time.Sleep(wait)
-	require.Equal(t, int64(2), c.policy.Cost(1))
+	require.Equal(t, int64(2), c.cachePolicy.Cost(1))
 
 	key, conflict = z.KeyToHash(1)
 	c.setBuf <- &Item[int]{
@@ -216,10 +216,10 @@ func TestCacheProcessItems(t *testing.T) {
 	}
 	time.Sleep(wait)
 	key, conflict = z.KeyToHash(1)
-	val, ok := c.store.Get(key, conflict)
+	val, ok := c.storedItems.Get(key, conflict)
 	require.False(t, ok)
 	require.Zero(t, val)
-	require.False(t, c.policy.Has(1))
+	require.False(t, c.cachePolicy.Has(1))
 
 	key, conflict = z.KeyToHash(2)
 	c.setBuf <- &Item[int]{
@@ -281,7 +281,7 @@ func TestCacheGet(t *testing.T) {
 		Conflict: conflict,
 		Value:    1,
 	}
-	c.store.Set(&i)
+	c.storedItems.Set(&i)
 	val, ok := c.Get(1)
 	require.True(t, ok)
 	require.NotNil(t, val)
@@ -329,7 +329,7 @@ func TestCacheSet(t *testing.T) {
 	retrySet(t, c, 1, 1, 1, 0)
 
 	c.Set(1, 2, 2)
-	val, ok := c.store.Get(z.KeyToHash(1))
+	val, ok := c.storedItems.Get(z.KeyToHash(1))
 	require.True(t, ok)
 	require.Equal(t, 2, val)
 
@@ -362,7 +362,7 @@ func TestCacheInternalCost(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Get should return false because the cache's cost is too small to store the item
+	// Get should return false because the cache's cost is too small to storedItems the item
 	// when accounting for the internal cost.
 	c.SetWithTTL(1, 1, 1, 0)
 	time.Sleep(wait)

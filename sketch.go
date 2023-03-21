@@ -127,7 +127,7 @@ func (r cmRow) reset() {
 }
 
 func (r cmRow) clear() {
-	// Zero each counter.
+	// zero each counter.
 	for i := range r {
 		r[i] = 0
 	}

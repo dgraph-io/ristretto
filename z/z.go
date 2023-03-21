@@ -33,11 +33,13 @@ import (
 //	we need in this situation.
 
 func KeyToHash[K any](key K) (uint64, uint64) {
-	if &key == nil {
+	keyAsAny := any(key)
+
+	if keyAsAny == nil {
 		return 0, 0
 	}
 
-	switch k := any(key).(type) {
+	switch k := keyAsAny.(type) {
 	case uint64:
 		return k, 0
 	case string:
@@ -59,12 +61,6 @@ func KeyToHash[K any](key K) (uint64, uint64) {
 	}
 
 	return 0, 0
-}
-
-type StringK string
-
-func (s StringK) KeyToHash() (uint64, uint64) {
-	return MemHashString(string(s)), xxhash.Sum64String(string(s))
 }
 
 var (
