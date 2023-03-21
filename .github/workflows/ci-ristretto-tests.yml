@@ -3,21 +3,20 @@ on:
   push:
     branches:
       - main 
-  pull_request:
+  pull_request_target:
     branches:
       - main 
   schedule:
     - cron: "30 * * * *"
 jobs:
   ristretto-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - name: Get Go Version
         run: |
           #!/bin/bash
-          DEFAULT_VERSION="1.17"
-          GOVERSION=$({ [ -f .go-version ] && cat .go-version; } || echo $DEFAULT_VERSION)
+          GOVERSION=$({ [ -f .go-version ] && cat .go-version; })
           echo "GOVERSION=$GOVERSION" >> $GITHUB_ENV
       - name: Setup Go
         uses: actions/setup-go@v3

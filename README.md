@@ -71,7 +71,7 @@ func main() {
 	cache.Set("key", "value", 1)
 	
 	// wait for value to pass through buffers
-	time.Sleep(10 * time.Millisecond)
+	cache.Wait()
 
 	value, found := cache.Get("key")
 	if !found {
