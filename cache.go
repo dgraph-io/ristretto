@@ -208,6 +208,8 @@ func NewCache(config *Config) (*Cache, error) {
 	return cache, nil
 }
 
+// Wait blocks until all buffered writes have been applied. This ensures a call to Set()
+// will be visible to future calls to Get().
 func (c *Cache) Wait() {
 	if c == nil || c.isClosed {
 		return
@@ -220,7 +222,7 @@ func (c *Cache) Wait() {
 
 // Get returns the value (if any) and a boolean representing whether the
 // value was found or not. The value can be nil and the boolean can be true at
-// the same time.
+// the same time. Get will not return expired items.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	if c == nil || c.isClosed || key == nil {
 		return nil, false
