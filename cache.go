@@ -66,7 +66,7 @@ type Cache[K any, V any] struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(K) (uint64, uint64)
+	keyToHash func(any) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
@@ -175,7 +175,6 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item[V], setBufSize),
-		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
@@ -198,8 +197,16 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		}
 		cache.onExit(item.Value)
 	}
-	if cache.keyToHash == nil {
-		cache.keyToHash = z.KeyToHash[K]
+
+	// The use must provide a key to hash for non primitive types.
+	if config.KeyToHash == nil {
+		var emptyKey K
+		cache.keyToHash = z.GetKeyToHash(emptyKey)
+	} else {
+		// This forces the user to create a function that takes the key type, and will avoid runtime errors.
+		cache.keyToHash = func(key any) (uint64, uint64) {
+			return config.KeyToHash(key.(K))
+		}
 	}
 	if config.Metrics {
 		cache.collectMetrics()
@@ -231,10 +238,6 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 	}
 	keyHash, conflictHash := c.keyToHash(key)
 
-	// If key in a pointer type and nil the default keyToHash function will return 0,0
-	if keyHash == 0 && conflictHash == 0 {
-		return zeroValue[V](), false
-	}
 	c.getBuf.Push(keyHash)
 	value, ok := c.storedItems.Get(keyHash, conflictHash)
 	if ok {

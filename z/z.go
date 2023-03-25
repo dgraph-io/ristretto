@@ -19,8 +19,32 @@ package z
 import (
 	"context"
 	"github.com/cespare/xxhash/v2"
+	"log"
 	"sync"
 )
+
+// GetKeyToHash will get the default KeyToHash function for the primitive types.
+func GetKeyToHash[K any](emptyKey K) func(any) (uint64, uint64) {
+	keyAsAny := any(emptyKey)
+
+	if keyAsAny == nil {
+		log.Fatal("must provide custom KeyToHash function for pointer type")
+	}
+	switch keyAsAny.(type) {
+	case uint64:
+	case string:
+	case []byte:
+	case byte:
+	case int:
+	case int32:
+	case uint32:
+	case int64:
+	default:
+		log.Fatal("must provide custom KeyToHash function for type")
+	}
+
+	return KeyToHash
+}
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash, we
 //
@@ -32,14 +56,8 @@ import (
 //	anything resembling a 128bit hash, even though that's exactly what
 //	we need in this situation.
 
-func KeyToHash[K any](key K) (uint64, uint64) {
-	keyAsAny := any(key)
-
-	if keyAsAny == nil {
-		return 0, 0
-	}
-
-	switch k := keyAsAny.(type) {
+func KeyToHash(key any) (uint64, uint64) {
+	switch k := key.(type) {
 	case uint64:
 		return k, 0
 	case string:
