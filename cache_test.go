@@ -813,11 +813,11 @@ func TestBlockOnClear(t *testing.T) {
 
 // Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
-	originalSetBugSize := setBufSize
-	defer func() { setBufSize = originalSetBugSize }()
+	originalSetBufSize := setBufSize
+	defer func() { setBufSize = originalSetBufSize }()
 
 	test := func() {
-		// dropppedMap stores the items dropped from the cache.
+		// droppedMap stores the items dropped from the cache.
 		droppedMap := make(map[int]struct{})
 		lastEvictedSet := int64(-1)
 
@@ -860,11 +860,18 @@ func TestDropUpdates(t *testing.T) {
 				droppedMap[i] = struct{}{}
 			}
 		}
-		// Wait for all the items to be processed.
-		time.Sleep(time.Millisecond)
+		// Wait for all items to be processed: prevents next c.Set from getting dropped
+		c.Wait()
 		// This will cause eviction from the cache.
 		require.True(t, c.Set(1, nil, 10))
+
+		// Close() calls Clear(), which can cause the (key, value) pair of (1, nil) to be passed to
+		// the OnEvict() callback if it was still in the setBuf. This fixes a panic in OnEvict:
+		// "interface {} is nil, not string"
+		c.Wait()
 		c.Close()
+
+		require.NotEqual(t, -1, lastEvictedSet)
 	}
 
 	// Run the test 100 times since it's not reliable.
