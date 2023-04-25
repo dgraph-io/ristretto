@@ -157,3 +157,16 @@ func (m *expirationMap[V]) cleanup(store store[V], policy policy[V], onEvict fun
 		}
 	}
 }
+
+// clear clears the expirationMap, the caller is responsible for properly
+// evicting the referenced items
+func (m *expirationMap) clear() {
+	if m == nil {
+		return
+	}
+
+	m.Lock()
+	m.buckets = make(map[int64]bucket)
+	m.lastCleanedBucketNum = cleanupBucket(time.Now())
+	m.Unlock()
+}
