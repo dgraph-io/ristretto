@@ -19,8 +19,6 @@ Ristretto is a fast, concurrent cache library built with a focus on performance 
 The motivation to build Ristretto comes from the need for a contention-free
 cache in [Dgraph][].
 
-**Use [Discuss Issues](https://discuss.dgraph.io/tags/c/issues/35/ristretto/40) for reporting issues about this repository.**
-
 [Dgraph]: https://github.com/dgraph-io/dgraph
 
 ## Features

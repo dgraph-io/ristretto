@@ -1,44 +1,29 @@
-A similar PR may already be submitted!
-Please search among the [Pull request](../) before creating one.
+<!--
+ Change Github PR Title 
 
-Thanks for submitting a pull request! Please provide enough information so that others can review your pull request:
+ Your title must be in the following format: 
+ - `topic(Area): Feature`
+ - `Topic` must be one of `build|ci|docs|feat|fix|perf|refactor|chore|test`
 
-For more information, see the `CONTRIBUTING` guide.
+ Sample Titles:
+ - `feat(Enterprise)`: Backups can now get credentials from IAM
+ - `fix(Query)`: Skipping floats that cannot be Marshalled in JSON
+ - `perf: [Breaking]` json encoding is now 35% faster if SIMD is present
+ - `chore`: all chores/tests will be excluded from the CHANGELOG
+ -->
 
-**IMPORTANT: Please do not create a Pull Request without creating an issue first.**
+## Problem
+ <!--
+ Please add a description with these things:
+ 1. Explain the problem by providing a good description.
+ 2. If it fixes any GitHub issues, say "Fixes #GitHubIssue".
+ 3. If it corresponds to a Jira issue, say "Fixes DGRAPH-###".
+ 4. If this is a breaking change, please prefix `[Breaking]` in the title. In the description, please put a note with exactly who these changes are breaking for.
+ -->
 
-*Any change needs to be discussed before proceeding. Failure to do so may result in the rejection of the pull request.*
-
-
-**Summary**
-
-<!-- Summary of the PR -->
-
-This PR fixes/implements the following **bugs/features**
-
-* [ ] Bug 1
-* [ ] Bug 2
-* [ ] Feature 1
-* [ ] Feature 2
-* [ ] Breaking changes
-
-<!-- You can skip this if you're fixing a typo or adding an app to the Showcase. -->
-
-Explain the **motivation** for making this change. What existing problem does the pull request solve?
-
-<!-- Example: When "Adding a function to do X", explain why it is necessary to have a way to do X. -->
-
-**Test plan (required)**
-
-Demonstrate the code is solid. Example: The exact commands you ran and their output, screenshots / videos if the pull request changes UI.
-
-<!-- Make sure tests pass on both Travis and Circle CI. -->
-
-**Code formatting**
-
-<!-- See the simple style guide. -->
-
-**Closing issues**
-
-<!-- Put `closes #XXXX` in your comment to auto-close the issue that your PR fixes (if such). -->
-Fixes #
+## Solution
+ <!--
+ Please add a description with these things:
+ 1. Explain the solution to make it easier to review the PR.
+ 2. Make it easier for the reviewer by describing complex sections with comments.
+ -->
