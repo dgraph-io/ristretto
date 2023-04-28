@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="com.github.blarc.gitlab.template.lint.plugin.settings.ProjectSettings">
+    <option name="gitlabUrl" value="https://echelon-opensource/api/v4" />
+    <option name="gitlabUrls">
+      <set>
+        <option value="https://echelon-opensource/api/v4" />
+      </set>
+    </option>
+  </component>
+</project>
