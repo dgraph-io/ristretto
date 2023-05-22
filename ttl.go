@@ -89,6 +89,11 @@ func (m *expirationMap[_]) update(key, conflict uint64, oldExpTime, newExpTime t
 		delete(oldBucket, key)
 	}
 
+	// Items that don't expire don't need to be in the expiration map.
+	if newExpTime.IsZero() {
+		return
+	}
+
 	newBucketNum := storageBucket(newExpTime)
 	newBucket, ok := m.buckets[newBucketNum]
 	if !ok {
@@ -160,7 +165,7 @@ func (m *expirationMap[V]) cleanup(store store[V], policy policy[V], onEvict fun
 
 // clear clears the expirationMap, the caller is responsible for properly
 // evicting the referenced items
-func (m *expirationMap) clear() {
+func (m *expirationMap[V]) clear() {
 	if m == nil {
 		return
 	}
