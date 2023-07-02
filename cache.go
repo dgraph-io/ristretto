@@ -266,7 +266,7 @@ func (c *Cache) SetWithTTL(key, value interface{}, cost int64, ttl time.Duration
 		// No expiration.
 		break
 	case ttl < 0:
-		// Treat this a a no-op.
+		// Treat this a no-op.
 		return false
 	default:
 		expiration = time.Now().Add(ttl)
