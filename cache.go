@@ -366,6 +366,7 @@ func (c *Cache) Close() {
 	close(c.stop)
 	close(c.setBuf)
 	c.policy.Close()
+	c.cleanupTicker.Stop()
 	c.isClosed = true
 }
 
