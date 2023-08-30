@@ -19,7 +19,6 @@ package z
 import (
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"sort"
@@ -92,7 +91,7 @@ func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 	if dir == "" {
 		dir = tmpDir
 	}
-	file, err := ioutil.TempFile(dir, "buffer")
+	file, err := os.CreateTemp(dir, "buffer")
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +199,7 @@ func (b *Buffer) Grow(n int) {
 		// If autoMmap gets triggered, copy the slice over to an mmaped file.
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
 			b.bufType = UseMmap
-			file, err := ioutil.TempFile(b.autoMmapDir, "")
+			file, err := os.CreateTemp(b.autoMmapDir, "")
 			if err != nil {
 				panic(err)
 			}
@@ -281,7 +280,9 @@ func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
 	if b.IsEmpty() {
 		return nil
 	}
-	slice, next := []byte{}, b.StartOffset()
+
+	next := b.StartOffset()
+	var slice []byte
 	for next >= 0 {
 		slice, next = b.Slice(next)
 		if len(slice) == 0 {
@@ -291,6 +292,7 @@ func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -339,7 +341,7 @@ func (s *sortHelper) sortSmall(start, end int) {
 	})
 	// Now we iterate over the s.small offsets and copy over the slices. The result is now in order.
 	for _, off := range s.small {
-		s.tmp.Write(rawSlice(s.b.buf[off:]))
+		_, _ = s.tmp.Write(rawSlice(s.b.buf[off:]))
 	}
 	assert(end-start == copy(s.b.buf[start:end], s.tmp.Bytes()))
 }
@@ -454,7 +456,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		small:   make([]int, 0, 1024),
 		tmp:     NewBuffer(szTmp, b.tag),
 	}
-	defer s.tmp.Release()
+	defer func() { _ = s.tmp.Release() }()
 
 	left := offsets[0]
 	for _, off := range offsets[1:] {

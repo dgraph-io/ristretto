@@ -57,6 +57,7 @@ func BenchmarkAllocation(b *testing.B) {
 					x = make([]byte, sz)
 				}
 				r.Read(x)
+				//nolint:staticcheck
 				pool.Put(x)
 			}
 		})

@@ -22,6 +22,7 @@ func Calloc(size int) []byte {
 	}
 	hdr := reflect.SliceHeader{Data: uintptr(ptr), Len: size, Cap: size}
 	atomic.AddInt64(&numbytes, int64(size))
+	//nolint:govet
 	return *(*[]byte)(unsafe.Pointer(&hdr))
 }
 

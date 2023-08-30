@@ -109,12 +109,12 @@ func TestBufferAutoMmap(t *testing.T) {
 
 	var count int
 	var last []byte
-	buf.SliceIterate(func(slice []byte) error {
+	require.NoError(t, buf.SliceIterate(func(slice []byte) error {
 		require.True(t, bytes.Compare(slice, last) >= 0)
 		last = append(last[:0], slice...)
 		count++
 		return nil
-	})
+	}))
 	require.Equal(t, N, count)
 }
 
@@ -134,7 +134,7 @@ func TestBufferSimpleSort(t *testing.T) {
 			})
 			var last uint32
 			var i int
-			buf.SliceIterate(func(slice []byte) error {
+			require.NoError(t, buf.SliceIterate(func(slice []byte) error {
 				num := binary.BigEndian.Uint32(slice)
 				if num < last {
 					fmt.Printf("num: %d idx: %d last: %d\n", num, i, last)
@@ -144,7 +144,7 @@ func TestBufferSimpleSort(t *testing.T) {
 				last = num
 				// fmt.Printf("Got number: %d\n", num)
 				return nil
-			})
+			}))
 		})
 	}
 }
@@ -174,7 +174,7 @@ func TestBufferSlice(t *testing.T) {
 
 			compare := func() {
 				i := 0
-				buf.SliceIterate(func(slice []byte) error {
+				require.NoError(t, buf.SliceIterate(func(slice []byte) error {
 					// All the slices returned by the buffer should be equal to what we
 					// inserted earlier.
 					if !bytes.Equal(exp[i], slice) {
@@ -184,7 +184,7 @@ func TestBufferSlice(t *testing.T) {
 					require.Equal(t, exp[i], slice)
 					i++
 					return nil
-				})
+				}))
 				require.Equal(t, len(exp), i)
 			}
 			compare() // same order as inserted.
@@ -227,7 +227,8 @@ func TestBufferSort(t *testing.T) {
 					return lhs < rhs
 				})
 
-				slice, next := []byte{}, start
+				next := start
+				var slice []byte
 				var last uint64
 				var count int
 				for next >= 0 && next < end {

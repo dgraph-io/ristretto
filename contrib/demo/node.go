@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"runtime"
-	"unsafe"
 
 	"github.com/dgraph-io/ristretto/z"
 	"github.com/dustin/go-humanize"
@@ -14,7 +13,6 @@ type node struct {
 	next *node
 }
 
-var nodeSz = int(unsafe.Sizeof(node{}))
 var alloc *z.Allocator
 
 func printNode(n *node) {
