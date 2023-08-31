@@ -224,7 +224,7 @@ func (p *defaultPolicy[V]) Del(key uint64) {
 
 func (p *defaultPolicy[V]) Cap() int64 {
 	p.Lock()
-	capacity := int64(p.evict.getMaxCost() - p.evict.used)
+	capacity := p.evict.getMaxCost() - p.evict.used
 	p.Unlock()
 	return capacity
 }
