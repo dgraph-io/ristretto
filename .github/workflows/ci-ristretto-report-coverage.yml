@@ -10,8 +10,9 @@ jobs:
   report-coverage:
     runs-on: ubuntu-20.04
     if: >
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      github.event.workflow_run.event == 'push'
     steps:
       - name: 'Download coverage profile'
         uses: actions/github-script@v3.1.0
