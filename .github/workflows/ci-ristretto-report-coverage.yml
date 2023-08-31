@@ -10,10 +10,13 @@ jobs:
   report-coverage:
     runs-on: ubuntu-20.04
     if: >
-      (github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success') ||
-      github.event.workflow_run.event == 'push'
+      (github.event.workflow_run.event == 'pull_request' ||
+      github.event.workflow_run.event == 'push' ) &&
+      github.event.workflow_run.conclusion == 'success'
     steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
       - name: 'Download coverage profile'
         uses: actions/github-script@v3.1.0
         with:
@@ -35,9 +38,9 @@ jobs:
             var fs = require('fs');
             fs.writeFileSync('${{github.workspace}}/covprofile.zip', Buffer.from(download.data));
       - run: unzip covprofile.zip
-      - name: Install Goveralls
-        run: go install github.com/mattn/goveralls@latest
-      - name: Send Coverage Results
+      - name: Send coverage
         env:
           COVERALLS_TOKEN: ${{ secrets.COVERALLSIO_TOKEN }}
-        run: goveralls -coverprofile=covprofile
+        uses: shogo82148/actions-goveralls@v1
+        with:
+          path-to-profile: ./covprofile
