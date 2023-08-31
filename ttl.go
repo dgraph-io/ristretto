@@ -127,8 +127,9 @@ func (m *expirationMap[V]) cleanup(store store[V], policy policy[V], onEvict fun
 	m.Unlock()
 
 	for key, conflict := range keys {
+		expr := store.Expiration(key)
 		// Sanity check. Verify that the store agrees that this key is expired.
-		if store.Expiration(key).After(now) {
+		if expr.After(now) {
 			continue
 		}
 
@@ -138,9 +139,10 @@ func (m *expirationMap[V]) cleanup(store store[V], policy policy[V], onEvict fun
 
 		if onEvict != nil {
 			onEvict(&Item[V]{Key: key,
-				Conflict: conflict,
-				Value:    value,
-				Cost:     cost,
+				Conflict:   conflict,
+				Value:      value,
+				Cost:       cost,
+				Expiration: expr,
 			})
 		}
 	}
