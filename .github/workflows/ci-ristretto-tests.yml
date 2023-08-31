@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-  pull_request_target:
+  pull_request:
     branches:
       - main
   schedule:
@@ -24,10 +24,9 @@ jobs:
           go-version: ${{ env.GOVERSION }}
       - name: Run Unit Tests
         run: go test -race -covermode atomic -coverprofile=covprofile ./...
-      - name: Install Goveralls
-        run: go install github.com/mattn/goveralls@latest
-      - name: Send Coverage Results
-        env:
-          COVERALLS_TOKEN: ${{ secrets.COVERALLSIO_TOKEN }}
-        run: goveralls -coverprofile=covprofile
+      - name: Save coverage profile
+        uses: actions/upload-artifact@v2
+        with:
+          name: covprofile
+          path: ./covprofile
 
