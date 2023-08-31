@@ -34,7 +34,7 @@ func TestStressSetGet(t *testing.T) {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for a := 0; a < 1000; a++ {
 				k := r.Int() % 10
-				if val, ok := c.Get(k); &val == nil || !ok {
+				if val, ok := c.Get(k); val == 0 || !ok {
 					err = fmt.Errorf("expected %d but got nil", k)
 					break
 				} else if val != 0 && val != k {

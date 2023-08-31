@@ -18,9 +18,10 @@ package z
 
 import (
 	"context"
-	"github.com/cespare/xxhash/v2"
 	"log"
 	"sync"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // GetKeyToHash will get the default KeyToHash function for the primitive types.
@@ -77,8 +78,6 @@ func defaultKeyToHash(key any) (uint64, uint64) {
 	default:
 		panic("Key type not supported")
 	}
-
-	return 0, 0
 }
 
 func KeyToHash[K any](key K) (uint64, uint64) {

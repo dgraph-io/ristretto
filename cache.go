@@ -271,7 +271,7 @@ func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) bool {
-	if c == nil || c.isClosed || &key == nil {
+	if c == nil || c.isClosed {
 		return false
 	}
 
@@ -320,7 +320,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache[K, V]) Del(key K) {
-	if c == nil || c.isClosed || &key == nil {
+	if c == nil || c.isClosed {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -341,7 +341,7 @@ func (c *Cache[K, V]) Del(key K) {
 // GetTTL returns the TTL for the specified key and a bool that is true if the
 // item was found and is not expired.
 func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
-	if c == nil || &key == nil {
+	if c == nil {
 		return 0, false
 	}
 

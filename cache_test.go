@@ -824,7 +824,7 @@ func TestDropUpdates(t *testing.T) {
 		var err error
 		handler := func(_ interface{}, value interface{}) {
 			v := value.(string)
-			lastEvictedSet, err = strconv.ParseInt(string(v), 10, 32)
+			lastEvictedSet, err = strconv.ParseInt(v, 10, 32)
 			require.NoError(t, err)
 
 			_, ok := droppedMap[int(lastEvictedSet)]
