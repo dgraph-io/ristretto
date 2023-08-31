@@ -8,8 +8,8 @@ body:
       value: |
         Thank you for reporting an issue.
         If you think we can make Ristretto better, describe your feature request here.
-        Note: Feature requests are judged based on user experience and modeled on 
-        [Go Experience Reports](https://github.com/golang/go/wiki/ExperienceReports). 
+        Note: Feature requests are judged based on user experience and modeled on
+        [Go Experience Reports](https://github.com/golang/go/wiki/ExperienceReports).
         These reports should focus on the problems - they should not focus on and need not propose solutions.
   - type: dropdown
     attributes:
