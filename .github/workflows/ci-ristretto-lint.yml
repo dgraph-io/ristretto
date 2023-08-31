@@ -7,7 +7,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 * * * *"
+    - cron: "1 * * * *"
 jobs:
   go-lint:
     if: github.event.pull_request.draft == false

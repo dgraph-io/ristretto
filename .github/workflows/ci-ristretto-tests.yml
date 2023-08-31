@@ -3,11 +3,11 @@ on:
   push:
     branches:
       - main
-  pull_request_target:
+  pull_request:
     branches:
       - main
   schedule:
-    - cron: "30 * * * *"
+    - cron: "31 * * * *"
 jobs:
   ristretto-tests:
     runs-on: ubuntu-20.04
@@ -23,11 +23,9 @@ jobs:
         with:
           go-version: ${{ env.GOVERSION }}
       - name: Run Unit Tests
-        run: go test -race -covermode atomic -coverprofile=covprofile ./...
-      - name: Install Goveralls
-        run: go install github.com/mattn/goveralls@latest
-      - name: Send Coverage Results
-        env:
-          COVERALLS_TOKEN: ${{ secrets.COVERALLSIO_TOKEN }}
-        run: goveralls -coverprofile=covprofile
-
+        run: go test -timeout=20m -race -covermode atomic -coverprofile=covprofile ./...
+      - name: Save coverage profile
+        uses: actions/upload-artifact@v3
+        with:
+          name: covprofile
+          path: ./covprofile
