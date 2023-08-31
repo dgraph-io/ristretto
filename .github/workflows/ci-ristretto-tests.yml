@@ -23,7 +23,7 @@ jobs:
         with:
           go-version: ${{ env.GOVERSION }}
       - name: Run Unit Tests
-        run: go test -race -covermode atomic -coverprofile=covprofile ./...
+        run: go test -timeout=20m -race -covermode atomic -coverprofile=covprofile ./...
       - name: Save coverage profile
         uses: actions/upload-artifact@v2
         with:
