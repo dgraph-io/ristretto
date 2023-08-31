@@ -138,6 +138,8 @@ type Config[K any, V any] struct {
 	// cost passed to set is not using bytes as units. Keep in mind that setting
 	// this to true will increase the memory usage.
 	IgnoreInternalCost bool
+	// TtlTickerDurationInSec set the value of time ticker for cleanup keys on ttl
+	TtlTickerDurationInSec int64
 }
 
 type itemFlag byte
@@ -168,6 +170,8 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		return nil, errors.New("MaxCost can't be zero")
 	case config.BufferItems == 0:
 		return nil, errors.New("BufferItems can't be zero")
+	case config.TtlTickerDurationInSec == 0:
+		config.TtlTickerDurationInSec = bucketDurationSecs
 	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
@@ -178,7 +182,7 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		stop:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
-		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
 	}
 	cache.onExit = func(val V) {
 		if config.OnExit != nil {
@@ -215,10 +219,11 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	//       goroutines we have running cache.processItems(), so 1 should
 	//       usually be sufficient
 	go cache.processItems()
-
 	return cache, nil
 }
 
+// Wait blocks until all buffered writes have been applied. This ensures a call to Set()
+// will be visible to future calls to Get().
 func (c *Cache[K, V]) Wait() {
 	if c == nil || c.isClosed {
 		return
@@ -231,7 +236,7 @@ func (c *Cache[K, V]) Wait() {
 
 // Get returns the value (if any) and a boolean representing whether the
 // value was found or not. The value can be nil and the boolean can be true at
-// the same time.
+// the same time. Get will not return expired items.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
 	if c == nil || c.isClosed {
 		return zeroValue[V](), false
@@ -276,7 +281,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 		// No expiration.
 		break
 	case ttl < 0:
-		// Treat this a a no-op.
+		// Treat this a no-op.
 		return false
 	default:
 		expiration = time.Now().Add(ttl)
