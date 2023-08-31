@@ -347,7 +347,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 		p.metrics.add(keyUpdate, key, 1)
 		if prev > cost {
 			diff := prev - cost
-			p.metrics.add(costAdd, key, ^uint64(uint64(diff)-1))
+			p.metrics.add(costAdd, key, ^uint64(diff-1))
 		} else if cost > prev {
 			diff := cost - prev
 			p.metrics.add(costAdd, key, uint64(diff))
