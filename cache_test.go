@@ -39,6 +39,57 @@ func TestCacheKeyToHash(t *testing.T) {
 	require.Equal(t, 3, keyToHashCount)
 }
 
+func TestCacheMaxCost(t *testing.T) {
+	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
+	key := func() []byte {
+		k := make([]byte, 2)
+		for i := range k {
+			k[i] = charset[rand.Intn(len(charset))]
+		}
+		return k
+	}
+	c, err := NewCache(&Config[[]byte, string]{
+		NumCounters: 12960, // 36^2 * 10
+		MaxCost:     1e6,   // 1mb
+		BufferItems: 64,
+		Metrics:     true,
+	})
+	require.NoError(t, err)
+	stop := make(chan struct{}, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					time.Sleep(time.Millisecond)
+
+					k := key()
+					if _, ok := c.Get(k); !ok {
+						val := ""
+						if rand.Intn(100) < 10 {
+							val = "test"
+						} else {
+							val = strings.Repeat("a", 1000)
+						}
+						c.Set(key(), val, int64(2+len(val)))
+					}
+				}
+			}
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		time.Sleep(time.Second)
+		cacheCost := c.Metrics.CostAdded() - c.Metrics.CostEvicted()
+		t.Logf("total cache cost: %d\n", cacheCost)
+		require.True(t, float64(cacheCost) <= float64(1e6*1.05))
+	}
+	for i := 0; i < 8; i++ {
+		stop <- struct{}{}
+	}
+}
+
 func TestUpdateMaxCost(t *testing.T) {
 	c, err := NewCache(&Config[int, int]{
 		NumCounters: 10,
@@ -809,12 +860,18 @@ func TestDropUpdates(t *testing.T) {
 				droppedMap[i] = struct{}{}
 			}
 		}
-		// Wait for all the items to be processed.
-		time.Sleep(time.Millisecond)
+		// Wait for all items to be processed: prevents next c.Set from getting dropped
+		c.Wait()
 		// This will cause eviction from the cache.
-
 		require.True(t, c.Set(1, "", 10))
+
+		// Close() calls Clear(), which can cause the (key, value) pair of (1, nil) to be passed to
+		// the OnEvict() callback if it was still in the setBuf. This fixes a panic in OnEvict:
+		// "interface {} is nil, not string"
+		c.Wait()
 		c.Close()
+
+		require.NotEqual(t, -1, lastEvictedSet)
 	}
 
 	// Run the test 100 times since it's not reliable.
@@ -945,56 +1002,5 @@ func TestCacheWithTTL(t *testing.T) {
 			require.False(t, ok)
 			require.Zero(t, val)
 		})
-	}
-}
-
-func TestCacheMaxCost(t *testing.T) {
-	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
-	key := func() []byte {
-		k := make([]byte, 2)
-		for i := range k {
-			k[i] = charset[rand.Intn(len(charset))]
-		}
-		return k
-	}
-	c, err := NewCache(&Config[[]byte, string]{
-		NumCounters: 12960, // 36^2 * 10
-		MaxCost:     1e6,   // 1mb
-		BufferItems: 64,
-		Metrics:     true,
-	})
-	require.NoError(t, err)
-	stop := make(chan struct{}, 8)
-	for i := 0; i < 8; i++ {
-		go func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					time.Sleep(time.Millisecond)
-
-					k := key()
-					if _, ok := c.Get(k); !ok {
-						val := ""
-						if rand.Intn(100) < 10 {
-							val = "test"
-						} else {
-							val = strings.Repeat("a", 1000)
-						}
-						c.Set(key(), val, int64(2+len(val)))
-					}
-				}
-			}
-		}()
-	}
-	for i := 0; i < 20; i++ {
-		time.Sleep(time.Second)
-		cacheCost := c.Metrics.CostAdded() - c.Metrics.CostEvicted()
-		t.Logf("total cache cost: %d\n", cacheCost)
-		require.True(t, float64(cacheCost) <= float64(1e6*1.05))
-	}
-	for i := 0; i < 8; i++ {
-		stop <- struct{}{}
 	}
 }
