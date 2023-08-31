@@ -29,4 +29,3 @@ jobs:
         with:
           name: covprofile
           path: ./covprofile
-
