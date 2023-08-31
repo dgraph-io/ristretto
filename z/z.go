@@ -24,7 +24,7 @@ import (
 )
 
 // GetKeyToHash will get the default KeyToHash function for the primitive types.
-func GetKeyToHash[K any](emptyKey K) func(any) (uint64, uint64) {
+func GetKeyToHash[K any](emptyKey K) func(K) (uint64, uint64) {
 	keyAsAny := any(emptyKey)
 
 	if keyAsAny == nil {
@@ -43,7 +43,7 @@ func GetKeyToHash[K any](emptyKey K) func(any) (uint64, uint64) {
 		log.Fatal("must provide custom KeyToHash function for type")
 	}
 
-	return KeyToHash
+	return KeyToHash[K]
 }
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash, we
@@ -56,7 +56,7 @@ func GetKeyToHash[K any](emptyKey K) func(any) (uint64, uint64) {
 //	anything resembling a 128bit hash, even though that's exactly what
 //	we need in this situation.
 
-func KeyToHash(key any) (uint64, uint64) {
+func defaultKeyToHash(key any) (uint64, uint64) {
 	switch k := key.(type) {
 	case uint64:
 		return k, 0
@@ -79,6 +79,10 @@ func KeyToHash(key any) (uint64, uint64) {
 	}
 
 	return 0, 0
+}
+
+func KeyToHash[K any](key K) (uint64, uint64) {
+	return defaultKeyToHash(key)
 }
 
 var (

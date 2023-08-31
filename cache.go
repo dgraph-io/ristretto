@@ -66,7 +66,7 @@ type Cache[K any, V any] struct {
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
-	keyToHash func(any) (uint64, uint64)
+	keyToHash func(K) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
@@ -204,8 +204,8 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cache.keyToHash = z.GetKeyToHash(emptyKey)
 	} else {
 		// This forces the user to create a function that takes the key type, and will avoid runtime errors.
-		cache.keyToHash = func(key any) (uint64, uint64) {
-			return config.KeyToHash(key.(K))
+		cache.keyToHash = func(key K) (uint64, uint64) {
+			return config.KeyToHash(key)
 		}
 	}
 	if config.Metrics {
