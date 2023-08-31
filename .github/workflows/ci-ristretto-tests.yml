@@ -7,7 +7,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "30 * * * *"
+    - cron: "31 * * * *"
 jobs:
   ristretto-tests:
     runs-on: ubuntu-20.04
