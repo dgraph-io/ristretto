@@ -10,7 +10,7 @@ on:
       - synchronize
       - ready_for_review
     branches:
-      - main 
+      - main
   schedule:
     - cron: "0 * * * *"
 jobs:
@@ -24,7 +24,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: '.'          
+          scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
       - name: Upload Trivy scan results to GitHub Security tab

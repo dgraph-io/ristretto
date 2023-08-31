@@ -33,7 +33,7 @@ const (
 // policy is the interface encapsulating eviction/admission behavior.
 //
 // TODO: remove this interface and just rename defaultPolicy to policy, as we
-//       are probably only going to use/implement/maintain one policy.
+// are probably only going to use/implement/maintain one policy.
 type policy interface {
 	ringConsumer
 	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
@@ -223,7 +223,7 @@ func (p *defaultPolicy) Del(key uint64) {
 
 func (p *defaultPolicy) Cap() int64 {
 	p.Lock()
-	capacity := int64(p.evict.getMaxCost() - p.evict.used)
+	capacity := p.evict.getMaxCost() - p.evict.used
 	p.Unlock()
 	return capacity
 }
@@ -346,7 +346,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 		p.metrics.add(keyUpdate, key, 1)
 		if prev > cost {
 			diff := prev - cost
-			p.metrics.add(costAdd, key, ^uint64(uint64(diff)-1))
+			p.metrics.add(costAdd, key, ^uint64(diff-1))
 		} else if cost > prev {
 			diff := cost - prev
 			p.metrics.add(costAdd, key, uint64(diff))

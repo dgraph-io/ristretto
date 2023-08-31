@@ -2,10 +2,10 @@ name: ci-ristretto-tests
 on:
   push:
     branches:
-      - main 
+      - main
   pull_request_target:
     branches:
-      - main 
+      - main
   schedule:
     - cron: "30 * * * *"
 jobs:
