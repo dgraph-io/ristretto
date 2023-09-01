@@ -219,8 +219,8 @@ func TestBufferSort(t *testing.T) {
 			}
 
 			test := func(start, end int) {
-				start = buf.StartOffset() + 12*start
-				end = buf.StartOffset() + 12*end
+				start = buf.StartOffset() + 16*start
+				end = buf.StartOffset() + 16*end
 				buf.SortSliceBetween(start, end, func(ls, rs []byte) bool {
 					lhs := binary.BigEndian.Uint64(ls)
 					rhs := binary.BigEndian.Uint64(rs)
@@ -238,7 +238,7 @@ func TestBufferSort(t *testing.T) {
 					last = uid
 					count++
 				}
-				require.Equal(t, (end-start)/12, count)
+				require.Equal(t, (end-start)/16, count)
 			}
 			for i := 10; i <= N; i += 10 {
 				test(i-10, i)

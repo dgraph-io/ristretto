@@ -253,8 +253,8 @@ func (b *Buffer) AllocateOffset(n int) int {
 }
 
 func (b *Buffer) writeLen(sz int) {
-	buf := b.Allocate(4)
-	binary.BigEndian.PutUint32(buf, uint32(sz))
+	buf := b.Allocate(8)
+	binary.BigEndian.PutUint64(buf, uint64(sz))
 }
 
 // SliceAllocate would encode the size provided into the buffer, followed by a call to Allocate,
@@ -262,7 +262,7 @@ func (b *Buffer) writeLen(sz int) {
 // this big buffer.
 // Note that SliceAllocate should NOT be mixed with normal calls to Write.
 func (b *Buffer) SliceAllocate(sz int) []byte {
-	b.Grow(4 + sz)
+	b.Grow(8 + sz)
 	b.writeLen(sz)
 	return b.Allocate(sz)
 }
@@ -394,7 +394,7 @@ func (s *sortHelper) merge(left, right []byte, start, end int) {
 		rs = rawSlice(right)
 
 		// We skip the first 4 bytes in the rawSlice, because that stores the length.
-		if s.less(ls[4:], rs[4:]) {
+		if s.less(ls[8:], rs[8:]) {
 			copyLeft()
 		} else {
 			copyRight()
@@ -467,8 +467,8 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 }
 
 func rawSlice(buf []byte) []byte {
-	sz := binary.BigEndian.Uint32(buf)
-	return buf[:4+int(sz)]
+	sz := binary.BigEndian.Uint64(buf)
+	return buf[:8+int(sz)]
 }
 
 // Slice would return the slice written at offset.
@@ -477,8 +477,8 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 		return nil, -1
 	}
 
-	sz := binary.BigEndian.Uint32(b.buf[offset:])
-	start := offset + 4
+	sz := binary.BigEndian.Uint64(b.buf[offset:])
+	start := offset + 8
 	next := start + int(sz)
 	res := b.buf[start:next]
 	if next >= int(b.offset) {
