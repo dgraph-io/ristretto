@@ -18,6 +18,7 @@ package z
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 
@@ -25,7 +26,7 @@ import (
 )
 
 // GetKeyToHash will get the default KeyToHash function for the primitive types.
-func GetKeyToHash[K any](emptyKey K) func(K) (uint64, uint64) {
+func GetKeyToHash[K any](emptyKey K) (func(K) (uint64, uint64), error) {
 	keyAsAny := any(emptyKey)
 
 	if keyAsAny == nil {
@@ -41,10 +42,10 @@ func GetKeyToHash[K any](emptyKey K) func(K) (uint64, uint64) {
 	case uint32:
 	case int64:
 	default:
-		log.Fatal("must provide custom KeyToHash function for type")
+		return nil, errors.New("must provide custom KeyToHash function for given type")
 	}
 
-	return KeyToHash[K]
+	return KeyToHash[K], nil
 }
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash, we
