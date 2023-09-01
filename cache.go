@@ -179,6 +179,7 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item[V], setBufSize),
+		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
@@ -202,16 +203,12 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cache.onExit(item.Value)
 	}
 
-	// The use must provide a key to hash for non primitive types.
+	// The use must provide a key to hash for non primitive and non pointer types.
 	if config.KeyToHash == nil {
 		var emptyKey K
 		cache.keyToHash = z.GetKeyToHash(emptyKey)
-	} else {
-		// This forces the user to create a function that takes the key type, and will avoid runtime errors.
-		cache.keyToHash = func(key K) (uint64, uint64) {
-			return config.KeyToHash(key)
-		}
 	}
+
 	if config.Metrics {
 		cache.collectMetrics()
 	}
