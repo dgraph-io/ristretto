@@ -1,3 +1,4 @@
+//go:build jemalloc && !allocator
 // +build jemalloc,!allocator
 
 package main

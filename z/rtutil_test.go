@@ -23,7 +23,8 @@ func BenchmarkMemHash(b *testing.B) {
 }
 
 func BenchmarkMemHashString(b *testing.B) {
-	s := "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+	s := "Lorem ipsum dolor sit amet, consectetur adipiscing elit, " +
+		"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -322,6 +323,6 @@ func BenchmarkRandGlobal(b *testing.B) {
 func BenchmarkRandAtomic(b *testing.B) {
 	var x uint32
 	benchmarkRand(b, func() func() uint32 {
-		return func() uint32 { return uint32(atomic.AddUint32(&x, 1)) }
+		return func() uint32 { return atomic.AddUint32(&x, 1) }
 	})
 }

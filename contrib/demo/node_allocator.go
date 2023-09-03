@@ -1,3 +1,4 @@
+//go:build jemalloc && allocator
 // +build jemalloc,allocator
 
 package main
@@ -10,7 +11,7 @@ import (
 
 // Defined in node.go.
 func init() {
-	alloc = z.NewAllocator(10 << 20, "demo")
+	alloc = z.NewAllocator(10<<20, "demo")
 }
 
 func newNode(val int) *node {
