@@ -267,7 +267,7 @@ func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFu
 	c.Metrics.add(load, keyHash, 1)
 	value, err := c.loader.Do(ctx, key, keyHash, func(ctx context.Context, key interface{}) (interface{}, error) {
 		// Check again if the value is present in the cache.
-		// If can deduplicate concurrent calls.
+		// So that we don't load the value twice.
 		if value, ok := c.store.Get(keyHash, conflictHash); ok {
 			return value, nil
 		}
