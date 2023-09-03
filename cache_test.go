@@ -1,6 +1,8 @@
 package ristretto
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"runtime"
@@ -682,6 +684,10 @@ func TestNilMetrics(t *testing.T) {
 		m.SetsRejected,
 		m.GetsDropped,
 		m.GetsKept,
+		m.Loads,
+		m.LoadsDeduplicated,
+		m.LoadErrors,
+		m.SetsDroppedAfterLoad,
 	} {
 		require.Equal(t, uint64(0), f())
 	}
@@ -726,6 +732,10 @@ func TestMetricsString(t *testing.T) {
 	m.add(rejectSets, 1, 1)
 	m.add(dropGets, 1, 1)
 	m.add(keepGets, 1, 1)
+	m.add(load, 1, 1)
+	m.add(loadDeduplicated, 1, 1)
+	m.add(loadError, 1, 1)
+	m.add(dropSetAfterLoad, 1, 1)
 	require.Equal(t, uint64(1), m.Hits())
 	require.Equal(t, uint64(1), m.Misses())
 	require.Equal(t, 0.5, m.Ratio())
@@ -738,6 +748,10 @@ func TestMetricsString(t *testing.T) {
 	require.Equal(t, uint64(1), m.SetsRejected())
 	require.Equal(t, uint64(1), m.GetsDropped())
 	require.Equal(t, uint64(1), m.GetsKept())
+	require.Equal(t, uint64(1), m.Loads())
+	require.Equal(t, uint64(1), m.LoadsDeduplicated())
+	require.Equal(t, uint64(1), m.LoadErrors())
+	require.Equal(t, uint64(1), m.SetsDroppedAfterLoad())
 
 	require.NotEqual(t, 0, len(m.String()))
 
@@ -1003,4 +1017,141 @@ func TestCacheWithTTL(t *testing.T) {
 			require.Nil(t, val)
 		})
 	}
+}
+
+func TestCacheGetIfPresent(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	key, conflict := z.KeyToHash(1)
+	i := Item{
+		Key:      key,
+		Conflict: conflict,
+		Value:    1,
+	}
+	c.store.Set(&i)
+
+	val, err := c.GetIfPresent(context.Background(), 1, func(ctx context.Context, key interface{}) (interface{}, error) {
+		return "foo", nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, val.(int))
+
+	val, err = c.GetIfPresent(context.Background(), 2, nil)
+	require.NoError(t, err)
+	require.Nil(t, val)
+
+	// we never called the loader
+	require.Equal(t, 0.5, c.Metrics.Ratio())
+	require.Equal(t, uint64(0), c.Metrics.Loads())
+
+	val, err = c.GetIfPresent(context.Background(), 2, func(ctx context.Context, key interface{}) (interface{}, error) {
+		return 2, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, val.(int))
+
+	key, conflict = z.KeyToHash(2)
+	val, ok := c.store.Get(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 2, val.(int))
+
+	// we called the loader and it returned no error
+	require.Equal(t, uint64(1), c.Metrics.Loads())
+	require.Equal(t, uint64(1), c.Metrics.LoadsDeduplicated())
+	require.Equal(t, uint64(0), c.Metrics.LoadErrors())
+	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
+
+	errTest := errors.New("foo")
+	val, err = c.GetIfPresent(context.Background(), 3, func(ctx context.Context, key interface{}) (interface{}, error) {
+		return nil, errTest
+	})
+	require.Equal(t, errTest, err)
+	require.Nil(t, val)
+
+	key, conflict = z.KeyToHash(3)
+	val, ok = c.store.Get(key, conflict)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// we called the loader and it returned error
+	require.Equal(t, uint64(2), c.Metrics.Loads())
+	require.Equal(t, uint64(2), c.Metrics.LoadsDeduplicated())
+	require.Equal(t, uint64(1), c.Metrics.LoadErrors())
+	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
+
+	val, err = c.GetIfPresent(context.Background(), 3, func(ctx context.Context, key interface{}) (interface{}, error) {
+		c.stop <- struct{}{}
+		for i := 0; i < setBufSize; i++ {
+			key, conflict := z.KeyToHash(3)
+			c.setBuf <- &Item{
+				flag:     itemNew,
+				Key:      key,
+				Conflict: conflict,
+				Value:    3,
+				Cost:     3,
+			}
+		}
+
+		return 3, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 3, val.(int))
+
+	key, conflict = z.KeyToHash(3)
+	val, ok = c.store.Get(key, conflict)
+	require.False(t, ok)
+	require.Nil(t, val)
+
+	// we called the loader and failed to set the item
+	require.Equal(t, uint64(3), c.Metrics.Loads())
+	require.Equal(t, uint64(3), c.Metrics.LoadsDeduplicated())
+	require.Equal(t, uint64(1), c.Metrics.LoadErrors())
+	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
+	require.Equal(t, uint64(1), c.Metrics.SetsDroppedAfterLoad())
+}
+
+func TestCacheGetIfPresentDeDuplicated(t *testing.T) {
+	c, err := NewCache(&Config{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	ch := make(chan interface{})
+	const n = 10
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			v, err := c.GetIfPresent(context.Background(), 1, func(ctx context.Context, key interface{}) (interface{}, error) {
+				return <-ch, nil
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, 1, v.(int))
+		}()
+	}
+
+	// Wait for all goroutines to be blocked on the loader.
+	time.Sleep(250 * time.Millisecond)
+
+	ch <- 1
+
+	wg.Wait()
+
+	require.Equal(t, uint64(10), c.Metrics.Loads())
+	require.Equal(t, uint64(1), c.Metrics.LoadsDeduplicated())
+	require.Equal(t, uint64(0), c.Metrics.LoadErrors())
 }

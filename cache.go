@@ -21,6 +21,7 @@ package ristretto
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -39,6 +40,9 @@ var (
 type itemCallback func(*Item)
 
 const itemSize = int64(unsafe.Sizeof(storeItem{}))
+
+// LoadFunc is used to load a value for a key that is not already in the cache.
+type LoadFunc func(ctx context.Context, key interface{}) (interface{}, error)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -78,6 +82,9 @@ type Cache struct {
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items.
 	Metrics *Metrics
+
+	// loader is used to load a value for a key that is not already in the cache.
+	loader loader
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -177,6 +184,7 @@ func NewCache(config *Config) (*Cache, error) {
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(bucketDurationSecs) * time.Second / 2),
+		loader:             newLoader(),
 	}
 	cache.onExit = func(val interface{}) {
 		if config.OnExit != nil && val != nil {
@@ -236,6 +244,52 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 		c.Metrics.add(miss, keyHash, 1)
 	}
 	return value, ok
+}
+
+// GetIfPresent returns the value (if any) and an error.
+// If error is nil, the value is found or loaded successfully.
+// The value can be nil and the error can be nil at the same time.
+// GetIfPresent will not return expired items.
+// Loaded value will be added to the cache if it is not present.
+// Cost of the loaded value will be calculated using the Cost function.
+func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFunc) (interface{}, error) {
+	value, ok := c.Get(key)
+	if ok || loadFn == nil {
+		return value, nil
+	}
+
+	keyHash, conflictHash := c.keyToHash(key)
+
+	c.Metrics.add(load, keyHash, 1)
+	value, err := c.loader.Do(ctx, key, keyHash, func(ctx context.Context, key interface{}) (interface{}, error) {
+		// Check again if the value is present in the cache.
+		// If can deduplicate concurrent calls.
+		if value, ok := c.store.Get(keyHash, conflictHash); ok {
+			return value, nil
+		}
+		c.Metrics.add(loadDeduplicated, keyHash, 1)
+
+		value, err := loadFn(ctx, key)
+		if err != nil {
+			c.Metrics.add(loadError, keyHash, 1)
+			return nil, err
+		}
+
+		ok := c.Set(key, value, 0)
+		if !ok {
+			c.Metrics.add(dropSetAfterLoad, keyHash, 1)
+			return value, nil
+		}
+
+		c.Wait()
+
+		return value, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return value, nil
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,
@@ -524,6 +578,13 @@ const (
 	// floor.
 	dropGets
 	keepGets
+	// The following 2 keep track of load.
+	load
+	loadDeduplicated
+	// The following keep track of how many load calls returned an error.
+	loadError
+	// The following keep track of how many sets after load were dropped.
+	dropSetAfterLoad
 	// This should be the final enum. Other enums should be set before this.
 	doNotUse
 )
@@ -552,6 +613,14 @@ func stringFor(t metricType) string {
 		return "gets-dropped"
 	case keepGets:
 		return "gets-kept"
+	case load:
+		return "load"
+	case loadDeduplicated:
+		return "load-deduplicated"
+	case loadError:
+		return "load-error"
+	case dropSetAfterLoad:
+		return "drop-set-after-load"
 	default:
 		return "unidentified"
 	}
@@ -657,6 +726,26 @@ func (p *Metrics) GetsDropped() uint64 {
 // GetsKept is the number of Get counter increments that are kept.
 func (p *Metrics) GetsKept() uint64 {
 	return p.get(keepGets)
+}
+
+// Loads is the number of load calls.
+func (p *Metrics) Loads() uint64 {
+	return p.get(load)
+}
+
+// LoadsDeduplicated is the number of load calls that are deduplicated.
+func (p *Metrics) LoadsDeduplicated() uint64 {
+	return p.get(loadDeduplicated)
+}
+
+// LoadErrors is the number of load calls that returned an error.
+func (p *Metrics) LoadErrors() uint64 {
+	return p.get(loadError)
+}
+
+// SetsDroppedAfterLoad is the number of Set calls that are dropped after a load.
+func (p *Metrics) SetsDroppedAfterLoad() uint64 {
+	return p.get(dropSetAfterLoad)
 }
 
 // Ratio is the number of Hits over all accesses (Hits + Misses). This is the
