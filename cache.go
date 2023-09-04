@@ -202,15 +202,8 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		}
 		cache.onExit(item.Value)
 	}
-
-	// The use must provide a key to hash for non primitive and non pointer types.
-	if config.KeyToHash == nil {
-		var emptyKey K
-		keyToHash, err := z.GetKeyToHash(emptyKey)
-		if err != nil {
-			return nil, err
-		}
-		cache.keyToHash = keyToHash
+	if cache.keyToHash == nil {
+		cache.keyToHash = z.KeyToHash[K]
 	}
 
 	if config.Metrics {

@@ -18,35 +18,10 @@ package z
 
 import (
 	"context"
-	"errors"
-	"log"
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
 )
-
-// GetKeyToHash will get the default KeyToHash function for the primitive types.
-func GetKeyToHash[K any](emptyKey K) (func(K) (uint64, uint64), error) {
-	keyAsAny := any(emptyKey)
-
-	if keyAsAny == nil {
-		log.Fatal("must provide custom KeyToHash function for pointer type")
-	}
-	switch keyAsAny.(type) {
-	case uint64:
-	case string:
-	case []byte:
-	case byte:
-	case int:
-	case int32:
-	case uint32:
-	case int64:
-	default:
-		return nil, errors.New("must provide custom KeyToHash function for given type")
-	}
-
-	return KeyToHash[K], nil
-}
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash,
 // we already know that appending bytes isn't reliable for generating a
@@ -55,9 +30,12 @@ func GetKeyToHash[K any](emptyKey K) (func(K) (uint64, uint64), error) {
 // function, it's not possible to use it to generate [2]uint64 or
 // anything resembling a 128bit hash, even though that's exactly what
 // we need in this situation.
-
-func defaultKeyToHash(key any) (uint64, uint64) {
-	switch k := key.(type) {
+func KeyToHash[K any](key K) (uint64, uint64) {
+	keyAsAny := any(key)
+	if keyAsAny == nil {
+		return 0, 0
+	}
+	switch k := keyAsAny.(type) {
 	case uint64:
 		return k, 0
 	case string:
@@ -77,10 +55,6 @@ func defaultKeyToHash(key any) (uint64, uint64) {
 	default:
 		panic("Key type not supported")
 	}
-}
-
-func KeyToHash[K any](key K) (uint64, uint64) {
-	return defaultKeyToHash(key)
 }
 
 var (
