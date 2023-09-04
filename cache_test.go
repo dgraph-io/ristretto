@@ -1176,4 +1176,11 @@ func TestCacheGetIfPresentDeDuplicated(t *testing.T) {
 			t.Fatal("timeout")
 		}
 	}
+
+	// we called the loader deduplicated
+	require.Equal(t, uint64(2), c.Metrics.Loads())
+	require.Equal(t, uint64(1), c.Metrics.LoadsDeduplicated())
+	require.Equal(t, uint64(0), c.Metrics.LoadErrors())
+	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
+	require.Equal(t, uint64(0), c.Metrics.SetsDroppedAfterLoad())
 }
