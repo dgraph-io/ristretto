@@ -46,7 +46,7 @@ type store[V any] interface {
 	Set(*Item[V])
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, V)
-	// Update attempxsts to update the key with a new value and returns true if
+	// Update attempts to update the key with a new value and returns true if
 	// successful.
 	Update(*Item[V]) (V, bool)
 	// Cleanup removes items that have an expired TTL.
