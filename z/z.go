@@ -48,15 +48,13 @@ func GetKeyToHash[K any](emptyKey K) (func(K) (uint64, uint64), error) {
 	return KeyToHash[K], nil
 }
 
-// TODO: Figure out a way to re-use memhash for the second uint64 hash, we
-//
-//	already know that appending bytes isn't reliable for generating a
-//	second hash (see Ristretto PR #88).
-//
-//	We also know that while the Go runtime has a runtime memhash128
-//	function, it's not possible to use it to generate [2]uint64 or
-//	anything resembling a 128bit hash, even though that's exactly what
-//	we need in this situation.
+// TODO: Figure out a way to re-use memhash for the second uint64 hash,
+// we already know that appending bytes isn't reliable for generating a
+// second hash (see Ristretto PR #88).
+// We also know that while the Go runtime has a runtime memhash128
+// function, it's not possible to use it to generate [2]uint64 or
+// anything resembling a 128bit hash, even though that's exactly what
+// we need in this situation.
 
 func defaultKeyToHash(key any) (uint64, uint64) {
 	switch k := key.(type) {
