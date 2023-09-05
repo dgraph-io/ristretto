@@ -34,8 +34,8 @@ func newShardedCaller() *shardedCaller {
 	return sm
 }
 
-func (m *shardedCaller) Do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
-	return m.shards[keyHash%numShards].do(ctx, key, keyHash, fn)
+func (c *shardedCaller) Do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
+	return c.shards[keyHash%numShards].do(ctx, key, keyHash, fn)
 }
 
 // lockedCaller calls a load function with a key, ensuring that only one
@@ -51,25 +51,25 @@ func newLockedCaller() *lockedCaller {
 	}
 }
 
-func (m *lockedCaller) do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
-	m.mu.Lock()
-	if c, ok := m.m[keyHash]; ok {
-		m.mu.Unlock()
+func (lc *lockedCaller) do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
+	lc.mu.Lock()
+	if c, ok := lc.m[keyHash]; ok {
+		lc.mu.Unlock()
 		c.wg.Wait()
 		return c.val, c.err
 	}
 
 	c := &call{}
 	c.wg.Add(1)
-	m.m[keyHash] = c
-	m.mu.Unlock()
+	lc.m[keyHash] = c
+	lc.mu.Unlock()
 
 	c.val, c.err = fn(ctx, key)
 	c.wg.Done()
 
-	m.mu.Lock()
-	delete(m.m, keyHash)
-	m.mu.Unlock()
+	lc.mu.Lock()
+	delete(lc.m, keyHash)
+	lc.mu.Unlock()
 
 	return c.val, c.err
 }
