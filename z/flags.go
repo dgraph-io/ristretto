@@ -162,7 +162,7 @@ func (sf *SuperFlag) mergeAndCheckDefaultImpl(flag string) (*SuperFlag, error) {
 		}
 	}
 	if numKeys != 0 {
-		return nil, fmt.Errorf("superflag: found invalid options in flag: %s.\nvalid options: %v", sf, flag)
+		return nil, fmt.Errorf("superflag: found invalid options: %s.\nvalid options: %v", sf, flag)
 	}
 	for k, v := range src {
 		if _, ok := sf.m[k]; !ok {

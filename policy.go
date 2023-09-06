@@ -31,7 +31,6 @@ const (
 )
 
 // policy is the interface encapsulating eviction/admission behavior.
-//
 // TODO: remove this interface and just rename defaultPolicy to policy, as we
 // are probably only going to use/implement/maintain one policy.
 type policy[V any] interface {
@@ -346,7 +345,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 		p.metrics.add(keyUpdate, key, 1)
 		if prev > cost {
 			diff := prev - cost
-			p.metrics.add(costAdd, key, ^uint64(diff-1))
+			p.metrics.add(costAdd, key, ^(uint64(diff) - 1))
 		} else if cost > prev {
 			diff := cost - prev
 			p.metrics.add(costAdd, key, uint64(diff))

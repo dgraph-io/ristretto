@@ -137,7 +137,7 @@ func TestAllocateConcurrent(t *testing.T) {
 	mu := new(sync.Mutex)
 	for i := 0; i < M; i++ {
 		wg.Add(1)
-		go func() { //nolint:staticcheck,govet
+		go func() {
 			defer wg.Done()
 			var bufs []uintptr
 			for j := 0; j < N; j++ {
@@ -149,8 +149,7 @@ func TestAllocateConcurrent(t *testing.T) {
 			mu.Lock()
 			for _, b := range bufs {
 				if _, ok := m[b]; ok {
-					//nolint:staticcheck,govet
-					t.Fatalf("Did not expect to see the same ptr")
+					panic("did not expect to see the same ptr")
 				}
 				m[b] = struct{}{}
 			}

@@ -11,7 +11,7 @@ body:
   - type: textarea
     attributes:
       label: What version of Ristretto is the target?
-      description: Is it the latest version? 
+      description: Is it the latest version?
       placeholder: |
         Type here.
     validations:
