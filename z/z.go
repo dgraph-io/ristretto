@@ -30,11 +30,12 @@ import (
 // function, it's not possible to use it to generate [2]uint64 or
 // anything resembling a 128bit hash, even though that's exactly what
 // we need in this situation.
-func KeyToHash(key interface{}) (uint64, uint64) {
-	if key == nil {
+func KeyToHash[K any](key K) (uint64, uint64) {
+	keyAsAny := any(key)
+	if keyAsAny == nil {
 		return 0, 0
 	}
-	switch k := key.(type) {
+	switch k := keyAsAny.(type) {
 	case uint64:
 		return k, 0
 	case string:
