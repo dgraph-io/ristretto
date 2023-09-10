@@ -151,7 +151,7 @@ func viaLL() {
 func main() {
 	check()
 	fill = make([]byte, maxMB<<20)
-	rand.Read(fill)
+	_, _ = rand.Read(fill)
 
 	c := make(chan os.Signal, 10)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
