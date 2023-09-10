@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dgraph-io/ristretto/z"
 )
 
 var wait = time.Millisecond * 10
@@ -1117,6 +1118,18 @@ func TestCacheGetIfPresent(t *testing.T) {
 	require.Equal(t, uint64(1), c.Metrics.SetsDroppedAfterLoad())
 }
 
+type serializedLoader struct {
+	mu    sync.Mutex
+	latch chan struct{}
+}
+
+func (l *serializedLoader) Do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
+	<-l.latch
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return fn(ctx, key)
+}
+
 func TestCacheGetIfPresentDeDuplicated(t *testing.T) {
 	c, err := NewCache(&Config{
 		NumCounters:        100,
@@ -1126,32 +1139,48 @@ func TestCacheGetIfPresentDeDuplicated(t *testing.T) {
 		Metrics:            true,
 	})
 	require.NoError(t, err)
+	sLoader := &serializedLoader{
+		latch: make(chan struct{}),
+	}
+	c.loader = sLoader
 
-	ch := make(chan interface{})
-	const n = 10
-	var wg sync.WaitGroup
+	const n = 2
+	resultCh := make(chan interface{}, n)
+	// first goroutine should block second goroutine.
 	for i := 0; i < n; i++ {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-
 			v, err := c.GetIfPresent(context.Background(), 1, func(ctx context.Context, key interface{}) (interface{}, error) {
-				return <-ch, nil
+				return 1, nil
 			})
 
-			require.NoError(t, err)
-			require.Equal(t, 1, v.(int))
+			if err != nil {
+				resultCh <- err
+				return
+			}
+
+			resultCh <- v
 		}()
 	}
 
-	// Wait for all goroutines to be blocked on the loader.
-	time.Sleep(250 * time.Millisecond)
+	// wait for the goroutines to start
+	time.Sleep(200 * time.Millisecond)
 
-	ch <- 1
+	// release the latch
+	close(sLoader.latch)
 
-	wg.Wait()
+	for i := 0; i < n; i++ {
+		select {
+		case v := <-resultCh:
+			require.Equal(t, 1, v.(int))
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout")
+		}
+	}
 
-	require.Equal(t, uint64(10), c.Metrics.Loads())
+	// we called the loader deduplicated
+	require.Equal(t, uint64(2), c.Metrics.Loads())
 	require.Equal(t, uint64(1), c.Metrics.LoadsDeduplicated())
 	require.Equal(t, uint64(0), c.Metrics.LoadErrors())
+	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
+	require.Equal(t, uint64(0), c.Metrics.SetsDroppedAfterLoad())
 }
