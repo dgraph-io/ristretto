@@ -45,7 +45,7 @@ func zeroValue[T any]() T {
 }
 
 // LoadFunc is used to load a value for a key that is not already in the cache.
-type LoadFunc func(ctx context.Context, key interface{}) (interface{}, error)
+type LoadFunc[K any, V any] func(ctx context.Context, key K) (V, error)
 
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
@@ -87,7 +87,7 @@ type Cache[K any, V any] struct {
 	Metrics *Metrics
 
 	// loader is used to load a value for a key that is not already in the cache.
-	loader loader
+	loader loader[K, V]
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -191,7 +191,7 @@ func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
-		loader:             newLoader(),
+		loader:             newLoader[K, V](),
 	}
 	cache.onExit = func(val V) {
 		if config.OnExit != nil {
@@ -261,7 +261,7 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 // GetIfPresent will not return expired items.
 // Loaded value will be added to the cache if it is not present.
 // Cost of the loaded value will be calculated using the Cost function.
-func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFunc) (interface{}, error) {
+func (c *Cache[K, V]) GetIfPresent(ctx context.Context, key K, loadFn LoadFunc[K, V]) (V, error) {
 	value, ok := c.Get(key)
 	if ok || loadFn == nil {
 		return value, nil
@@ -270,10 +270,10 @@ func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFu
 	keyHash, conflictHash := c.keyToHash(key)
 
 	c.Metrics.add(load, keyHash, 1)
-	value, err := c.loader.Do(ctx, key, keyHash, func(ctx context.Context, key interface{}) (interface{}, error) {
+	value, err := c.loader.Do(ctx, key, keyHash, func(ctx context.Context, key K) (V, error) {
 		// Check again if the value is present in the cache.
 		// So that we don't load the value twice.
-		if value, ok := c.store.Get(keyHash, conflictHash); ok {
+		if value, ok := c.storedItems.Get(keyHash, conflictHash); ok {
 			return value, nil
 		}
 		c.Metrics.add(loadDeduplicated, keyHash, 1)
@@ -281,7 +281,7 @@ func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFu
 		value, err := loadFn(ctx, key)
 		if err != nil {
 			c.Metrics.add(loadError, keyHash, 1)
-			return nil, err
+			return zeroValue[V](), err
 		}
 
 		ok := c.Set(key, value, 0)
@@ -295,7 +295,7 @@ func (c *Cache) GetIfPresent(ctx context.Context, key interface{}, loadFn LoadFu
 		return value, nil
 	})
 	if err != nil {
-		return nil, err
+		return zeroValue[V](), err
 	}
 
 	return value, nil

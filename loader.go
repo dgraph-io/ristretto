@@ -7,51 +7,51 @@ import (
 
 // loader is the interface fulfilled by all loader implementations in
 // this file.
-type loader interface {
+type loader[K any, V any] interface {
 	// Do runs and returns the results of the given function, making
 	// sure that only one execution is running for a given key at a
 	// time. If a duplicate comes in, the duplicate caller waits for the
 	// original to complete and receives the same results.
-	Do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error)
+	Do(ctx context.Context, key K, keyHash uint64, fn LoadFunc[K, V]) (V, error)
 }
 
 // newLoader returns the default loader implementation.
-func newLoader() loader {
-	return newShardedCaller()
+func newLoader[K any, V any]() loader[K, V] {
+	return newShardedCaller[K, V]()
 }
 
-type shardedCaller struct {
-	shards []*lockedCaller
+type shardedCaller[K any, V any] struct {
+	shards []*lockedCaller[K, V]
 }
 
-func newShardedCaller() *shardedCaller {
-	sm := &shardedCaller{
-		shards: make([]*lockedCaller, int(numShards)),
+func newShardedCaller[K any, V any]() *shardedCaller[K, V] {
+	sm := &shardedCaller[K, V]{
+		shards: make([]*lockedCaller[K, V], int(numShards)),
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedCaller()
+		sm.shards[i] = newLockedCaller[K, V]()
 	}
 	return sm
 }
 
-func (c *shardedCaller) Do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
+func (c *shardedCaller[K, V]) Do(ctx context.Context, key K, keyHash uint64, fn LoadFunc[K, V]) (V, error) {
 	return c.shards[keyHash%numShards].do(ctx, key, keyHash, fn)
 }
 
 // lockedCaller calls a load function with a key, ensuring that only one
 // call is in-flight for a given key at a time.
-type lockedCaller struct {
+type lockedCaller[K any, V any] struct {
 	mu sync.Mutex
-	m  map[uint64]*call
+	m  map[uint64]*call[V]
 }
 
-func newLockedCaller() *lockedCaller {
-	return &lockedCaller{
-		m: make(map[uint64]*call),
+func newLockedCaller[K any, V any]() *lockedCaller[K, V] {
+	return &lockedCaller[K, V]{
+		m: make(map[uint64]*call[V]),
 	}
 }
 
-func (lc *lockedCaller) do(ctx context.Context, key interface{}, keyHash uint64, fn LoadFunc) (interface{}, error) {
+func (lc *lockedCaller[K, V]) do(ctx context.Context, key K, keyHash uint64, fn LoadFunc[K, V]) (V, error) {
 	lc.mu.Lock()
 	if c, ok := lc.m[keyHash]; ok {
 		lc.mu.Unlock()
@@ -59,7 +59,7 @@ func (lc *lockedCaller) do(ctx context.Context, key interface{}, keyHash uint64,
 		return c.val, c.err
 	}
 
-	c := &call{}
+	c := &call[V]{}
 	c.wg.Add(1)
 	lc.m[keyHash] = c
 	lc.mu.Unlock()
@@ -75,8 +75,8 @@ func (lc *lockedCaller) do(ctx context.Context, key interface{}, keyHash uint64,
 }
 
 // call is a running or completed Do call
-type call struct {
+type call[V any] struct {
 	wg  sync.WaitGroup
-	val interface{}
+	val V
 	err error
 }

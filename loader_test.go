@@ -11,9 +11,9 @@ import (
 )
 
 func TestLockedCallerDo(t *testing.T) {
-	caller := newLockedCaller()
+	caller := newLockedCaller[string, string]()
 
-	v, err := caller.do(context.Background(), "key", 0, func(ctx context.Context, key interface{}) (interface{}, error) {
+	v, err := caller.do(context.Background(), "key", 0, func(ctx context.Context, key string) (string, error) {
 		return "foo", nil
 	})
 
@@ -22,23 +22,23 @@ func TestLockedCallerDo(t *testing.T) {
 }
 
 func TestLockedCallerDoError(t *testing.T) {
-	caller := newLockedCaller()
+	caller := newLockedCaller[string, string]()
 
 	errTest := errors.New("test")
-	v, err := caller.do(context.Background(), "key", 0, func(ctx context.Context, key interface{}) (interface{}, error) {
-		return nil, errTest
+	v, err := caller.do(context.Background(), "key", 0, func(ctx context.Context, key string) (string, error) {
+		return "", errTest
 	})
 
 	require.Equal(t, errTest, err)
-	require.Nil(t, v)
+	require.Zero(t, v)
 }
 
 func TestLockedCallerDoDeDuplicated(t *testing.T) {
-	caller := newLockedCaller()
+	caller := newLockedCaller[string, string]()
 
-	ch := make(chan interface{})
+	ch := make(chan string)
 	callCount := int32(0)
-	fn := func(ctx context.Context, key interface{}) (interface{}, error) {
+	fn := func(ctx context.Context, key string) (string, error) {
 		atomic.AddInt32(&callCount, 1)
 		return <-ch, nil
 	}
@@ -67,9 +67,9 @@ func TestLockedCallerDoDeDuplicated(t *testing.T) {
 }
 
 func TestShardedCallerDo(t *testing.T) {
-	caller := newShardedCaller()
+	caller := newShardedCaller[string, string]()
 
-	v, err := caller.Do(context.Background(), "key", 0, func(ctx context.Context, key interface{}) (interface{}, error) {
+	v, err := caller.Do(context.Background(), "key", 0, func(ctx context.Context, key string) (string, error) {
 		return "foo", nil
 	})
 
