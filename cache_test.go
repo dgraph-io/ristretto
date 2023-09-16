@@ -1183,4 +1183,5 @@ func TestCacheGetIfPresentDeDuplicated(t *testing.T) {
 	require.Equal(t, uint64(0), c.Metrics.LoadErrors())
 	require.Equal(t, uint64(1), c.Metrics.KeysAdded())
 	require.Equal(t, uint64(0), c.Metrics.SetsDroppedAfterLoad())
+	require.Equal(t, uint64(1), c.Metrics.Hits())
 }

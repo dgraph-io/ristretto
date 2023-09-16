@@ -274,6 +274,7 @@ func (c *Cache[K, V]) GetIfPresent(ctx context.Context, key K, loadFn LoadFunc[K
 		// Check again if the value is present in the cache.
 		// So that we don't load the value twice.
 		if value, ok := c.storedItems.Get(keyHash, conflictHash); ok {
+			c.Metrics.add(hit, keyHash, 1)
 			return value, nil
 		}
 		c.Metrics.add(loadDeduplicated, keyHash, 1)
