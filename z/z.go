@@ -23,6 +23,10 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+type Key interface {
+	uint64 | string | []byte | byte | int | int32 | uint32 | int64
+}
+
 // TODO: Figure out a way to re-use memhash for the second uint64 hash,
 // we already know that appending bytes isn't reliable for generating a
 // second hash (see Ristretto PR #88).
@@ -30,11 +34,8 @@ import (
 // function, it's not possible to use it to generate [2]uint64 or
 // anything resembling a 128bit hash, even though that's exactly what
 // we need in this situation.
-func KeyToHash[K any](key K) (uint64, uint64) {
+func KeyToHash[K Key](key K) (uint64, uint64) {
 	keyAsAny := any(key)
-	if keyAsAny == nil {
-		return 0, 0
-	}
 	switch k := keyAsAny.(type) {
 	case uint64:
 		return k, 0
