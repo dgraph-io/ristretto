@@ -43,10 +43,12 @@ func zeroValue[T any]() T {
 	return zero
 }
 
+type Key = z.Key
+
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
-type Cache[K any, V any] struct {
+type Cache[K Key, V any] struct {
 	// storedItems is the central concurrent hashmap where key-value items are stored.
 	storedItems store[V]
 	// cachePolicy determines what gets let in to the cache and what gets kicked out.
@@ -84,7 +86,7 @@ type Cache[K any, V any] struct {
 }
 
 // Config is passed to NewCache for creating new Cache instances.
-type Config[K any, V any] struct {
+type Config[K Key, V any] struct {
 	// NumCounters determines the number of counters (keys) to keep that hold
 	// access frequency information. It's generally a good idea to have more
 	// counters than the max cache capacity, as this will improve eviction
@@ -162,7 +164,7 @@ type Item[V any] struct {
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
-func NewCache[K any, V any](config *Config[K, V]) (*Cache[K, V], error) {
+func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	switch {
 	case config.NumCounters == 0:
 		return nil, errors.New("NumCounters can't be zero")
