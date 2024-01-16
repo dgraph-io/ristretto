@@ -42,6 +42,8 @@ type cmSketch struct {
 
 const (
 	// cmDepth is the number of counter copies to store (think of it as rows).
+	// This value hasn't changed in years. The functions below using `fourIndexes`
+	// use that fact to unwind the loops.
 	cmDepth = 4
 )
 
@@ -56,29 +58,107 @@ func newCmSketch(numCounters int64) *cmSketch {
 	// Cryptographic precision not needed
 	source := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
 	for i := 0; i < cmDepth; i++ {
-		sketch.seed[i] = source.Uint64()
+		sketch.seed[i] = spread(source.Uint64())
 		sketch.rows[i] = newCmRow(numCounters)
 	}
 	return sketch
 }
 
-// Increment increments the count(ers) for the specified key.
+func circRightShift(x uint64, shift uint) uint64 {
+	return (x << (64 - shift)) | (x >> shift)
+}
+func circLeftShift(x uint64, shift uint) uint64 {
+	return (x << shift) | (x >> (64 - shift))
+}
+
+//  Applies a supplemental hash function to a given hashCode, which defends against poor quality
+//  hash functions.
+func spread(x uint64) uint64 {
+	x = (circRightShift(x, 16) ^ x) * 0x45d9f3b
+	x = (circRightShift(x, 16) ^ x) * 0x45d9f3b
+	return circRightShift(x, 16) ^ x
+}
+
+func leftAndRight(x uint64) (l, r uint64) {
+	l = x<<32 | (x & 0x00000000ffffffff)
+	r = x>>32 | (x & 0xffffffff00000000)
+	return
+}
+
+// fourIndexes returns the four indexes to use against the four rows for the given key.
+// Because many 64 keys come in with low entropy in some portions of the 64 bits, some work is done
+// to spread any entropy at all across all four index results, with the goal of minimizing the
+// number of times similar keys results in similar row indexes. No tests against zero are needed so
+// there are no branch predictions to stall the instruction pipeline.
+func (s *cmSketch) fourIndexes(x uint64) (a, b, c, d uint64) {
+	x = spread(x)
+	l, r := leftAndRight(x)
+
+	l = circLeftShift(l, 3)
+	r = circRightShift(r, 5)
+
+	l = circLeftShift(l, 8)
+	a = (l ^ r)
+	l = circLeftShift(l, 8)
+	b = (l ^ (r >> 8))
+	l = circLeftShift(l, 8)
+	c = (l ^ (r >> 16))
+	l = circLeftShift(l, 8)
+	d = (l ^ (r >> 24))
+
+	// Interestingly, the seeds don't do anything important if the incoming hash doesn't cause
+	// different parts of them to be used. The seed is meant to further swivel the counter index
+	// per row, but if a given row's seed is used each time, unaltered for a row, it serves no
+	// purpose. An improvement below uses the seeds based on the hash low bits.
+	// a ^= s.seed[0]
+	// b ^= s.seed[1]
+	// c ^= s.seed[2]
+	// d ^= s.seed[3]
+
+	// Use the hash's lowest 6 bits for an int in range [0,63] that is then used to shift right
+	// each seed. The low bits of the hash are used to determine rotation amount of each row's seed
+	// before the seed is applied to the four index computers. These computers are actually
+	// swivelers, causing the index that is created via s.mask to be swiveled.
+	a ^= circRightShift(s.seed[0], uint(x&63))
+	b ^= circRightShift(s.seed[1], uint(x&63))
+	c ^= circRightShift(s.seed[2], uint(x&63))
+	d ^= circRightShift(s.seed[3], uint(x&63))
+	return
+}
+
+// Increment increments the counters for the specified key.
 func (s *cmSketch) Increment(hashed uint64) {
-	for i := range s.rows {
-		s.rows[i].increment((hashed ^ s.seed[i]) & s.mask)
-	}
+	a, b, c, d := s.fourIndexes(hashed)
+	m := s.mask
+
+	s.rows[0].increment(a & m)
+	s.rows[1].increment(b & m)
+	s.rows[2].increment(c & m)
+	s.rows[3].increment(d & m)
 }
 
 // Estimate returns the value of the specified key.
+// It does this by calculating the index for each row that `Increment` would have used for the
+// specified key and returning the lowest of the four counters.
 func (s *cmSketch) Estimate(hashed uint64) int64 {
-	min := byte(255)
-	for i := range s.rows {
-		val := s.rows[i].get((hashed ^ s.seed[i]) & s.mask)
-		if val < min {
-			min = val
-		}
+	a, b, c, d := s.fourIndexes(hashed)
+	m := s.mask
+
+	// find the smallest counter value from all the rows
+	v0 := s.rows[0].get(a & m)
+	v1 := s.rows[1].get(b & m)
+	v2 := s.rows[2].get(c & m)
+	v3 := s.rows[3].get(d & m)
+	if v1 < v0 {
+		v0 = v1
 	}
-	return int64(min)
+	if v3 < v2 {
+		v2 = v3
+	}
+	if v2 < v0 {
+		return int64(v2)
+	}
+	return int64(v0)
 }
 
 // Reset halves all counter values.
