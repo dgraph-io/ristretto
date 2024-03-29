@@ -56,8 +56,8 @@ func init() {
 	allocs = make(map[uint64]*Allocator)
 
 	// Set up a unique Ref per process.
-	rand.Seed(time.Now().UnixNano())
-	allocRef = uint64(rand.Int63n(1<<16)) << 48 //nolint:gosec // cryptographic precision not needed
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	allocRef = uint64(rand.Int63n(1<<16)) << 48
 
 	calculatedLog2 = make([]int, 1025)
 	for i := 1; i <= 1024; i++ {
