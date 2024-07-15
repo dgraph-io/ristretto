@@ -72,7 +72,7 @@ type Cache[K Key, V any] struct {
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
 	// indicates whether cache is closed.
-	isClosed bool
+	isClosed atomic.Bool
 	// cost calculates cost from a value.
 	cost func(value V) int64
 	// ignoreInternalCost dictates whether to ignore the cost of internally storing
@@ -221,7 +221,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 // Wait blocks until all buffered writes have been applied. This ensures a call to Set()
 // will be visible to future calls to Get().
 func (c *Cache[K, V]) Wait() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	wg := &sync.WaitGroup{}
@@ -234,7 +234,7 @@ func (c *Cache[K, V]) Wait() {
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time. Get will not return expired items.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return zeroValue[V](), false
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -267,7 +267,7 @@ func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
 func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) bool {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return false
 	}
 
@@ -316,7 +316,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache[K, V]) Del(key K) {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
@@ -363,7 +363,7 @@ func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
 
 // Close stops all goroutines and closes all channels.
 func (c *Cache[K, V]) Close() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	c.Clear()
@@ -374,14 +374,14 @@ func (c *Cache[K, V]) Close() {
 	close(c.setBuf)
 	c.cachePolicy.Close()
 	c.cleanupTicker.Stop()
-	c.isClosed = true
+	c.isClosed.Store(true)
 }
 
 // Clear empties the hashmap and zeroes all cachePolicy counters. Note that this is
 // not an atomic operation (but that shouldn't be a problem as it's assumed that
 // Set/Get calls won't be occurring until after this).
 func (c *Cache[K, V]) Clear() {
-	if c == nil || c.isClosed {
+	if c == nil || c.isClosed.Load() {
 		return
 	}
 	// Block until processItems goroutine is returned.
