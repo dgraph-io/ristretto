@@ -111,6 +111,7 @@ func (sm *shardedMap[V]) Clear(onEvict func(item *Item[V])) {
 	for i := uint64(0); i < numShards; i++ {
 		sm.shards[i].Clear(onEvict)
 	}
+	sm.expiryMap.clear()
 }
 
 type lockedMap[V any] struct {
