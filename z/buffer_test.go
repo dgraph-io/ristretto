@@ -24,13 +24,11 @@ import (
 	"math/rand"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestBuffer(t *testing.T) {
-	rand.Seed(time.Now().Unix())
 	const capacity = 512
 	buffers := newTestBuffers(t, capacity)
 
@@ -61,7 +59,6 @@ func TestBuffer(t *testing.T) {
 }
 
 func TestBufferWrite(t *testing.T) {
-	rand.Seed(time.Now().Unix())
 	const capacity = 32
 	buffers := newTestBuffers(t, capacity)
 
