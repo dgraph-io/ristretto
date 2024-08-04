@@ -1,6 +1,7 @@
-//go:build (arm64 || arm) && linux
+//go:build (arm64 || arm) && linux && !js
 // +build arm64 arm
 // +build linux
+// +build !js
 
 /*
  * Copyright 2020 Dgraph Labs, Inc. and Contributors
