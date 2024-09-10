@@ -21,5 +21,8 @@ updates:
       day: wednesday
       time: "16:00"
     groups:
-      github-actions:
-        applies-to: version-updates
+      actions:
+        update-types:
+          - "patch"
+          - "minor"
+          - "major"
