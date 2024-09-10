@@ -20,3 +20,6 @@ updates:
       interval: "weekly"
       day: wednesday
       time: "16:00"
+    groups:
+      github-actions:
+        applies-to: version-updates
