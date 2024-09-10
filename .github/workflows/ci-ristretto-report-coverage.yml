@@ -18,7 +18,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
       - name: 'Download coverage profile'
-        uses: actions/github-script@v3.1.0
+        uses: actions/github-script@v7.0.1
         with:
           script: |
             var artifacts = await github.actions.listWorkflowRunArtifacts({
