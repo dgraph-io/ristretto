@@ -50,7 +50,7 @@ type store[V any] interface {
 	// successful.
 	Update(*Item[V]) (V, bool)
 	// Cleanup removes items that have an expired TTL.
-	Cleanup(policy policy[V], onEvict func(item *Item[V]))
+	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
 	// Clear clears all contents of the store.
 	Clear(onEvict func(item *Item[V]))
 }
@@ -103,7 +103,7 @@ func (sm *shardedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
-func (sm *shardedMap[V]) Cleanup(policy policy[V], onEvict func(item *Item[V])) {
+func (sm *shardedMap[V]) Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V])) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
