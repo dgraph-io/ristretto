@@ -199,24 +199,20 @@ func TestSampledLFURoom(t *testing.T) {
 	require.Equal(t, int64(6), e.roomLeft(4))
 }
 
-func TestSampledLFUSample(t *testing.T) {
+func TestSampledLFUGet(t *testing.T) {
 	e := newSampledLFU(16)
 	e.add(4, 4)
 	e.add(5, 5)
-	sample := e.fillSample([]*policyPair{
-		{1, 1},
-		{2, 2},
-		{3, 3},
-	})
-	k := sample[len(sample)-1].key
-	require.Equal(t, 5, len(sample))
-	require.NotEqual(t, 1, k)
-	require.NotEqual(t, 2, k)
-	require.NotEqual(t, 3, k)
-	require.Equal(t, len(sample), len(e.fillSample(sample)))
-	e.del(5)
-	sample = e.fillSample(sample[:len(sample)-2])
-	require.Equal(t, 4, len(sample))
+	samples := e.fetchTopUpSamples(3)
+	require.Equal(t, 2, len(samples))
+	samples = e.fetchTopUpSamples(4)
+	require.Equal(t, 1, len(samples))
+	e.add(6, 6)
+	samples = e.fetchTopUpSamples(2)
+	require.Equal(t, 3, len(samples))
+	require.NotEqual(t, samples[1].key, samples[2].key)
+	require.NotEqual(t, samples[1].key, samples[0].key)
+	require.NotEqual(t, samples[0].key, samples[2].key)
 }
 
 func TestTinyLFUIncrement(t *testing.T) {
