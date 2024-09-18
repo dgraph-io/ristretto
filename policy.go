@@ -17,7 +17,6 @@
 package ristretto
 
 import (
-	"math"
 	"sync"
 	"sync/atomic"
 
@@ -94,6 +93,11 @@ func (p *defaultPolicy[V]) CollectMetrics(metrics *Metrics) {
 type policyPair struct {
 	key  uint64
 	cost int64
+	hits int64
+}
+
+func (p policyPair) Less(other *policyPair) bool {
+	return p.hits <= other.hits
 }
 
 func (p *defaultPolicy[V]) processItems() {
@@ -160,45 +164,33 @@ func (p *defaultPolicy[V]) Add(key uint64, cost int64) ([]*Item[V], bool) {
 	// incHits is the hit count for the incoming item.
 	incHits := p.admit.Estimate(key)
 	// sample is the eviction candidate pool to be filled via random sampling.
-	// TODO: perhaps we should use a min heap here. Right now our time
-	// complexity is N for finding the min. Min heap should bring it down to
-	// O(lg N).
-	sample := make([]*policyPair, 0, lfuSample)
+	sample := NewMinHeap[policyPair]()
 	// As items are evicted they will be appended to victims.
 	victims := make([]*Item[V], 0)
 
 	// Delete victims until there's enough space or a minKey is found that has
 	// more hits than incoming item.
 	for ; room < 0; room = p.evict.roomLeft(cost) {
-		// Fill up empty slots in sample.
-		sample = p.evict.fillSample(sample)
-
-		// Find minimally used item in sample.
-		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
-		for i, pair := range sample {
-			// Look up hit count for sample key.
-			if hits := p.admit.Estimate(pair.key); hits < minHits {
-				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
-			}
+		// Get samples for empty slots.
+		slots := p.evict.fetchTopUpSamples(sample.Size())
+		for _, slot := range slots {
+			slot.hits = p.admit.Estimate(slot.key)
+			sample.Insert(slot)
 		}
 
 		// If the incoming item isn't worth keeping in the policy, reject.
-		if incHits < minHits {
+		if peek, _ := sample.Peek(); incHits < peek.hits {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
 
+		peek, _ := sample.Extract()
 		// Delete the victim from metadata.
-		p.evict.del(minKey)
-
-		// Delete the victim from sample.
-		sample[minId] = sample[len(sample)-1]
-		sample = sample[:len(sample)-1]
-		// Store victim in evicted victims slice.
+		p.evict.del(peek.key)
 		victims = append(victims, &Item[V]{
-			Key:      minKey,
+			Key:      peek.key,
 			Conflict: 0,
-			Cost:     minCost,
+			Cost:     peek.cost,
 		})
 	}
 
@@ -309,17 +301,24 @@ func (p *sampledLFU) roomLeft(cost int64) int64 {
 	return p.getMaxCost() - (p.used + cost)
 }
 
-func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
-	if len(in) >= lfuSample {
-		return in
+/**
+* Fetches samples for empty slots when the upper limit quantity is lfuSample.
+ */
+func (p *sampledLFU) fetchTopUpSamples(size int) []*policyPair {
+	if size >= lfuSample {
+		return []*policyPair{}
 	}
+
+	gap := lfuSample - size
+	samples := make([]*policyPair, 0)
+
 	for key, cost := range p.keyCosts {
-		in = append(in, &policyPair{key, cost})
-		if len(in) >= lfuSample {
-			return in
+		samples = append(samples, &policyPair{key: key, cost: cost})
+		if len(samples) >= gap {
+			return samples
 		}
 	}
-	return in
+	return samples
 }
 
 func (p *sampledLFU) del(key uint64) {
