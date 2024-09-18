@@ -40,6 +40,8 @@ type store[V any] interface {
 	Get(uint64, uint64) (V, bool)
 	// Expiration returns the expiration time for this key.
 	Expiration(uint64) time.Time
+	// UpdateExpiration resets the expiration of an item to a new value
+	UpdateExpiration(uint64, time.Time) bool
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
 	// item object.
@@ -84,6 +86,10 @@ func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
 
 func (sm *shardedMap[V]) Expiration(key uint64) time.Time {
 	return sm.shards[key%numShards].Expiration(key)
+}
+
+func (sm *shardedMap[V]) UpdateExpiration(key uint64, newExpiration time.Time) bool {
+	return sm.shards[key%numShards].UpdateExpiration(key, newExpiration)
 }
 
 func (sm *shardedMap[V]) Set(i *Item[V]) {
@@ -149,6 +155,23 @@ func (m *lockedMap[V]) Expiration(key uint64) time.Time {
 	m.RLock()
 	defer m.RUnlock()
 	return m.data[key].expiration
+}
+
+func (m *lockedMap[V]) UpdateExpiration(key uint64, newExpiration time.Time) bool {
+	m.RLock()
+	defer m.RUnlock()
+
+	item, ok := m.data[key]
+	if !ok {
+		return false
+	}
+
+	item.expiration = newExpiration
+	m.data[key] = item
+
+	m.em.update(item.conflict, item.conflict, item.expiration, newExpiration)
+
+	return true
 }
 
 func (m *lockedMap[V]) Set(i *Item[V]) {

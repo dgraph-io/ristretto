@@ -361,6 +361,28 @@ func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
 	return time.Until(expiration), true
 }
 
+// ResetTTL updates the TTL for the specified key and returns a bool that is true if the
+// item was found and had an expiration set previously.
+func (c *Cache[K, V]) ResetTTL(key K, ttl time.Duration) bool {
+	if c == nil {
+		return false
+	}
+
+	keyHash, conflictHash := c.keyToHash(key)
+	if _, ok := c.storedItems.Get(keyHash, conflictHash); !ok {
+		// not found
+		return false
+	}
+
+	expiration := c.storedItems.Expiration(keyHash)
+	if expiration.IsZero() {
+		// found but no expiration
+		return false
+	}
+
+	return c.storedItems.UpdateExpiration(keyHash, time.Now().Add(ttl))
+}
+
 // Close stops all goroutines and closes all channels.
 func (c *Cache[K, V]) Close() {
 	if c == nil || c.isClosed.Load() {
