@@ -121,7 +121,7 @@ func (m *expirationMap[_]) del(key uint64, expiration time.Time) {
 // cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
-func (m *expirationMap[V]) cleanup(store store[V], policy policy[V], onEvict func(item *Item[V])) {
+func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onEvict func(item *Item[V])) {
 	if m == nil {
 		return
 	}
