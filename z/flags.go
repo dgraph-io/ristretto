@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"math"
 
 	"github.com/pkg/errors"
 )
@@ -186,6 +187,9 @@ func (sf *SuperFlag) GetDuration(opt string) time.Duration {
 		val = strings.Replace(val, "d", "", 1)
 		days, err := strconv.ParseUint(val, 0, 64)
 		if err != nil {
+			return time.Duration(0)
+		}
+		if days > math.MaxInt64 {
 			return time.Duration(0)
 		}
 		return time.Hour * 24 * time.Duration(days)
