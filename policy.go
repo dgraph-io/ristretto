@@ -29,38 +29,7 @@ const (
 	lfuSample = 5
 )
 
-// policy is the interface encapsulating eviction/admission behavior.
-// TODO: remove this interface and just rename defaultPolicy to policy, as we
-// are probably only going to use/implement/maintain one policy.
-type policy[V any] interface {
-	ringConsumer
-	// Add attempts to Add the key-cost pair to the Policy. It returns a slice
-	// of evicted keys and a bool denoting whether or not the key-cost pair
-	// was added. If it returns true, the key should be stored in cache.
-	Add(uint64, int64) ([]*Item[V], bool)
-	// Has returns true if the key exists in the Policy.
-	Has(uint64) bool
-	// Del deletes the key from the Policy.
-	Del(uint64)
-	// Cap returns the available capacity.
-	Cap() int64
-	// Close stops all goroutines and closes all channels.
-	Close()
-	// Update updates the cost value for the key.
-	Update(uint64, int64)
-	// Cost returns the cost value of a key or -1 if missing.
-	Cost(uint64) int64
-	// Optionally, set stats object to track how policy is performing.
-	CollectMetrics(*Metrics)
-	// Clear zeroes out all counters and clears hashmaps.
-	Clear()
-	// MaxCost returns the current max cost of the cache policy.
-	MaxCost() int64
-	// UpdateMaxCost updates the max cost of the cache policy.
-	UpdateMaxCost(int64)
-}
-
-func newPolicy[V any](numCounters, maxCost int64) policy[V] {
+func newPolicy[V any](numCounters, maxCost int64) *defaultPolicy[V] {
 	return newDefaultPolicy[V](numCounters, maxCost)
 }
 
