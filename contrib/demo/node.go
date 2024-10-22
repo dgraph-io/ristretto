@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/dgraph-io/ristretto/z"
 	"github.com/dustin/go-humanize"
+
+	"github.com/dgraph-io/ristretto/v2/z"
 )
 
 type node struct {

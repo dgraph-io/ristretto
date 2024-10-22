@@ -6,7 +6,7 @@ package main
 import (
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/dgraph-io/ristretto/v2/z"
 )
 
 func newNode(val int) *node {
