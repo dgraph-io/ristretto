@@ -1,4 +1,4 @@
-module github.com/dgraph-io/ristretto
+module github.com/dgraph-io/ristretto/v2
 
 go 1.23
 
@@ -16,10 +16,3 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// we retract v1.0.0 because v0.2.0 is not backwards compatible with v1.0.0.
-// The users should upgrade to v2.0.0 instead once released.
-retract v1.0.0
-
-// need to retract the next release as well
-retract v1.0.1
