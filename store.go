@@ -53,6 +53,7 @@ type store[V any] interface {
 	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
 	// Clear clears all contents of the store.
 	Clear(onEvict func(item *Item[V]))
+	Len() int
 }
 
 // newStore returns the default store implementation.
@@ -76,6 +77,16 @@ func newShardedMap[V any]() *shardedMap[V] {
 		sm.shards[i] = newLockedMap[V](sm.expiryMap)
 	}
 	return sm
+}
+
+func (sm *shardedMap[V]) Len() int {
+	res := 0
+	for _, i := range sm.shards {
+		i.Lock()
+		res += len(i.data)
+		i.Unlock()
+	}
+	return res
 }
 
 func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {

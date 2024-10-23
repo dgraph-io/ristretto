@@ -17,6 +17,7 @@
 package ristretto
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -118,6 +119,28 @@ func (m *expirationMap[_]) del(key uint64, expiration time.Time) {
 	delete(m.buckets[bucketNum], key)
 }
 
+func (m *expirationMap[V]) SkullCleanup(del func(uint64), policy *defaultPolicy[V]) {
+	m.Lock()
+	now := time.Now()
+	currentBucketNum := cleanupBucket(now)
+	// Clean up all buckets up to and including currentBucketNum, starting from
+	// (but not including) the last one that was cleaned up
+	var buckets []bucket
+	for bucketNum := m.lastCleanedBucketNum + 1; bucketNum <= currentBucketNum; bucketNum++ {
+		buckets = append(buckets, m.buckets[bucketNum])
+		delete(m.buckets, bucketNum)
+	}
+	m.lastCleanedBucketNum = currentBucketNum
+	m.Unlock()
+
+	for _, keys := range buckets {
+		for key, _ := range keys {
+			policy.Del(key)
+			del(key)
+		}
+	}
+}
+
 // cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
@@ -139,13 +162,17 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 	m.lastCleanedBucketNum = currentBucketNum
 	m.Unlock()
 
+	fmt.Println("BEFORE CLEANUP", store.Len(), len(buckets))
+	numKeys := 0
 	for _, keys := range buckets {
 		for key, conflict := range keys {
 			expr := store.Expiration(key)
 			// Sanity check. Verify that the store agrees that this key is expired.
 			if expr.After(now) {
+				fmt.Println("here")
 				continue
 			}
+			numKeys += 1
 
 			cost := policy.Cost(key)
 			policy.Del(key)
@@ -161,6 +188,7 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 			}
 		}
 	}
+	fmt.Println("AFTER CLEANUP", store.Len(), numKeys)
 }
 
 // clear clears the expirationMap, the caller is responsible for properly

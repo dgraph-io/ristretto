@@ -45,6 +45,49 @@ func zeroValue[T any]() T {
 
 type Key = z.Key
 
+type Skull[K Key, V any] struct {
+	// cachePolicy determines what gets let in to the cache and what gets kicked out.
+	CachePolicy *defaultPolicy[V]
+
+	// getBuf is a custom ring buffer implementation that gets pushed to when
+	// keys are read.
+	GetBuf *ringBuffer
+
+	// setBuf is a buffer allowing us to batch/drop Sets during times of high
+	// contention.
+	SetBuf chan *Item[V]
+
+	// cleanupTicker is used to periodically check for entries whose TTL has passed.
+	CleanupTicker *time.Ticker
+	ExpiryMap     *expirationMap[V]
+}
+
+func GetSkull[K Key, V any]() *Skull[K, V] {
+	cacheSize := float64(10000000)
+	policy := newPolicy[V](int64(cacheSize*0.1), int64(cacheSize*0.9))
+	cache := &Skull[K, V]{
+		CachePolicy:   policy,
+		GetBuf:        newRingBuffer(policy, 64),
+		SetBuf:        make(chan *Item[V], setBufSize),
+		CleanupTicker: time.NewTicker(time.Duration(5) * time.Second / 2),
+		ExpiryMap:     newExpirationMap[V](),
+	}
+	return cache
+}
+
+func (s *Skull[K, V]) Get(keyHash uint64) {
+	s.GetBuf.Push(keyHash)
+}
+
+func (s *Skull[K, V]) Del(keyHash uint64) {
+	s.CachePolicy.Del(keyHash)
+}
+
+func (s *Skull[K, V]) Set(keyHash uint64, cost int64) ([]*Item[V], bool) {
+	victims, added := s.CachePolicy.Add(keyHash, cost)
+	return victims, added
+}
+
 // Cache is a thread-safe implementation of a hashmap with a TinyLFU admission
 // policy and a Sampled LFU eviction policy. You can use the same Cache instance
 // from as many goroutines as you want.
@@ -481,6 +524,9 @@ func (c *Cache[K, V]) processItems() {
 			switch i.flag {
 			case itemNew:
 				victims, added := c.cachePolicy.Add(i.Key, i.Cost)
+				if len(victims) > 0 {
+					fmt.Println(victims, added)
+				}
 				if added {
 					c.storedItems.Set(i)
 					c.Metrics.add(keyAdd, i.Key, 1)
