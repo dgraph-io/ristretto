@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.0.0.
 
+## [v1.0.0]
+
+**This release is deprecated**
+
+## [v1.0.1]
+
+**This release is deprecated**
+
+## [v0.2.0] - 2024-10-06
+
+### Added
+
+- [fix: support compilation to wasip1 by @achille-roussel](https://github.com/dgraph-io/ristretto/pull/344)
+- [add config for cleanup ticker duration by @singhvikash11](https://github.com/dgraph-io/ristretto/pull/342)
+
+### Fixed
+- [docs(readme): Use new Wait method by @angadn](https://github.com/dgraph-io/ristretto/pull/327)
+- [docs: format example on readme by @rfyiamcool](https://github.com/dgraph-io/ristretto/pull/339)
+- [Fix flakes in TestDropUpdates by @evanj](https://github.com/dgraph-io/ristretto/pull/334)
+- [docs(Cache): document Wait, clarify Get by @evanj](https://github.com/dgraph-io/ristretto/pull/333)
+- [chore: fix typo error by @proost](https://github.com/dgraph-io/ristretto/pull/341)
+- [remove glog dependency by @jhawk28](https://github.com/dgraph-io/ristretto/pull/350)
+- [fix(OnEvict): Set missing Expiration field on evicted items by @0x1ee7](https://github.com/dgraph-io/ristretto/pull/345)
+- [uint32 -> uint64 in slice methods by @mocurin](https://github.com/dgraph-io/ristretto/pull/323)
+- [fix: cleanupTicker not being stopped by @IlyaFloppy](https://github.com/dgraph-io/ristretto/pull/343)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v0.1.1...v0.2.0
+
+
 ## [0.1.1] - 2022-10-12
 
 [0.1.1]: https://github.com/dgraph-io/ristretto/compare/v0.1.0..v0.1.1
@@ -20,6 +49,7 @@ incorporates CI steps in our repository.
 - [fix(build): update x/sys dependency](https://github.com/dgraph-io/ristretto/pull/308)
 - [fix(z): Address inconsistent mremap return arguments with arm64](https://github.com/dgraph-io/ristretto/pull/309)
 - [fix(z): runtime error: index out of range for !amd64 env #287](https://github.com/dgraph-io/ristretto/pull/307)
+
 
 ## [0.1.0] - 2021-06-03
 
@@ -145,6 +175,7 @@ improve performance and reduce memory requirements.
 - Add histogram.Mean() method (#188)
 - Introduce Calloc: Manual Memory Management via jemalloc (#186)
 
+
 ## [0.0.3] - 2020-07-06
 
 [0.0.3]: https://github.com/dgraph-io/ristretto/compare/v0.0.2..v0.0.3
@@ -160,6 +191,7 @@ improve performance and reduce memory requirements.
 - Fix race condition in Cache.Clear ([#133][])
 - Improve handling of updated items ([#168][])
 - Fix droppedSets count while updating the item ([#171][])
+
 
 ## [0.0.2] - 2020-02-24
 
@@ -181,6 +213,7 @@ improve performance and reduce memory requirements.
 [#119]: https://github.com/dgraph-io/ristretto/issues/119
 [#122]: https://github.com/dgraph-io/ristretto/issues/122
 [#130]: https://github.com/dgraph-io/ristretto/issues/130
+
 
 ## 0.0.1
 
