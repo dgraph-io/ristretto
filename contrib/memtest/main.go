@@ -34,7 +34,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 
-	"github.com/dgraph-io/ristretto/z"
+	"github.com/dgraph-io/ristretto/v2/z"
 )
 
 type S struct {

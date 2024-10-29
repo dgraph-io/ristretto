@@ -26,9 +26,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/z/simd"
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dgraph-io/ristretto/v2/z/simd"
 )
 
 var tmp int
