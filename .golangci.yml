@@ -12,6 +12,7 @@ linters-settings:
   gosec:
     excludes:
       - G404  # it is okay to use math/rand at times.
+      - G115  # presents false positives for conversion
 
 linters:
   disable-all: true
