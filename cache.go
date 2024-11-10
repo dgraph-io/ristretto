@@ -52,25 +52,14 @@ type Skull[K Key, V any] struct {
 	// getBuf is a custom ring buffer implementation that gets pushed to when
 	// keys are read.
 	GetBuf *ringBuffer
-
-	// setBuf is a buffer allowing us to batch/drop Sets during times of high
-	// contention.
-	SetBuf chan *Item[V]
-
-	// cleanupTicker is used to periodically check for entries whose TTL has passed.
-	CleanupTicker *time.Ticker
-	ExpiryMap     *expirationMap[V]
 }
 
 func GetSkull[K Key, V any]() *Skull[K, V] {
 	cacheSize := float64(10000000)
 	policy := newPolicy[V](int64(cacheSize*0.1), int64(cacheSize*0.9))
 	cache := &Skull[K, V]{
-		CachePolicy:   policy,
-		GetBuf:        newRingBuffer(policy, 64),
-		SetBuf:        make(chan *Item[V], setBufSize),
-		CleanupTicker: time.NewTicker(time.Duration(5) * time.Second / 2),
-		ExpiryMap:     newExpirationMap[V](),
+		CachePolicy: policy,
+		GetBuf:      newRingBuffer(policy, 64),
 	}
 	return cache
 }
