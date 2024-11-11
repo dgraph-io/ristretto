@@ -302,6 +302,12 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 // To dynamically evaluate the items cost using the Config.Coster function, set
 // the cost parameter to 0 and Coster will be ran when needed in order to find
 // the items true cost.
+//
+// Set writes the value of type V as is. If type V is a pointer type, It is ok
+// to update the memory pointed to by the pointer. Updating the pointer itself
+// will not be reflected in the cache. Be careful when using slice types as the
+// value type V. Calling `append` may update the underlined array pointer which
+// will not be reflected in the cache.
 func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 	return c.SetWithTTL(key, value, cost, 0*time.Second)
 }
@@ -310,6 +316,8 @@ func (c *Cache[K, V]) Set(key K, value V, cost int64) bool {
 // after the specified TTL (time to live) has passed. A zero value means the value never
 // expires, which is identical to calling Set. A negative value is a no-op and the value
 // is discarded.
+//
+// See Set for more information.
 func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) bool {
 	if c == nil || c.isClosed.Load() {
 		return false
