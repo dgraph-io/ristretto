@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.0.0.
 
+
+## [v2.0.0] - 2024-11-11
+
+### Breaking
+
+- [Support generic API](https://github.com/dgraph-io/ristretto/pull/321)
+- [Restrict generic key type to only those supported](https://github.com/dgraph-io/ristretto/pull/371)
+
+### Added
+
+- [Fix build with GOOS=js GOARCH=wasm](https://github.com/dgraph-io/ristretto/pull/375)
+
+### Fixed
+
+- [Disable mmap size check on arm arch as well as arm64](https://github.com/dgraph-io/ristretto/pull/366)
+- [Upgrade xxhash dependency to v2.2.0](https://github.com/dgraph-io/ristretto/pull/367)
+- [fix: race in close](https://github.com/dgraph-io/ristretto/pull/384)
+- [Fix some memory leaks in TTL implementation](https://github.com/dgraph-io/ristretto/pull/358)
+- [stop using rand.Seed()](https://github.com/dgraph-io/ristretto/pull/385)
+- [chore(deps): bump the actions group with 4 updates](https://github.com/dgraph-io/ristretto/pull/392)
+- [chore(deps): bump the minor group with 3 updates](https://github.com/dgraph-io/ristretto/pull/391)
+- [chore(deps): bump golang.org/x/sys from 0.25.0 to 0.26.0 in the minor group](https://github.com/dgraph-io/ristretto/pull/402)
+- [Remove the policy interface](https://github.com/dgraph-io/ristretto/pull/393)
+- [Perform validation to ensure that the three parameters, NumCounters, …](https://github.com/dgraph-io/ristretto/pull/410)
+- [set min version to go 1.21 in go.mod](https://github.com/dgraph-io/ristretto/pull/411)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v0.2.0...v2.0.0
+
+
 ## [v1.0.0]
 
 **This release is deprecated**
