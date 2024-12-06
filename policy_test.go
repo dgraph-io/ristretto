@@ -31,6 +31,7 @@ func TestPolicyProcessItems(t *testing.T) {
 	p.Unlock()
 
 	p.stop <- struct{}{}
+	<-p.done
 	p.itemsCh <- []uint64{3, 3, 3}
 	time.Sleep(wait)
 	p.Lock()

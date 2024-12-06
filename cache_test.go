@@ -385,6 +385,7 @@ func TestCacheSet(t *testing.T) {
 	require.Equal(t, 2, val)
 
 	c.stop <- struct{}{}
+	<-c.done
 	for i := 0; i < setBufSize; i++ {
 		key, conflict := z.KeyToHash(1)
 		c.setBuf <- &Item[int]{
@@ -399,6 +400,7 @@ func TestCacheSet(t *testing.T) {
 	require.Equal(t, uint64(1), c.Metrics.SetsDropped())
 	close(c.setBuf)
 	close(c.stop)
+	close(c.done)
 
 	c = nil
 	require.False(t, c.Set(1, 1, 1))
