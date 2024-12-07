@@ -147,6 +147,9 @@ type Config[K Key, V any] struct {
 	// as well as on rejection of the value.
 	OnExit func(val V)
 
+	// ShouldUpdate is called when a value already exists in cache and is being updated.
+	ShouldUpdate func(cur, prev V) bool
+
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -221,7 +224,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
-		storedItems:        newStore[V](),
+		storedItems:        newStore[V](config.ShouldUpdate),
 		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item[V], setBufSize),
