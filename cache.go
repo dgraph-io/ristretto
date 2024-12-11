@@ -72,6 +72,7 @@ type Cache[K Key, V any] struct {
 	keyToHash func(K) (uint64, uint64)
 	// stop is used to stop the processItems goroutine.
 	stop chan struct{}
+	done chan struct{}
 	// indicates whether cache is closed.
 	isClosed atomic.Bool
 	// cost calculates cost from a value.
@@ -227,6 +228,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		setBuf:             make(chan *Item[V], setBufSize),
 		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
+		done:               make(chan struct{}),
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
@@ -422,7 +424,9 @@ func (c *Cache[K, V]) Close() {
 
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
+	<-c.done
 	close(c.stop)
+	close(c.done)
 	close(c.setBuf)
 	c.cachePolicy.Close()
 	c.cleanupTicker.Stop()
@@ -438,6 +442,7 @@ func (c *Cache[K, V]) Clear() {
 	}
 	// Block until processItems goroutine is returned.
 	c.stop <- struct{}{}
+	<-c.done
 
 	// Clear out the setBuf channel.
 loop:
@@ -556,6 +561,7 @@ func (c *Cache[K, V]) processItems() {
 		case <-c.cleanupTicker.C:
 			c.storedItems.Cleanup(c.cachePolicy, onEvict)
 		case <-c.stop:
+			c.done <- struct{}{}
 			return
 		}
 	}
