@@ -236,5 +236,4 @@ func (m *lockedMap[V]) Clear(onEvict func(item *Item[V])) {
 		}
 	}
 	m.data = make(map[uint64]storeItem[V])
-	m.Unlock()
 }
