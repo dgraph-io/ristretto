@@ -488,6 +488,64 @@ func (c *Cache[K, V]) UpdateMaxCost(maxCost int64) {
 	c.cachePolicy.UpdateMaxCost(maxCost)
 }
 
+func (c *Cache[K, V]) AsyncSet(key K, value V, cost int64) bool {
+	if c == nil || c.isClosed.Load() {
+		return false
+	}
+
+	var expiration time.Time
+	keyHash, conflictHash := c.keyToHash(key)
+	i := &Item[V]{
+		flag:       itemNew,
+		Key:        keyHash,
+		Conflict:   conflictHash,
+		Value:      value,
+		Cost:       cost,
+		Expiration: expiration,
+	}
+	c.insertItem(i, nil, nil)
+	return true
+}
+
+func (c *Cache[K, V]) insertItem(i *Item[V], trackAdmission func(uint64), onEvict func(*Item[V])) {
+	// Calculate item cost value if new or update.
+	if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
+		i.Cost = c.cost(i.Value)
+	}
+	if !c.ignoreInternalCost {
+		// Add the cost of internally storing the object.
+		i.Cost += itemSize
+	}
+
+	switch i.flag {
+	case itemNew:
+		victims, added := c.cachePolicy.Add(i.Key, i.Cost)
+		if added {
+			c.storedItems.Set(i)
+			c.Metrics.add(keyAdd, i.Key, 1)
+			if trackAdmission != nil {
+				trackAdmission(i.Key)
+			}
+		} else {
+			c.onReject(i)
+		}
+		for _, victim := range victims {
+			victim.Conflict, victim.Value = c.storedItems.Del(victim.Key, 0)
+			if onEvict != nil {
+				onEvict(victim)
+			}
+		}
+
+	case itemUpdate:
+		c.cachePolicy.Update(i.Key, i.Cost)
+
+	case itemDelete:
+		c.cachePolicy.Del(i.Key) // Deals with metrics updates.
+		_, val := c.storedItems.Del(i.Key, i.Conflict)
+		c.onExit(val)
+	}
+}
+
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache[K, V]) processItems() {
 	startTs := make(map[uint64]time.Time)
@@ -524,38 +582,7 @@ func (c *Cache[K, V]) processItems() {
 				i.wg.Done()
 				continue
 			}
-			// Calculate item cost value if new or update.
-			if i.Cost == 0 && c.cost != nil && i.flag != itemDelete {
-				i.Cost = c.cost(i.Value)
-			}
-			if !c.ignoreInternalCost {
-				// Add the cost of internally storing the object.
-				i.Cost += itemSize
-			}
-
-			switch i.flag {
-			case itemNew:
-				victims, added := c.cachePolicy.Add(i.Key, i.Cost)
-				if added {
-					c.storedItems.Set(i)
-					c.Metrics.add(keyAdd, i.Key, 1)
-					trackAdmission(i.Key)
-				} else {
-					c.onReject(i)
-				}
-				for _, victim := range victims {
-					victim.Conflict, victim.Value = c.storedItems.Del(victim.Key, 0)
-					onEvict(victim)
-				}
-
-			case itemUpdate:
-				c.cachePolicy.Update(i.Key, i.Cost)
-
-			case itemDelete:
-				c.cachePolicy.Del(i.Key) // Deals with metrics updates.
-				_, val := c.storedItems.Del(i.Key, i.Conflict)
-				c.onExit(val)
-			}
+			c.insertItem(i, trackAdmission, onEvict)
 		case <-c.cleanupTicker.C:
 			c.storedItems.Cleanup(c.cachePolicy, onEvict)
 		case <-c.stop:
