@@ -84,6 +84,10 @@ type Cache[K Key, V any] struct {
 	// Metrics contains a running log of important statistics like hits, misses,
 	// and dropped items.
 	Metrics *Metrics
+	// Rate limiter for asynchronus set.
+	rateLimiter int64
+	// Max buffer items for asynchronus set.
+	maxItems int64
 }
 
 // Config is passed to NewCache for creating new Cache instances.
@@ -233,6 +237,8 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		cost:               config.Cost,
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
+		maxItems:           config.BufferItems,
+		rateLimiter:        0,
 	}
 	cache.onExit = func(val V) {
 		if config.OnExit != nil {
@@ -489,6 +495,13 @@ func (c *Cache[K, V]) UpdateMaxCost(maxCost int64) {
 }
 
 func (c *Cache[K, V]) AsyncSet(key K, value V, cost int64) bool {
+	if atomic.AddInt64(&c.rateLimiter, 1) > c.maxItems {
+		atomic.AddInt64(&c.rateLimiter, -1) // Decrement on failure
+		return false
+	}
+
+	defer atomic.AddInt64(&c.rateLimiter, -1)
+
 	if c == nil || c.isClosed.Load() {
 		return false
 	}
