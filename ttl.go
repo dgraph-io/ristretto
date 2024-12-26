@@ -133,7 +133,10 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 	// (but not including) the last one that was cleaned up
 	var buckets []bucket
 	for bucketNum := m.lastCleanedBucketNum + 1; bucketNum <= currentBucketNum; bucketNum++ {
-		buckets = append(buckets, m.buckets[bucketNum])
+		// With an empty bucket, we don't need to add it to the Clean list
+		if b := m.buckets[bucketNum]; b != nil {
+			buckets = append(buckets, b)
+		}
 		delete(m.buckets, bucketNum)
 	}
 	m.lastCleanedBucketNum = currentBucketNum
