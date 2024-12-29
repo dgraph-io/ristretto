@@ -1,7 +1,6 @@
 package ristretto
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -39,7 +38,8 @@ func TestExpirationMapCleanup(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Cleanup the expiration map
-	em.cleanup(s, p, evictedItemsOnEvictFunc)
+	cleanedBucketsCount := em.cleanup(s, p, evictedItemsOnEvictFunc)
+	require.Equal(t, 1, cleanedBucketsCount, "cleanedBucketsCount should be 1 after first cleanup")
 
 	// Check that the first item was evicted
 	require.Equal(t, 1, len(evictedItems), "evictedItems should have 1 item")
@@ -55,7 +55,8 @@ func TestExpirationMapCleanup(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Cleanup the expiration map
-	em.cleanup(s, p, evictedItemsOnEvictFunc)
+	cleanedBucketsCount = em.cleanup(s, p, evictedItemsOnEvictFunc)
+	require.Equal(t, 1, cleanedBucketsCount, "cleanedBucketsCount should be 1 after second cleanup")
 
 	// Check that the second item was evicted
 	require.Equal(t, 2, len(evictedItems), "evictedItems should have 2 items")
@@ -67,20 +68,10 @@ func TestExpirationMapCleanup(t *testing.T) {
 		// Break lastCleanedBucketNum, this can happen if the system time is changed.
 		em.lastCleanedBucketNum = storageBucket(now.AddDate(-1, 0, 0))
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
-
-		done := make(chan struct{})
-		go func() {
-			em.cleanup(s, p, evictedItemsOnEvictFunc)
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			// cleanup completed!
-		case <-ctx.Done():
-			require.Fail(t, "cleanup method hangs / there may be a memory leak!")
-		}
+		cleanedBucketsCount = em.cleanup(s, p, evictedItemsOnEvictFunc)
+		require.Equal(t,
+			0, cleanedBucketsCount,
+			"cleanedBucketsCount should be 0 after cleanup with lastCleanedBucketNum change",
+		)
 	})
 }
