@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+type updateFn[V any] func(cur, prev V) bool
+
 // TODO: Do we need this to be a separate struct from Item?
 type storeItem[V any] struct {
 	key        uint64
@@ -56,24 +58,31 @@ type store[V any] interface {
 }
 
 // newStore returns the default store implementation.
-func newStore[V any]() store[V] {
-	return newShardedMap[V]()
+func newStore[V any](f updateFn[V]) store[V] {
+	return newShardedMap[V](f)
 }
 
 const numShards uint64 = 256
 
 type shardedMap[V any] struct {
-	shards    []*lockedMap[V]
-	expiryMap *expirationMap[V]
+	shards       []*lockedMap[V]
+	expiryMap    *expirationMap[V]
+	shouldUpdate updateFn[V]
 }
 
-func newShardedMap[V any]() *shardedMap[V] {
+func newShardedMap[V any](f updateFn[V]) *shardedMap[V] {
+	if f == nil {
+		f = func(cur, prev V) bool {
+			return true
+		}
+	}
 	sm := &shardedMap[V]{
-		shards:    make([]*lockedMap[V], int(numShards)),
-		expiryMap: newExpirationMap[V](),
+		shards:       make([]*lockedMap[V], int(numShards)),
+		expiryMap:    newExpirationMap[V](),
+		shouldUpdate: f,
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap[V](sm.expiryMap)
+		sm.shards[i] = newLockedMap[V](sm.expiryMap, f)
 	}
 	return sm
 }
@@ -116,14 +125,16 @@ func (sm *shardedMap[V]) Clear(onEvict func(item *Item[V])) {
 
 type lockedMap[V any] struct {
 	sync.RWMutex
-	data map[uint64]storeItem[V]
-	em   *expirationMap[V]
+	data         map[uint64]storeItem[V]
+	em           *expirationMap[V]
+	shouldUpdate updateFn[V]
 }
 
-func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
+func newLockedMap[V any](em *expirationMap[V], f updateFn[V]) *lockedMap[V] {
 	return &lockedMap[V]{
-		data: make(map[uint64]storeItem[V]),
-		em:   em,
+		data:         make(map[uint64]storeItem[V]),
+		em:           em,
+		shouldUpdate: f,
 	}
 }
 
@@ -165,6 +176,9 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		// The item existed already. We need to check the conflict key and reject the
 		// update if they do not match. Only after that the expiration map is updated.
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
+			return
+		}
+		if !m.shouldUpdate(i.Value, item.value) {
 			return
 		}
 		m.em.update(i.Key, i.Conflict, item.expiration, i.Expiration)
@@ -210,6 +224,9 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		return zeroValue[V](), false
+	}
+	if !m.shouldUpdate(newItem.Value, item.value) {
+		return item.value, false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)

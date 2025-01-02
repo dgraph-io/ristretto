@@ -9,7 +9,7 @@ import (
 )
 
 func TestStoreSetGet(t *testing.T) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	i := Item[int]{
 		Key:      key,
@@ -40,7 +40,7 @@ func TestStoreSetGet(t *testing.T) {
 }
 
 func TestStoreDel(t *testing.T) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	i := Item[int]{
 		Key:      key,
@@ -57,7 +57,7 @@ func TestStoreDel(t *testing.T) {
 }
 
 func TestStoreClear(t *testing.T) {
-	s := newStore[uint64]()
+	s := newStore[uint64](nil)
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
 		it := Item[uint64]{
@@ -77,7 +77,7 @@ func TestStoreClear(t *testing.T) {
 }
 
 func TestStoreUpdate(t *testing.T) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	i := Item[int]{
 		Key:      key,
@@ -119,7 +119,7 @@ func TestStoreUpdate(t *testing.T) {
 }
 
 func TestStoreCollision(t *testing.T) {
-	s := newShardedMap[int]()
+	s := newShardedMap[int](nil)
 	s.shards[1].Lock()
 	s.shards[1].data[1] = storeItem[int]{
 		key:      1,
@@ -154,7 +154,7 @@ func TestStoreCollision(t *testing.T) {
 }
 
 func TestStoreExpiration(t *testing.T) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	expiration := time.Now().Add(time.Second)
 	i := Item[int]{
@@ -184,7 +184,7 @@ func TestStoreExpiration(t *testing.T) {
 }
 
 func BenchmarkStoreGet(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	i := Item[int]{
 		Key:      key,
@@ -201,7 +201,7 @@ func BenchmarkStoreGet(b *testing.B) {
 }
 
 func BenchmarkStoreSet(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
@@ -217,7 +217,7 @@ func BenchmarkStoreSet(b *testing.B) {
 }
 
 func BenchmarkStoreUpdate(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int](nil)
 	key, conflict := z.KeyToHash(1)
 	i := Item[int]{
 		Key:      key,
