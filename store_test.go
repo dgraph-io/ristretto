@@ -76,6 +76,29 @@ func TestStoreClear(t *testing.T) {
 	}
 }
 
+func TestShouldUpdate(t *testing.T) {
+	// Create a should update function where the value only increases.
+	s := newStore[int]()
+	s.SetShouldUpdateFn(func(cur, prev int) bool {
+		return cur > prev
+	})
+
+	key, conflict := z.KeyToHash(1)
+	i := Item[int]{
+		Key:      key,
+		Conflict: conflict,
+		Value:    2,
+	}
+	s.Set(&i)
+	i.Value = 1
+	_, ok := s.Update(&i)
+	require.False(t, ok)
+
+	i.Value = 3
+	_, ok = s.Update(&i)
+	require.True(t, ok)
+}
+
 func TestStoreUpdate(t *testing.T) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)
