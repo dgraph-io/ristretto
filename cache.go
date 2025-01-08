@@ -224,7 +224,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
-		storedItems:        newStore[V](config.ShouldUpdate),
+		storedItems:        newStore[V](),
 		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
 		setBuf:             make(chan *Item[V], setBufSize),
@@ -234,6 +234,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
 	}
+	cache.storedItems.setShouldUpdateFn(config.ShouldUpdate)
 	cache.onExit = func(val V) {
 		if config.OnExit != nil {
 			config.OnExit(val)

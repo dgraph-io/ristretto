@@ -70,11 +70,8 @@ type shardedMap[V any] struct {
 	shouldUpdate updateFn[V]
 }
 
-func newShardedMap[V any](f updateFn[V]) *shardedMap[V] {
+func newShardedMap[V any]() *shardedMap[V] {
 	if f == nil {
-		f = func(cur, prev V) bool {
-			return true
-		}
 	}
 	sm := &shardedMap[V]{
 		shards:       make([]*lockedMap[V], int(numShards)),
@@ -82,9 +79,15 @@ func newShardedMap[V any](f updateFn[V]) *shardedMap[V] {
 		shouldUpdate: f,
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap[V](sm.expiryMap, f)
+		sm.shards[i] = newLockedMap[V](sm.expiryMap)
 	}
 	return sm
+}
+
+func (m *shardedMap[V] setShouldUpdateFn(f updateFn){
+	for i := range m.shards {
+		m.shards[i].setShouldUpdateFn(f)
+	}
 }
 
 func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
@@ -130,12 +133,18 @@ type lockedMap[V any] struct {
 	shouldUpdate updateFn[V]
 }
 
-func newLockedMap[V any](em *expirationMap[V], f updateFn[V]) *lockedMap[V] {
+func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
 	return &lockedMap[V]{
-		data:         make(map[uint64]storeItem[V]),
-		em:           em,
-		shouldUpdate: f,
+		data: make(map[uint64]storeItem[V]),
+		em:   em,
+		shouldUpdate: func(cur, prev V) bool {
+			return true
+		},
 	}
+}
+
+func (m *lockedMap[V] setShouldUpdateFn(f updateFn){
+	m.shouldUpdate = f
 }
 
 func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
