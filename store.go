@@ -55,28 +55,25 @@ type store[V any] interface {
 	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
 	// Clear clears all contents of the store.
 	Clear(onEvict func(item *Item[V]))
+	SetShouldUpdateFn(f updateFn[V])
 }
 
 // newStore returns the default store implementation.
-func newStore[V any](f updateFn[V]) store[V] {
-	return newShardedMap[V](f)
+func newStore[V any]() store[V] {
+	return newShardedMap[V]()
 }
 
 const numShards uint64 = 256
 
 type shardedMap[V any] struct {
-	shards       []*lockedMap[V]
-	expiryMap    *expirationMap[V]
-	shouldUpdate updateFn[V]
+	shards    []*lockedMap[V]
+	expiryMap *expirationMap[V]
 }
 
 func newShardedMap[V any]() *shardedMap[V] {
-	if f == nil {
-	}
 	sm := &shardedMap[V]{
-		shards:       make([]*lockedMap[V], int(numShards)),
-		expiryMap:    newExpirationMap[V](),
-		shouldUpdate: f,
+		shards:    make([]*lockedMap[V], int(numShards)),
+		expiryMap: newExpirationMap[V](),
 	}
 	for i := range sm.shards {
 		sm.shards[i] = newLockedMap[V](sm.expiryMap)
@@ -84,7 +81,7 @@ func newShardedMap[V any]() *shardedMap[V] {
 	return sm
 }
 
-func (m *shardedMap[V] setShouldUpdateFn(f updateFn){
+func (m *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
 	for i := range m.shards {
 		m.shards[i].setShouldUpdateFn(f)
 	}
@@ -143,7 +140,7 @@ func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
 	}
 }
 
-func (m *lockedMap[V] setShouldUpdateFn(f updateFn){
+func (m *lockedMap[V]) setShouldUpdateFn(f updateFn[V]) {
 	m.shouldUpdate = f
 }
 
@@ -187,7 +184,7 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
 			return
 		}
-		if !m.shouldUpdate(i.Value, item.value) {
+		if m.shouldUpdate != nil && !m.shouldUpdate(i.Value, item.value) {
 			return
 		}
 		m.em.update(i.Key, i.Conflict, item.expiration, i.Expiration)
@@ -236,7 +233,7 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		return zeroValue[V](), false
 	}
-	if !m.shouldUpdate(newItem.Value, item.value) {
+	if m.shouldUpdate != nil && !m.shouldUpdate(newItem.Value, item.value) {
 		return item.value, false
 	}
 

@@ -234,7 +234,7 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 		ignoreInternalCost: config.IgnoreInternalCost,
 		cleanupTicker:      time.NewTicker(time.Duration(config.TtlTickerDurationInSec) * time.Second / 2),
 	}
-	cache.storedItems.setShouldUpdateFn(config.ShouldUpdate)
+	cache.storedItems.SetShouldUpdateFn(config.ShouldUpdate)
 	cache.onExit = func(val V) {
 		if config.OnExit != nil {
 			config.OnExit(val)
