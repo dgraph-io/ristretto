@@ -148,8 +148,9 @@ type Config[K Key, V any] struct {
 	OnExit func(val V)
 
 	// ShouldUpdate is called when a value already exists in cache and is being updated. In this function
-	// you can check if the new value is valid or not. You can return a true or false is you want to continue to
-	// insert the new value.
+	// you can check if the new value is valid or not. You can return a true or false if you want to continue to
+	// insert the new value. For example, if your value has timestamp assosicated with it, you could check if
+	// the new value has the latest timestamp or not. Preventing you from setting an older value.
 	ShouldUpdate func(cur, prev V) bool
 
 	// KeyToHash function is used to customize the key hashing algorithm.
