@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+type updateFn[V any] func(cur, prev V) bool
+
 // TODO: Do we need this to be a separate struct from Item?
 type storeItem[V any] struct {
 	key        uint64
@@ -53,6 +55,7 @@ type store[V any] interface {
 	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
 	// Clear clears all contents of the store.
 	Clear(onEvict func(item *Item[V]))
+	SetShouldUpdateFn(f updateFn[V])
 }
 
 // newStore returns the default store implementation.
@@ -76,6 +79,12 @@ func newShardedMap[V any]() *shardedMap[V] {
 		sm.shards[i] = newLockedMap[V](sm.expiryMap)
 	}
 	return sm
+}
+
+func (m *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
+	for i := range m.shards {
+		m.shards[i].setShouldUpdateFn(f)
+	}
 }
 
 func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
@@ -116,15 +125,23 @@ func (sm *shardedMap[V]) Clear(onEvict func(item *Item[V])) {
 
 type lockedMap[V any] struct {
 	sync.RWMutex
-	data map[uint64]storeItem[V]
-	em   *expirationMap[V]
+	data         map[uint64]storeItem[V]
+	em           *expirationMap[V]
+	shouldUpdate updateFn[V]
 }
 
 func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
 	return &lockedMap[V]{
 		data: make(map[uint64]storeItem[V]),
 		em:   em,
+		shouldUpdate: func(cur, prev V) bool {
+			return true
+		},
 	}
+}
+
+func (m *lockedMap[V]) setShouldUpdateFn(f updateFn[V]) {
+	m.shouldUpdate = f
 }
 
 func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
@@ -165,6 +182,9 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		// The item existed already. We need to check the conflict key and reject the
 		// update if they do not match. Only after that the expiration map is updated.
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
+			return
+		}
+		if m.shouldUpdate != nil && !m.shouldUpdate(i.Value, item.value) {
 			return
 		}
 		m.em.update(i.Key, i.Conflict, item.expiration, i.Expiration)
@@ -210,6 +230,9 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
 		return zeroValue[V](), false
+	}
+	if m.shouldUpdate != nil && !m.shouldUpdate(newItem.Value, item.value) {
+		return item.value, false
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
