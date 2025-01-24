@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/v2/z"
+	"github.com/ikari-pl/ristretto/v2/z"
 	"github.com/stretchr/testify/require"
 )
 
@@ -813,7 +813,7 @@ func TestBlockOnClear(t *testing.T) {
 	}
 }
 
-// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
+// Regression test for bug https://github.com/ikari-pl/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	test := func() {
 		// dropppedMap stores the items dropped from the cache.

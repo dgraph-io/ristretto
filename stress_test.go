@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/ristretto/v2/sim"
+	"github.com/ikari-pl/ristretto/v2/sim"
 	"github.com/stretchr/testify/require"
 )
 
