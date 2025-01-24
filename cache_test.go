@@ -386,7 +386,7 @@ func TestCacheSet(t *testing.T) {
 
 	c.stop <- struct{}{}
 	<-c.done
-	for i := 0; i < setBufSize; i++ {
+	for i := 0; i < cap(c.setBuf); i++ {
 		key, conflict := z.KeyToHash(1)
 		c.setBuf <- &Item[int]{
 			flag:     itemUpdate,
@@ -815,9 +815,6 @@ func TestBlockOnClear(t *testing.T) {
 
 // Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
-	originalSetBugSize := setBufSize
-	defer func() { setBufSize = originalSetBugSize }()
-
 	test := func() {
 		// dropppedMap stores the items dropped from the cache.
 		droppedMap := make(map[int]struct{})
@@ -840,7 +837,7 @@ func TestDropUpdates(t *testing.T) {
 		// is full and that's why we reduce the buf size here. The test will
 		// try to fill up the setbuf to it's capacity and then perform an
 		// update on a key.
-		setBufSize = 10
+		setBufSize := uint32(10)
 
 		c, err := NewCache(&Config[int, string]{
 			NumCounters: 100,
@@ -850,10 +847,11 @@ func TestDropUpdates(t *testing.T) {
 			OnEvict: func(item *Item[string]) {
 				handler(nil, item.Value)
 			},
+			SetQueueSize: setBufSize,
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 5*setBufSize; i++ {
+		for i := 0; i < 5*cap(c.setBuf); i++ {
 			v := fmt.Sprintf("%0100d", i)
 			// We're updating the same key.
 			if !c.Set(0, v, 1) {
@@ -1005,4 +1003,25 @@ func TestCacheWithTTL(t *testing.T) {
 			require.Zero(t, val)
 		})
 	}
+}
+
+func TestCacheSetQueueSize(t *testing.T) {
+	setQueueSize := uint32(128)
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:  100,
+		MaxCost:      8 * 128,
+		BufferItems:  64,
+		SetQueueSize: setQueueSize,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	require.Equal(t, cap(c.setBuf), int(setQueueSize))
+
+	// Test setting and getting values to ensure the cache works with the specified SetQueueSize
+	require.True(t, c.Set(1, 1, 1))
+	c.Wait()
+	val, ok := c.Get(1)
+	require.True(t, ok)
+	require.Equal(t, 1, val)
+	c.Del(1)
 }

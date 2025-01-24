@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project will adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.0.0.
 
+## [v2.2.0] - 2025-01-24 (ikari-pl fork)
+
+### Added
+
+- Add support for specifying the Set channel buffer size
+
+**Full Changelog**:
+https://github.com/dgraph-io/ristretto/compare/v2.1.0...ikari-pl/v2.2.0
+
 
 ## [v2.0.1] - 2024-12-11
 

@@ -32,8 +32,7 @@ import (
 )
 
 var (
-	// TODO: find the optimal value for this or make it configurable
-	setBufSize = 32 * 1024
+	defaultSetBufSize = uint32(32 * 1024)
 )
 
 const itemSize = int64(unsafe.Sizeof(storeItem[any]{}))
@@ -191,6 +190,10 @@ type Config[K Key, V any] struct {
 
 	// TtlTickerDurationInSec sets the value of time ticker for cleanup keys on TTL expiry.
 	TtlTickerDurationInSec int64
+
+	// SetQueueSize sets the size of the set buffer channel. If not set, the default
+	// value is used.
+	SetQueueSize uint32
 }
 
 type itemFlag byte
@@ -230,12 +233,15 @@ func NewCache[K Key, V any](config *Config[K, V]) (*Cache[K, V], error) {
 	case config.TtlTickerDurationInSec == 0:
 		config.TtlTickerDurationInSec = bucketDurationSecs
 	}
+	if config.SetQueueSize == 0 {
+		config.SetQueueSize = defaultSetBufSize
+	}
 	policy := newPolicy[V](config.NumCounters, config.MaxCost)
 	cache := &Cache[K, V]{
 		storedItems:        newStore[V](),
 		cachePolicy:        policy,
 		getBuf:             newRingBuffer(policy, config.BufferItems),
-		setBuf:             make(chan *Item[V], setBufSize),
+		setBuf:             make(chan *Item[V], config.SetQueueSize),
 		keyToHash:          config.KeyToHash,
 		stop:               make(chan struct{}),
 		done:               make(chan struct{}),
