@@ -34,7 +34,7 @@ Ristretto is production-ready. See [Projects using Ristretto](#projects-using-ri
 To start using Ristretto, install Go 1.21 or above. Ristretto needs go modules. From your project, run the following command
 
 ```sh
-$ go get github.com/dgraph-io/ristretto/v2
+$ go get github.com/ikari-pl/ristretto/v2
 ```
 This will retrieve the library.
 
@@ -54,7 +54,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dgraph-io/ristretto/v2"
+	"github.com/ikari-pl/ristretto/v2"
 )
 
 func main() {
