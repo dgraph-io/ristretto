@@ -23,4 +23,4 @@ Please explain the changes you made here.
 - Delete the `Instructions` line and everything below it, to indicate you have read and are
   following these instructions. 🙂
 
-Thank you for your contribution to Dgraph!
+Thank you for your contribution to Ristretto!
