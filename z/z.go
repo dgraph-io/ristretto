@@ -9,7 +9,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/cespare/xxhash/v2"
+	"github.com/zeebo/xxh3"
 )
 
 type Key interface {
@@ -29,9 +29,9 @@ func KeyToHash[K Key](key K) (uint64, uint64) {
 	case uint64:
 		return k, 0
 	case string:
-		return MemHashString(k), xxhash.Sum64String(k)
+		return MemHashString(k), xxh3.HashString(k)
 	case []byte:
-		return MemHash(k), xxhash.Sum64(k)
+		return MemHash(k), xxh3.Hash(k)
 	case byte:
 		return uint64(k), 0
 	case int:
