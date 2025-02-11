@@ -97,7 +97,7 @@ func main() {
 ## Benchmarks
 
 The benchmarks can be found in
-https://github.com/dgraph-io/benchmarks/tree/master/cachebench/ristretto.
+https://github.com/hypermodeinc/dgraph-benchmarks/tree/main/cachebench/ristretto.
 
 ### Hit Ratios for Search
 
