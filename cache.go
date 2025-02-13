@@ -293,6 +293,12 @@ func (c *Cache[K, V]) Wait() {
 	wg.Wait()
 }
 
+// SetQueueLen returns the length of the set buffer channel,
+// which is the number of items waiting to be processed.
+func (c *Cache[K, V]) SetQueueLen() int {
+	return len(c.setBuf)
+}
+
 // Get returns the value (if any) and a boolean representing whether the
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time. Get will not return expired items.

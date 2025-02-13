@@ -880,6 +880,28 @@ func TestDropUpdates(t *testing.T) {
 	}
 }
 
+func TestGettingQueueLength(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:  100,
+		MaxCost:      10,
+		BufferItems:  64,
+		Metrics:      true,
+		SetQueueSize: 10,
+	})
+	require.NoError(t, err)
+
+	for i := 0; i < 2*cap(c.setBuf); i++ {
+		c.Set(i, i, 1)
+	}
+	q1 := c.SetQueueLen()
+	// The setBuf is full, so the set should be dropped.
+	require.False(t, c.Set(0, 0, 1))
+	c.Wait()
+	q2 := c.SetQueueLen()
+	require.Greater(t, q1, q2)
+	require.Zero(t, q2)
+}
+
 func TestRistrettoCalloc(t *testing.T) {
 	maxCacheSize := 1 << 20
 	config := &Config[int, []byte]{
