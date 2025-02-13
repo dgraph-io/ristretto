@@ -2,11 +2,11 @@ memtest tests the effect of the C memory allocator. The default version uses Cal
 
 If the program is built using the `jemalloc` build tag, then the allocator used will be jemalloc.
 
-# Monitoring #
+# Monitoring
 
 To monitor the memory use of this program, the following bash snippet is useful:
 
-```
+```sh
 while true; do
 ps -C memtest -o vsz=,rss= >> memphys.csv
 sleep 1

@@ -1,16 +1,25 @@
 name: ci-ristretto-tests
+
 on:
   push:
     branches:
       - main
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
     branches:
       - main
-  schedule:
-    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   ristretto-tests:
-    runs-on: ubuntu-20.04
+    runs-on: warp-ubuntu-latest-x64-4x
     steps:
       - uses: actions/checkout@v4
       - name: Setup Go
