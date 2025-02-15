@@ -1,8 +1,9 @@
 # Ristretto
 
-[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://pkg.go.dev/github.com/dgraph-io/ristretto/v2)
-[![ci-ristretto-tests](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-tests.yml/badge.svg)](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-tests.yml)
-[![ci-ristretto-lint](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-lint.yml/badge.svg)](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-lint.yml)
+[![GitHub License](https://img.shields.io/github/license/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto?tab=Apache-2.0-1-ov-file#readme)
+[![chat](https://img.shields.io/discord/1267579648657850441)](https://discord.hypermode.com)
+[![GitHub Repo stars](https://img.shields.io/github/stars/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/stargazers)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/commits/main/)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
