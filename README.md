@@ -3,8 +3,7 @@
 [![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://pkg.go.dev/github.com/dgraph-io/ristretto/v2)
 [![ci-ristretto-tests](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-tests.yml/badge.svg)](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-tests.yml)
 [![ci-ristretto-lint](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-lint.yml/badge.svg)](https://github.com/hypermodeinc/ristretto/actions/workflows/ci-ristretto-lint.yml)
-[![Coverage Status](https://coveralls.io/repos/github/hypermodeinc/ristretto/badge.svg?branch=main)](https://coveralls.io/github/hypermodeinc/ristretto?branch=main)
-[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/hypermodeinc/ristretto)
+[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
