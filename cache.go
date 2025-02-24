@@ -198,7 +198,7 @@ type Item[V any] struct {
 	Value      V
 	Cost       int64
 	Expiration time.Time
-	wg         *sync.WaitGroup
+	wait       chan struct{}
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -270,10 +270,9 @@ func (c *Cache[K, V]) Wait() {
 	if c == nil || c.isClosed.Load() {
 		return
 	}
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	c.setBuf <- &Item[V]{wg: wg}
-	wg.Wait()
+	wait := make(chan struct{})
+	c.setBuf <- &Item[V]{wait: wait}
+	<-wait
 }
 
 // Get returns the value (if any) and a boolean representing whether the
@@ -449,8 +448,8 @@ loop:
 	for {
 		select {
 		case i := <-c.setBuf:
-			if i.wg != nil {
-				i.wg.Done()
+			if i.wait != nil {
+				close(i.wait)
 				continue
 			}
 			if i.flag != itemUpdate {
@@ -522,8 +521,8 @@ func (c *Cache[K, V]) processItems() {
 	for {
 		select {
 		case i := <-c.setBuf:
-			if i.wg != nil {
-				i.wg.Done()
+			if i.wait != nil {
+				close(i.wait)
 				continue
 			}
 			// Calculate item cost value if new or update.
