@@ -7,13 +7,12 @@ package z
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"sort"
 	"sync/atomic"
-
-	"github.com/pkg/errors"
 )
 
 const (
@@ -212,8 +211,8 @@ func (b *Buffer) Grow(n int) {
 	case UseMmap:
 		// Truncate and remap the underlying file.
 		if err := b.mmapFile.Truncate(int64(b.curSz)); err != nil {
-			err = errors.Wrapf(err,
-				"while trying to truncate file: %s to size: %d", b.mmapFile.Fd.Name(), b.curSz)
+			err = errors.Join(err,
+				fmt.Errorf("while trying to truncate file: %s to size: %d", b.mmapFile.Fd.Name(), b.curSz))
 			panic(err)
 		}
 		b.buf = b.mmapFile.Data
@@ -337,7 +336,7 @@ func (s *sortHelper) sortSmall(start, end int) {
 
 func assert(b bool) {
 	if !b {
-		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
+		log.Fatalf("%+v", errors.New("Assertion failure"))
 	}
 }
 func check(err error) {
@@ -523,11 +522,11 @@ func (b *Buffer) Release() error {
 		}
 		path := b.mmapFile.Fd.Name()
 		if err := b.mmapFile.Close(-1); err != nil {
-			return errors.Wrapf(err, "while closing file: %s", path)
+			return errors.Join(err, fmt.Errorf("while closing file: %s", path))
 		}
 		if !b.persistent {
 			if err := os.Remove(path); err != nil {
-				return errors.Wrapf(err, "while deleting file %s", path)
+				return errors.Join(err, fmt.Errorf("while deleting file %s", path))
 			}
 		}
 	}
