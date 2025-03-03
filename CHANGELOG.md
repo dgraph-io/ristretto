@@ -7,6 +7,10 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
+**Changed**
+
+- Remove dependency: github.com/pkg/errors (#443)
+
 **Fixed**
 
 - Switch from using a sync.Waitgroup, to closing a channel of struct{} (#442)
