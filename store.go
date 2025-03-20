@@ -133,7 +133,7 @@ func (m *lockedMap[V]) setShouldUpdateFn(f updateFn[V]) {
 	m.shouldUpdate = f
 }
 
-func (m *lockedMap[V]) get(key, conflict uint64) (value V, ok bool) {
+func (m *lockedMap[V]) get(key, conflict uint64) (valueR V, okR bool) {
 	m.RLock()
 	item, ok := m.data[key]
 	m.RUnlock()
@@ -191,7 +191,7 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 	}
 }
 
-func (m *lockedMap[V]) Del(key, conflict uint64) (c uint64, value V) {
+func (m *lockedMap[V]) Del(key, conflict uint64) (c uint64, valueR V) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[key]
@@ -210,7 +210,7 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (c uint64, value V) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap[V]) Update(newItem *Item[V]) (value V, ok bool) {
+func (m *lockedMap[V]) Update(newItem *Item[V]) (valueR V, okR bool) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[newItem.Key]
