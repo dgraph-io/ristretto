@@ -27,11 +27,6 @@ var (
 
 const itemSize = int64(unsafe.Sizeof(storeItem[any]{}))
 
-func zeroValue[T any]() T {
-	var zero T
-	return zero
-}
-
 // Key is the generic type to represent the keys type in key-value pair of the cache.
 type Key = z.Key
 
@@ -278,20 +273,21 @@ func (c *Cache[K, V]) Wait() {
 // Get returns the value (if any) and a boolean representing whether the
 // value was found or not. The value can be nil and the boolean can be true at
 // the same time. Get will not return expired items.
-func (c *Cache[K, V]) Get(key K) (V, bool) {
+func (c *Cache[K, V]) Get(key K) (value V, ok bool) {
 	if c == nil || c.isClosed.Load() {
-		return zeroValue[V](), false
+		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
 
 	c.getBuf.Push(keyHash)
-	value, ok := c.storedItems.Get(keyHash, conflictHash)
+	value, ok = c.storedItems.Get(keyHash, conflictHash)
 	if ok {
 		c.Metrics.add(hit, keyHash, 1)
 	} else {
 		c.Metrics.add(miss, keyHash, 1)
 	}
-	return value, ok
+
+	return
 }
 
 // Set attempts to add the key-value item to the cache. If it returns false,

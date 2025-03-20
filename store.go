@@ -133,20 +133,20 @@ func (m *lockedMap[V]) setShouldUpdateFn(f updateFn[V]) {
 	m.shouldUpdate = f
 }
 
-func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
+func (m *lockedMap[V]) get(key, conflict uint64) (value V, ok bool) {
 	m.RLock()
 	item, ok := m.data[key]
 	m.RUnlock()
 	if !ok {
-		return zeroValue[V](), false
+		return
 	}
 	if conflict != 0 && (conflict != item.conflict) {
-		return zeroValue[V](), false
+		return
 	}
 
 	// Handle expired items.
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		return zeroValue[V](), false
+		return
 	}
 	return item.value, true
 }
@@ -191,15 +191,15 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 	}
 }
 
-func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
+func (m *lockedMap[V]) Del(key, conflict uint64) (c uint64, value V) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[key]
 	if !ok {
-		return 0, zeroValue[V]()
+		return
 	}
 	if conflict != 0 && (conflict != item.conflict) {
-		return 0, zeroValue[V]()
+		return
 	}
 
 	if !item.expiration.IsZero() {
@@ -210,15 +210,15 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
+func (m *lockedMap[V]) Update(newItem *Item[V]) (value V, ok bool) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[newItem.Key]
 	if !ok {
-		return zeroValue[V](), false
+		return
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
-		return zeroValue[V](), false
+		return
 	}
 	if m.shouldUpdate != nil && !m.shouldUpdate(newItem.Value, item.value) {
 		return item.value, false
