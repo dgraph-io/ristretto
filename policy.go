@@ -10,7 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dgraph-io/ristretto/v2/z"
+	"github.com/hypermodeinc/ristretto/v2/z"
 )
 
 const (

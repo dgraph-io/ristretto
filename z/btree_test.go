@@ -18,7 +18,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dgraph-io/ristretto/v2/z/simd"
+	"github.com/hypermodeinc/ristretto/v2/z/simd"
 )
 
 var tmp int
@@ -358,7 +358,7 @@ func BenchmarkWrite(b *testing.B) {
 
 // goos: linux
 // goarch: amd64
-// pkg: github.com/dgraph-io/ristretto/z
+// pkg: github.com/hypermodeinc/ristretto/z
 // BenchmarkRead/map-4         	10845322	       109 ns/op
 // BenchmarkRead/btree-4       	 2744283	       430 ns/op
 // Cumulative for 10 runs.

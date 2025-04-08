@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto/v2/z/simd"
+	"github.com/hypermodeinc/ristretto/v2/z/simd"
 )
 
 var (

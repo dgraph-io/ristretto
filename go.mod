@@ -1,4 +1,4 @@
-module github.com/dgraph-io/ristretto/v2
+module github.com/hypermodeinc/ristretto/v2
 
 go 1.23.0
 

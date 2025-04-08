@@ -4,7 +4,7 @@
 [![chat](https://img.shields.io/discord/1267579648657850441)](https://discord.hypermode.com)
 [![GitHub Repo stars](https://img.shields.io/github/stars/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/stargazers)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/commits/main/)
-[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
+[![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/hypermodeinc/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
@@ -40,7 +40,7 @@ To start using Ristretto, install Go 1.21 or above. Ristretto needs go modules. 
 run the following command
 
 ```sh
-go get github.com/dgraph-io/ristretto/v2
+go get github.com/hypermodeinc/ristretto/v2
 ```
 
 This will retrieve the library.
@@ -62,7 +62,7 @@ package main
 import (
   "fmt"
 
-  "github.com/dgraph-io/ristretto/v2"
+  "github.com/hypermodeinc/ristretto/v2"
 )
 
 func main() {
