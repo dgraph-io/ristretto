@@ -10,7 +10,7 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 **Changed**
 
 - Remove dependency: github.com/pkg/errors (#443)
-- Add public Cache.Cap() method
+- Add public Cache.RemainingCost() method
 
 **Fixed**
 

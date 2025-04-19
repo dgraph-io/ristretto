@@ -489,8 +489,8 @@ func (c *Cache[K, V]) UpdateMaxCost(maxCost int64) {
 	c.cachePolicy.UpdateMaxCost(maxCost)
 }
 
-// Cap returns the remaining cost capacity (MaxCost - Used) of an existing cache.
-func (c *Cache[K, V]) Cap() int64 {
+// RemainingCost returns the remaining cost capacity (MaxCost - Used) of an existing cache.
+func (c *Cache[K, V]) RemainingCost() int64 {
 	if c == nil {
 		return 0
 	}
