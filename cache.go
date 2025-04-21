@@ -489,6 +489,14 @@ func (c *Cache[K, V]) UpdateMaxCost(maxCost int64) {
 	c.cachePolicy.UpdateMaxCost(maxCost)
 }
 
+// RemainingCost returns the remaining cost capacity (MaxCost - Used) of an existing cache.
+func (c *Cache[K, V]) RemainingCost() int64 {
+	if c == nil {
+		return 0
+	}
+	return c.cachePolicy.Cap()
+}
+
 // processItems is ran by goroutines processing the Set buffer.
 func (c *Cache[K, V]) processItems() {
 	startTs := make(map[uint64]time.Time)

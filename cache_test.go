@@ -121,6 +121,39 @@ func TestUpdateMaxCost(t *testing.T) {
 	c.Del(1)
 }
 
+func TestRemainingCost(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters: 10,
+		MaxCost:     100,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(100), c.RemainingCost())
+
+	// Set allowed into cache
+	require.True(t, c.Set(1, 1, 1))
+	c.Wait()
+	_, ok := c.Get(1)
+	require.True(t, ok)
+
+	expectedUsed := 1 + itemSize
+	require.Equal(t, c.MaxCost()-expectedUsed, c.RemainingCost())
+
+	// Set rejected due to exceeding capacity
+	require.True(t, c.Set(2, 2, 99))
+	c.Wait()
+	_, ok = c.Get(2)
+	require.False(t, ok)
+	// No change in RemainingCost
+	require.Equal(t, c.MaxCost()-expectedUsed, c.RemainingCost())
+
+	// RemainingCost is still MaxCost() - Used after UpdateMaxCost()
+	c.UpdateMaxCost(1000)
+	require.Equal(t, int64(1000), c.MaxCost())
+	require.Equal(t, c.MaxCost()-expectedUsed, c.RemainingCost())
+	c.Del(1)
+}
+
 func TestNewCache(t *testing.T) {
 	_, err := NewCache(&Config[int, int]{
 		NumCounters: 0,
