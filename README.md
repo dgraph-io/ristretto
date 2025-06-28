@@ -94,6 +94,46 @@ func main() {
 }
 ```
 
+### ⚠️ Interface Types and `gob` Registration
+
+Because `MarshalBinary()`/`UnmarshalBinary([]byte)` use Go’s `encoding/gob` under the hood, any cache whose value type `V` is an **interface** requires you to register each concrete implementation with `gob.Register` before calling `MarshalBinary()` or `UnmarshalBinary([]byte)`. Otherwise you will encounter errors like:
+
+`gob: type not registered for interface: *main.YourConcreteType`
+
+
+#### What You Need To Do
+
+1. Import the `encoding/gob` package.
+2. In an `init()` function (or before your first `MarshalBinary`/`UnmarshalBinary`), register every concrete type you plan to store under that interface:
+
+```go
+   package main
+
+   import (
+     "encoding/gob"
+     "github.com/dgraph-io/ristretto/v2"
+   )
+
+   type Message interface { /* … */ }
+   type Email   struct { /* … */ }
+   type SMS     struct { /* … */ }
+
+   func init() {
+     // Register concrete types for gob so MarshalBinary/UnmarshalBinary will work
+     gob.Register(&Email{})
+     gob.Register(&SMS{})
+   }
+
+   func main() {
+     cache, _ := ristretto.NewCache[string, Message](&ristretto.Config{
+       NumCounters: 1e6,
+       MaxCost:     1 << 20,
+       BufferItems: 64,
+     })
+     // …
+   }
+```
+
 ## Benchmarks
 
 The benchmarks can be found in

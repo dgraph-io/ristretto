@@ -211,6 +211,80 @@ func TestStoreExpiration(t *testing.T) {
 	require.True(t, ttl.IsZero())
 }
 
+// TestSnapshotEntries verifies that snapshotEntries correctly captures all storeItems
+// including key, conflict, value, and expiration.
+func TestSnapshotEntries(t *testing.T) {
+	// Create a new shardedMap for string values
+	sm := newShardedMap[string]()
+
+	// Prepare two entries with distinct shards and expirations
+	exp1 := time.Now().Add(5 * time.Minute)
+	si1 := storeItem[string]{
+		key:        100,
+		conflict:   1,
+		value:      "one",
+		expiration: exp1,
+	}
+	sm.shards[0].Lock()
+	sm.shards[0].data[100] = si1
+	sm.shards[0].Unlock()
+
+	exp2 := time.Time{} // no expiration
+	si2 := storeItem[string]{
+		key:        200,
+		conflict:   2,
+		value:      "two",
+		expiration: exp2,
+	}
+	sm.shards[1].Lock()
+	sm.shards[1].data[200] = si2
+	sm.shards[1].Unlock()
+
+	// Snapshot and verify
+	entries := sm.snapshotEntries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Map entries by key for easier assertions
+	found := make(map[uint64]storeItem[string])
+	for _, e := range entries {
+		found[e.key] = e
+	}
+
+	// Verify first entry
+	e1, ok := found[100]
+	if !ok {
+		t.Errorf("missing entry for key 100")
+	} else {
+		if e1.conflict != 1 {
+			t.Errorf("expected conflict 1 for key 100, got %d", e1.conflict)
+		}
+		if e1.value != "one" {
+			t.Errorf("expected value 'one' for key 100, got '%s'", e1.value)
+		}
+		if !e1.expiration.Equal(exp1) {
+			t.Errorf("expected expiration %v for key 100, got %v", exp1, e1.expiration)
+		}
+	}
+
+	// Verify second entry
+	e2, ok := found[200]
+	if !ok {
+		t.Errorf("missing entry for key 200")
+	} else {
+		if e2.conflict != 2 {
+			t.Errorf("expected conflict 2 for key 200, got %d", e2.conflict)
+		}
+		if e2.value != "two" {
+			t.Errorf("expected value 'two' for key 200, got '%s'", e2.value)
+		}
+		if !e2.expiration.IsZero() {
+			t.Errorf("expected no expiration for key 200, got %v", e2.expiration)
+		}
+	}
+}
+
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)

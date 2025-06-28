@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Ristretto is a fast, fixed size, in-memory cache with a dual focus on
+// Package ristretto is a fast, fixed size, in-memory cache with a dual focus on
 // throughput and hit ratio performance. You can easily add Ristretto to an
 // existing system and keep the most valuable data where you need it.
 package ristretto
 
 import (
 	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"sync"
@@ -54,7 +55,7 @@ type Cache[K Key, V any] struct {
 	// onReject is called when an item is rejected via admission policy.
 	onReject func(*Item[V])
 	// onExit is called whenever a value goes out of scope from the cache.
-	onExit (func(V))
+	onExit func(V)
 	// KeyToHash function is used to customize the key hashing algorithm.
 	// Each key will be hashed using the provided function. If keyToHash value
 	// is not set, the default keyToHash function is used.
@@ -473,6 +474,74 @@ loop:
 	go c.processItems()
 }
 
+// MarshalBinary serializes the cache contents via encoding/gob. If V is an interface
+// type, you must call gob.Register on each concrete type you will store
+// under that interface before calling MarshalBinary (and likewise before UnmarshalBinary).
+func (c *Cache[K, V]) MarshalBinary() ([]byte, error) {
+	// 0) Drain any in-flight Sets so the shards are fully up-to-date.
+	c.Wait()
+
+	// 1) Grab the concrete shardedMap from the interface.
+	sm, ok := c.storedItems.(*shardedMap[V])
+	if !ok {
+		return nil, fmt.Errorf("unexpected storedItems type %T", c.storedItems)
+	}
+
+	// 2) Snapshot all storeItems under lock.
+	items := sm.snapshotEntries()
+
+	// 3) Filter out items whose expiration has already passed.
+	now := time.Now()
+	var live []storeItem[V]
+	live = make([]storeItem[V], 0, len(items))
+	for _, si := range items {
+		if !si.expiration.IsZero() && si.expiration.Before(now) {
+			continue // skip expired
+		}
+		live = append(live, si)
+	}
+
+	// 4) Build a []*Item[V] payload, pulling cost & expiration in one pass.
+	payload := make([]*Item[V], 0, len(live))
+	for _, si := range live {
+		payload = append(payload, &Item[V]{
+			flag:       itemNew, // always treat as “new” on restore
+			Key:        si.key,
+			Conflict:   si.conflict,
+			Value:      si.value,
+			Cost:       c.cachePolicy.Cost(si.key),
+			Expiration: si.expiration,
+		})
+	}
+
+	// 5) Gob-encode and return.
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(payload); err != nil {
+		return nil, fmt.Errorf("gob encode failed: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// UnmarshalBinary wipes out the cache, then re-inserts every dumped entry
+// **and** re-registers it with the LFU policy so Get() will succeed.
+func (c *Cache[K, V]) UnmarshalBinary(data []byte) error {
+	// 1) Decode back into our dumpEntry type
+	var payload []*Item[V]
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&payload); err != nil {
+		return fmt.Errorf("gob decode failed: %w", err)
+	}
+
+	c.Clear()
+
+	for _, e := range payload {
+		c.setBuf <- e
+	}
+	c.Wait()
+
+	return nil
+}
+
 // MaxCost returns the max cost of the cache.
 func (c *Cache[K, V]) MaxCost() int64 {
 	if c == nil {
@@ -790,9 +859,9 @@ func (p *Metrics) String() string {
 	var buf bytes.Buffer
 	for i := 0; i < doNotUse; i++ {
 		t := metricType(i)
-		fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.get(t))
+		_, _ = fmt.Fprintf(&buf, "%s: %d ", stringFor(t), p.get(t))
 	}
-	fmt.Fprintf(&buf, "gets-total: %d ", p.get(hit)+p.get(miss))
-	fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
+	_, _ = fmt.Fprintf(&buf, "gets-total: %d ", p.get(hit)+p.get(miss))
+	_, _ = fmt.Fprintf(&buf, "hit-ratio: %.2f", p.Ratio())
 	return buf.String()
 }

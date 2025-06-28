@@ -52,7 +52,15 @@ func newStore[V any]() store[V] {
 	return newShardedMap[V]()
 }
 
-const numShards uint64 = 256
+const (
+	numShards uint64 = 256
+	shardMask        = numShards - 1
+)
+
+// Compile-time check to ensure numShards is always a power of 2 (this is the only way `key%numShards` is exactly equal to `key&shardMask`
+// @See: https://github.com/hypermodeinc/ristretto/pull/354 (unmerged/closed PR)
+// If `numShards` must be set to value that is _not_ a power of 2, this compile-time check must be removed and all `<hashKey>&shardMask` usages are changed back to `<hashKey>%numShards`
+var _ [-(numShards & (numShards - 1))]struct{}
 
 type shardedMap[V any] struct {
 	shards    []*lockedMap[V]
@@ -70,18 +78,41 @@ func newShardedMap[V any]() *shardedMap[V] {
 	return sm
 }
 
-func (m *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
-	for i := range m.shards {
-		m.shards[i].setShouldUpdateFn(f)
+// snapshotEntries returns a moment-in-time slice of every item in the 256 shards,
+// including its key-hash, conflict-hash, value, and expiration.
+func (sm *shardedMap[V]) snapshotEntries() []storeItem[V] {
+	// Calculate the total number of items across all shards.
+	totalItems := 0
+	for _, shard := range sm.shards {
+		shard.RLock()
+		totalItems += len(shard.data)
+		shard.RUnlock()
+	}
+
+	// Preallocate the slice with the calculated capacity.
+	out := make([]storeItem[V], 0, totalItems)
+	for _, shard := range sm.shards {
+		shard.RLock()
+		for _, si := range shard.data {
+			out = append(out, si)
+		}
+		shard.RUnlock()
+	}
+	return out
+}
+
+func (sm *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
+	for i := range sm.shards {
+		sm.shards[i].setShouldUpdateFn(f)
 	}
 }
 
 func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
-	return sm.shards[key%numShards].get(key, conflict)
+	return sm.shards[key&shardMask].get(key, conflict)
 }
 
 func (sm *shardedMap[V]) Expiration(key uint64) time.Time {
-	return sm.shards[key%numShards].Expiration(key)
+	return sm.shards[key&shardMask].Expiration(key)
 }
 
 func (sm *shardedMap[V]) Set(i *Item[V]) {
@@ -90,15 +121,15 @@ func (sm *shardedMap[V]) Set(i *Item[V]) {
 		return
 	}
 
-	sm.shards[i.Key%numShards].Set(i)
+	sm.shards[i.Key&shardMask].Set(i)
 }
 
 func (sm *shardedMap[V]) Del(key, conflict uint64) (uint64, V) {
-	return sm.shards[key%numShards].Del(key, conflict)
+	return sm.shards[key&shardMask].Del(key, conflict)
 }
 
 func (sm *shardedMap[V]) Update(newItem *Item[V]) (V, bool) {
-	return sm.shards[newItem.Key%numShards].Update(newItem)
+	return sm.shards[newItem.Key&shardMask].Update(newItem)
 }
 
 func (sm *shardedMap[V]) Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V])) {

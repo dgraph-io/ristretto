@@ -7,6 +7,10 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
+**Added**
+
+- Add public Cache.MarshalBinary() and Cache.UnmarshalBinary([]byte) methods (#455)
+
 **Changed**
 
 - Remove dependency: github.com/pkg/errors (#443)
