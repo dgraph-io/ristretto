@@ -478,6 +478,9 @@ loop:
 // type, you must call gob.Register on each concrete type you will store
 // under that interface before calling MarshalBinary (and likewise before UnmarshalBinary).
 func (c *Cache[K, V]) MarshalBinary() ([]byte, error) {
+	if c == nil || c.isClosed.Load() {
+		return nil, fmt.Errorf("cache is nil or closed")
+	}
 	// 0) Drain any in-flight Sets so the shards are fully up-to-date.
 	c.Wait()
 
@@ -525,6 +528,9 @@ func (c *Cache[K, V]) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary wipes out the cache, then re-inserts every dumped entry
 // **and** re-registers it with the LFU policy so Get() will succeed.
 func (c *Cache[K, V]) UnmarshalBinary(data []byte) error {
+	if c == nil || c.isClosed.Load() {
+		return fmt.Errorf("cache is nil or closed")
+	}
 	// 1) Decode back into our dumpEntry type
 	var payload []*Item[V]
 	dec := gob.NewDecoder(bytes.NewReader(data))
