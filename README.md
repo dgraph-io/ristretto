@@ -144,7 +144,7 @@ This trace is described as "references to a CODASYL database for a one hour peri
   alt="Graph showing throughput comparison for mixed workload">
 </p>
 
-### Throughput ffor Read Workload
+### Throughput for Read Workload
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Throughput%20-%20Read%20(Zipfian).svg"
