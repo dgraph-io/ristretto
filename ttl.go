@@ -29,20 +29,20 @@ func cleanupBucket(t time.Time) int64 {
 type bucket map[uint64]uint64
 
 // expirationMap is a map of bucket number to the corresponding bucket.
-type expirationMap[V any] struct {
+type expirationMap[K Key, V any] struct {
 	sync.RWMutex
 	buckets              map[int64]bucket
 	lastCleanedBucketNum int64
 }
 
-func newExpirationMap[V any]() *expirationMap[V] {
-	return &expirationMap[V]{
+func newExpirationMap[K Key, V any]() *expirationMap[K, V] {
+	return &expirationMap[K, V]{
 		buckets:              make(map[int64]bucket),
 		lastCleanedBucketNum: cleanupBucket(time.Now()),
 	}
 }
 
-func (m *expirationMap[_]) add(key, conflict uint64, expiration time.Time) {
+func (m *expirationMap[_, _]) add(key, conflict uint64, expiration time.Time) {
 	if m == nil {
 		return
 	}
@@ -64,7 +64,7 @@ func (m *expirationMap[_]) add(key, conflict uint64, expiration time.Time) {
 	b[key] = conflict
 }
 
-func (m *expirationMap[_]) update(key, conflict uint64, oldExpTime, newExpTime time.Time) {
+func (m *expirationMap[_, _]) update(key, conflict uint64, oldExpTime, newExpTime time.Time) {
 	if m == nil {
 		return
 	}
@@ -92,7 +92,7 @@ func (m *expirationMap[_]) update(key, conflict uint64, oldExpTime, newExpTime t
 	newBucket[key] = conflict
 }
 
-func (m *expirationMap[_]) del(key uint64, expiration time.Time) {
+func (m *expirationMap[_, _]) del(key uint64, expiration time.Time) {
 	if m == nil {
 		return
 	}
@@ -110,7 +110,7 @@ func (m *expirationMap[_]) del(key uint64, expiration time.Time) {
 // cleanup removes all the items in the bucket that was just completed. It deletes
 // those items from the store, and calls the onEvict function on those items.
 // This function is meant to be called periodically.
-func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onEvict func(item *Item[V])) int {
+func (m *expirationMap[K, V]) cleanup(store store[K, V], policy *defaultPolicy[K, V], onEvict func(item *Item[K, V])) int {
 	if m == nil {
 		return 0
 	}
@@ -144,7 +144,7 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 			_, value := store.Del(key, conflict)
 
 			if onEvict != nil {
-				onEvict(&Item[V]{Key: key,
+				onEvict(&Item[K, V]{Key: key,
 					Conflict:   conflict,
 					Value:      value,
 					Cost:       cost,
@@ -161,7 +161,7 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 
 // clear clears the expirationMap, the caller is responsible for properly
 // evicting the referenced items
-func (m *expirationMap[V]) clear() {
+func (m *expirationMap[K, V]) clear() {
 	if m == nil {
 		return
 	}

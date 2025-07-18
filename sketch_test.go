@@ -12,6 +12,8 @@ import (
 )
 
 func TestSketch(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		require.NotNil(t, recover())
 	}()
@@ -22,6 +24,8 @@ func TestSketch(t *testing.T) {
 }
 
 func TestSketchIncrement(t *testing.T) {
+	t.Parallel()
+
 	s := newCmSketch(16)
 	s.Increment(1)
 	s.Increment(5)
@@ -35,6 +39,8 @@ func TestSketchIncrement(t *testing.T) {
 }
 
 func TestSketchEstimate(t *testing.T) {
+	t.Parallel()
+
 	s := newCmSketch(16)
 	s.Increment(1)
 	s.Increment(1)
@@ -43,6 +49,8 @@ func TestSketchEstimate(t *testing.T) {
 }
 
 func TestSketchReset(t *testing.T) {
+	t.Parallel()
+
 	s := newCmSketch(16)
 	s.Increment(1)
 	s.Increment(1)
@@ -53,6 +61,8 @@ func TestSketchReset(t *testing.T) {
 }
 
 func TestSketchClear(t *testing.T) {
+	t.Parallel()
+
 	s := newCmSketch(16)
 	for i := 0; i < 16; i++ {
 		s.Increment(uint64(i))
@@ -64,6 +74,8 @@ func TestSketchClear(t *testing.T) {
 }
 
 func TestNext2Power(t *testing.T) {
+	t.Parallel()
+
 	sz := 12 << 30
 	szf := float64(sz) * 0.01
 	val := int64(szf)

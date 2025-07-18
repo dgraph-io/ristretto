@@ -19,6 +19,8 @@ import (
 )
 
 func TestStressSetGet(t *testing.T) {
+	t.Parallel()
+
 	c, err := NewCache(&Config[int, int]{
 		NumCounters:        1000,
 		MaxCost:            100,
@@ -56,6 +58,8 @@ func TestStressSetGet(t *testing.T) {
 }
 
 func TestStressHitRatio(t *testing.T) {
+	t.Parallel()
+
 	key := sim.NewZipfian(1.0001, 1, 1000)
 	c, err := NewCache(&Config[uint64, uint64]{
 		NumCounters: 1000,

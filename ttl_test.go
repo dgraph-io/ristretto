@@ -16,26 +16,28 @@ import (
 // It verifies that expired items are correctly evicted from the store and that
 // non-expired items remain in the store.
 func TestExpirationMapCleanup(t *testing.T) {
+	t.Parallel()
+
 	// Create a new expiration map
-	em := newExpirationMap[int]()
+	em := newExpirationMap[int, int]()
 	// Create a new store
-	s := newShardedMap[int]()
+	s := newShardedMap[int, int]()
 	// Create a new policy
-	p := newDefaultPolicy[int](100, 10)
+	p := newDefaultPolicy[int, int](100, 10)
 
 	// Add items to the store and expiration map
 	now := time.Now()
-	i1 := &Item[int]{Key: 1, Conflict: 1, Value: 100, Expiration: now.Add(1 * time.Second)}
+	i1 := &Item[int, int]{Key: 1, Conflict: 1, Value: 100, Expiration: now.Add(1 * time.Second)}
 	s.Set(i1)
 	em.add(i1.Key, i1.Conflict, i1.Expiration)
 
-	i2 := &Item[int]{Key: 2, Conflict: 2, Value: 200, Expiration: now.Add(3 * time.Second)}
+	i2 := &Item[int, int]{Key: 2, Conflict: 2, Value: 200, Expiration: now.Add(3 * time.Second)}
 	s.Set(i2)
 	em.add(i2.Key, i2.Conflict, i2.Expiration)
 
 	// Create a map to store evicted items
 	evictedItems := make(map[uint64]int)
-	evictedItemsOnEvictFunc := func(item *Item[int]) {
+	evictedItemsOnEvictFunc := func(item *Item[int, int]) {
 		evictedItems[item.Key] = item.Value
 	}
 

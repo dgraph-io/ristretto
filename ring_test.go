@@ -26,6 +26,8 @@ func (c *testConsumer) Push(items []uint64) bool {
 }
 
 func TestRingDrain(t *testing.T) {
+	t.Parallel()
+
 	drains := 0
 	r := newRingBuffer(&testConsumer{
 		push: func(items []uint64) {
@@ -40,6 +42,8 @@ func TestRingDrain(t *testing.T) {
 }
 
 func TestRingReset(t *testing.T) {
+	t.Parallel()
+
 	drains := 0
 	r := newRingBuffer(&testConsumer{
 		push: func(items []uint64) {
@@ -54,6 +58,8 @@ func TestRingReset(t *testing.T) {
 }
 
 func TestRingConsumer(t *testing.T) {
+	t.Parallel()
+
 	mu := &sync.Mutex{}
 	drainItems := make(map[uint64]struct{})
 	r := newRingBuffer(&testConsumer{
