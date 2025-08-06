@@ -13,11 +13,12 @@ import (
 type updateFn[V any] func(cur, prev V) bool
 
 // TODO: Do we need this to be a separate struct from Item?
-type storeItem[V any] struct {
-	key        uint64
-	conflict   uint64
-	value      V
-	expiration time.Time
+type storeItem[K Key, V any] struct {
+	key         uint64
+	originalKey K
+	conflict    uint64
+	value       V
+	expiration  time.Time
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -26,7 +27,7 @@ type storeItem[V any] struct {
 // in Ristretto.
 //
 // Every store is safe for concurrent usage.
-type store[V any] interface {
+type store[K Key, V any] interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (V, bool)
 	// Expiration returns the expiration time for this key.
@@ -34,57 +35,84 @@ type store[V any] interface {
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
 	// item object.
-	Set(*Item[V])
+	Set(*Item[K, V])
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, V)
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
-	Update(*Item[V]) (V, bool)
+	Update(*Item[K, V]) (V, bool)
 	// Cleanup removes items that have an expired TTL.
-	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
+	Cleanup(policy *defaultPolicy[K, V], onEvict func(item *Item[K, V]))
 	// Clear clears all contents of the store.
-	Clear(onEvict func(item *Item[V]))
+	Clear(onEvict func(item *Item[K, V]))
 	SetShouldUpdateFn(f updateFn[V])
+	// Iter iterates the elements of the Map, passing them to the callback.
+	// It guarantees that any key in the Map will be visited only once.
+	// The set of keys visited by Iter is non-deterministic.
+	Iter(cb func(k K, v V) (stop bool))
 }
 
 // newStore returns the default store implementation.
-func newStore[V any]() store[V] {
-	return newShardedMap[V]()
+func newStore[K Key, V any]() store[K, V] {
+	return newShardedMap[K, V]()
 }
 
 const numShards uint64 = 256
 
-type shardedMap[V any] struct {
-	shards    []*lockedMap[V]
-	expiryMap *expirationMap[V]
+type shardedMap[K Key, V any] struct {
+	shards    []*lockedMap[K, V]
+	expiryMap *expirationMap[K, V]
 }
 
-func newShardedMap[V any]() *shardedMap[V] {
-	sm := &shardedMap[V]{
-		shards:    make([]*lockedMap[V], int(numShards)),
-		expiryMap: newExpirationMap[V](),
+func newShardedMap[K Key, V any]() *shardedMap[K, V] {
+	sm := &shardedMap[K, V]{
+		shards:    make([]*lockedMap[K, V], int(numShards)),
+		expiryMap: newExpirationMap[K, V](),
 	}
 	for i := range sm.shards {
-		sm.shards[i] = newLockedMap[V](sm.expiryMap)
+		sm.shards[i] = newLockedMap[K, V](sm.expiryMap)
 	}
 	return sm
 }
 
-func (m *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
+func (m *shardedMap[_, V]) SetShouldUpdateFn(f updateFn[V]) {
 	for i := range m.shards {
 		m.shards[i].setShouldUpdateFn(f)
 	}
 }
 
-func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
+// Iter iterates the elements of the Map, passing them to the callback.
+// It guarantees that any key in the Map will be visited only once.
+// The set of keys visited by Iter is non-deterministic.
+func (sm *shardedMap[K, V]) Iter(cb func(k K, v V) (stop bool)) {
+	for _, shard := range sm.shards {
+		stopped := func() bool {
+			shard.RLock()
+			defer shard.RUnlock()
+
+			for _, v := range shard.data {
+				if stop := cb(v.originalKey, v.value); stop {
+					return true
+				}
+			}
+			return false
+		}()
+
+		if stopped {
+			break
+		}
+	}
+}
+
+func (sm *shardedMap[K, V]) Get(key, conflict uint64) (V, bool) {
 	return sm.shards[key%numShards].get(key, conflict)
 }
 
-func (sm *shardedMap[V]) Expiration(key uint64) time.Time {
+func (sm *shardedMap[K, V]) Expiration(key uint64) time.Time {
 	return sm.shards[key%numShards].Expiration(key)
 }
 
-func (sm *shardedMap[V]) Set(i *Item[V]) {
+func (sm *shardedMap[K, V]) Set(i *Item[K, V]) {
 	if i == nil {
 		// If item is nil make this Set a no-op.
 		return
@@ -93,35 +121,35 @@ func (sm *shardedMap[V]) Set(i *Item[V]) {
 	sm.shards[i.Key%numShards].Set(i)
 }
 
-func (sm *shardedMap[V]) Del(key, conflict uint64) (uint64, V) {
+func (sm *shardedMap[K, V]) Del(key, conflict uint64) (uint64, V) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
-func (sm *shardedMap[V]) Update(newItem *Item[V]) (V, bool) {
+func (sm *shardedMap[K, V]) Update(newItem *Item[K, V]) (V, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
 
-func (sm *shardedMap[V]) Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V])) {
+func (sm *shardedMap[K, V]) Cleanup(policy *defaultPolicy[K, V], onEvict func(item *Item[K, V])) {
 	sm.expiryMap.cleanup(sm, policy, onEvict)
 }
 
-func (sm *shardedMap[V]) Clear(onEvict func(item *Item[V])) {
+func (sm *shardedMap[K, V]) Clear(onEvict func(item *Item[K, V])) {
 	for i := uint64(0); i < numShards; i++ {
 		sm.shards[i].Clear(onEvict)
 	}
 	sm.expiryMap.clear()
 }
 
-type lockedMap[V any] struct {
+type lockedMap[K Key, V any] struct {
 	sync.RWMutex
-	data         map[uint64]storeItem[V]
-	em           *expirationMap[V]
+	data         map[uint64]storeItem[K, V]
+	em           *expirationMap[K, V]
 	shouldUpdate updateFn[V]
 }
 
-func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
-	return &lockedMap[V]{
-		data: make(map[uint64]storeItem[V]),
+func newLockedMap[K Key, V any](em *expirationMap[K, V]) *lockedMap[K, V] {
+	return &lockedMap[K, V]{
+		data: make(map[uint64]storeItem[K, V]),
 		em:   em,
 		shouldUpdate: func(cur, prev V) bool {
 			return true
@@ -129,11 +157,11 @@ func newLockedMap[V any](em *expirationMap[V]) *lockedMap[V] {
 	}
 }
 
-func (m *lockedMap[V]) setShouldUpdateFn(f updateFn[V]) {
+func (m *lockedMap[K, V]) setShouldUpdateFn(f updateFn[V]) {
 	m.shouldUpdate = f
 }
 
-func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
+func (m *lockedMap[K, V]) get(key, conflict uint64) (V, bool) {
 	m.RLock()
 	item, ok := m.data[key]
 	m.RUnlock()
@@ -151,13 +179,13 @@ func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
 	return item.value, true
 }
 
-func (m *lockedMap[V]) Expiration(key uint64) time.Time {
+func (m *lockedMap[K, V]) Expiration(key uint64) time.Time {
 	m.RLock()
 	defer m.RUnlock()
 	return m.data[key].expiration
 }
 
-func (m *lockedMap[V]) Set(i *Item[V]) {
+func (m *lockedMap[K, V]) Set(i *Item[K, V]) {
 	if i == nil {
 		// If the item is nil make this Set a no-op.
 		return
@@ -183,15 +211,16 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		m.em.add(i.Key, i.Conflict, i.Expiration)
 	}
 
-	m.data[i.Key] = storeItem[V]{
-		key:        i.Key,
-		conflict:   i.Conflict,
-		value:      i.Value,
-		expiration: i.Expiration,
+	m.data[i.Key] = storeItem[K, V]{
+		key:         i.Key,
+		originalKey: i.OriginalKey,
+		conflict:    i.Conflict,
+		value:       i.Value,
+		expiration:  i.Expiration,
 	}
 }
 
-func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
+func (m *lockedMap[K, V]) Del(key, conflict uint64) (uint64, V) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[key]
@@ -210,7 +239,7 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return item.conflict, item.value
 }
 
-func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
+func (m *lockedMap[K, V]) Update(newItem *Item[K, V]) (V, bool) {
 	m.Lock()
 	defer m.Unlock()
 	item, ok := m.data[newItem.Key]
@@ -225,27 +254,29 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	}
 
 	m.em.update(newItem.Key, newItem.Conflict, item.expiration, newItem.Expiration)
-	m.data[newItem.Key] = storeItem[V]{
-		key:        newItem.Key,
-		conflict:   newItem.Conflict,
-		value:      newItem.Value,
-		expiration: newItem.Expiration,
+	m.data[newItem.Key] = storeItem[K, V]{
+		key:         newItem.Key,
+		originalKey: newItem.OriginalKey,
+		conflict:    newItem.Conflict,
+		value:       newItem.Value,
+		expiration:  newItem.Expiration,
 	}
 
 	return item.value, true
 }
 
-func (m *lockedMap[V]) Clear(onEvict func(item *Item[V])) {
+func (m *lockedMap[K, V]) Clear(onEvict func(item *Item[K, V])) {
 	m.Lock()
 	defer m.Unlock()
-	i := &Item[V]{}
+	i := &Item[K, V]{}
 	if onEvict != nil {
 		for _, si := range m.data {
 			i.Key = si.key
 			i.Conflict = si.conflict
 			i.Value = si.value
+			i.OriginalKey = si.originalKey
 			onEvict(i)
 		}
 	}
-	m.data = make(map[uint64]storeItem[V])
+	m.data = make(map[uint64]storeItem[K, V])
 }

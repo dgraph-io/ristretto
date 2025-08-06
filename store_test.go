@@ -14,12 +14,15 @@ import (
 )
 
 func TestStoreSetGet(t *testing.T) {
-	s := newStore[int]()
+	t.Parallel()
+
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    2,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       2,
 	}
 	s.Set(&i)
 	val, ok := s.Get(key, conflict)
@@ -33,10 +36,11 @@ func TestStoreSetGet(t *testing.T) {
 	require.Equal(t, 3, val)
 
 	key, conflict = z.KeyToHash(2)
-	i = Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    2,
+	i = Item[int, int]{
+		Key:         key,
+		OriginalKey: 2,
+		Conflict:    conflict,
+		Value:       2,
 	}
 	s.Set(&i)
 	val, ok = s.Get(key, conflict)
@@ -45,12 +49,15 @@ func TestStoreSetGet(t *testing.T) {
 }
 
 func TestStoreDel(t *testing.T) {
-	s := newStore[int]()
+	t.Parallel()
+
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    1,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       1,
 	}
 	s.Set(&i)
 	s.Del(key, conflict)
@@ -61,14 +68,47 @@ func TestStoreDel(t *testing.T) {
 	s.Del(2, 0)
 }
 
+func TestStoreSetIter(t *testing.T) {
+	t.Parallel()
+
+	s := newStore[string, int]()
+	expectedValues := map[string]int{
+		"a": 1,
+		"b": 2,
+		"c": 3,
+		"d": 4,
+	}
+	for k, v := range expectedValues {
+		key, conflict := z.KeyToHash(k)
+		i := Item[string, int]{
+			Key:         key,
+			OriginalKey: k,
+			Conflict:    conflict,
+			Value:       v,
+		}
+		s.Set(&i)
+	}
+
+	resultMap := make(map[string]int)
+	s.Iter(func(k string, v int) (stop bool) {
+		resultMap[k] = v
+		return false
+	})
+
+	require.Equal(t, expectedValues, resultMap)
+}
+
 func TestStoreClear(t *testing.T) {
-	s := newStore[uint64]()
+	t.Parallel()
+
+	s := newStore[uint64, uint64]()
 	for i := uint64(0); i < 1000; i++ {
 		key, conflict := z.KeyToHash(i)
-		it := Item[uint64]{
-			Key:      key,
-			Conflict: conflict,
-			Value:    i,
+		it := Item[uint64, uint64]{
+			Key:         key,
+			OriginalKey: i,
+			Conflict:    conflict,
+			Value:       i,
 		}
 		s.Set(&it)
 	}
@@ -82,17 +122,20 @@ func TestStoreClear(t *testing.T) {
 }
 
 func TestShouldUpdate(t *testing.T) {
+	t.Parallel()
+
 	// Create a should update function where the value only increases.
-	s := newStore[int]()
+	s := newStore[int, int]()
 	s.SetShouldUpdateFn(func(cur, prev int) bool {
 		return cur > prev
 	})
 
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    2,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       2,
 	}
 	s.Set(&i)
 	i.Value = 1
@@ -105,12 +148,15 @@ func TestShouldUpdate(t *testing.T) {
 }
 
 func TestStoreUpdate(t *testing.T) {
-	s := newStore[int]()
+	t.Parallel()
+
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    1,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       1,
 	}
 	s.Set(&i)
 	i.Value = 2
@@ -134,10 +180,11 @@ func TestStoreUpdate(t *testing.T) {
 	require.Equal(t, 3, val)
 
 	key, conflict = z.KeyToHash(2)
-	i = Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    2,
+	i = Item[int, int]{
+		Key:         key,
+		OriginalKey: 2,
+		Conflict:    conflict,
+		Value:       2,
 	}
 	_, ok = s.Update(&i)
 	require.False(t, ok)
@@ -147,22 +194,26 @@ func TestStoreUpdate(t *testing.T) {
 }
 
 func TestStoreCollision(t *testing.T) {
-	s := newShardedMap[int]()
+	t.Parallel()
+
+	s := newShardedMap[int, int]()
 	s.shards[1].Lock()
-	s.shards[1].data[1] = storeItem[int]{
-		key:      1,
-		conflict: 0,
-		value:    1,
+	s.shards[1].data[1] = storeItem[int, int]{
+		key:         1,
+		originalKey: 1,
+		conflict:    0,
+		value:       1,
 	}
 	s.shards[1].Unlock()
 	val, ok := s.Get(1, 1)
 	require.False(t, ok)
 	require.Empty(t, val)
 
-	i := Item[int]{
-		Key:      1,
-		Conflict: 1,
-		Value:    2,
+	i := Item[int, int]{
+		Key:         1,
+		OriginalKey: 1,
+		Conflict:    1,
+		Value:       2,
 	}
 	s.Set(&i)
 	val, ok = s.Get(1, 0)
@@ -182,14 +233,17 @@ func TestStoreCollision(t *testing.T) {
 }
 
 func TestStoreExpiration(t *testing.T) {
-	s := newStore[int]()
+	t.Parallel()
+
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
 	expiration := time.Now().Add(time.Second)
-	i := Item[int]{
-		Key:        key,
-		Conflict:   conflict,
-		Value:      1,
-		Expiration: expiration,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       1,
+		Expiration:  expiration,
 	}
 	s.Set(&i)
 	val, ok := s.Get(key, conflict)
@@ -212,12 +266,13 @@ func TestStoreExpiration(t *testing.T) {
 }
 
 func BenchmarkStoreGet(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    1,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       1,
 	}
 	s.Set(&i)
 	b.SetBytes(1)
@@ -229,15 +284,16 @@ func BenchmarkStoreGet(b *testing.B) {
 }
 
 func BenchmarkStoreSet(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := Item[int]{
-				Key:      key,
-				Conflict: conflict,
-				Value:    1,
+			i := Item[int, int]{
+				Key:         key,
+				OriginalKey: 1,
+				Conflict:    conflict,
+				Value:       1,
 			}
 			s.Set(&i)
 		}
@@ -245,21 +301,23 @@ func BenchmarkStoreSet(b *testing.B) {
 }
 
 func BenchmarkStoreUpdate(b *testing.B) {
-	s := newStore[int]()
+	s := newStore[int, int]()
 	key, conflict := z.KeyToHash(1)
-	i := Item[int]{
-		Key:      key,
-		Conflict: conflict,
-		Value:    1,
+	i := Item[int, int]{
+		Key:         key,
+		OriginalKey: 1,
+		Conflict:    conflict,
+		Value:       1,
 	}
 	s.Set(&i)
 	b.SetBytes(1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			s.Update(&Item[int]{
-				Key:      key,
-				Conflict: conflict,
-				Value:    2,
+			s.Update(&Item[int, int]{
+				Key:         key,
+				OriginalKey: 1,
+				Conflict:    conflict,
+				Value:       2,
 			})
 		}
 	})

@@ -13,21 +13,27 @@ import (
 )
 
 func TestPolicy(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		require.Nil(t, recover())
 	}()
-	newPolicy[int](100, 10)
+	newPolicy[int, int](100, 10)
 }
 
 func TestPolicyMetrics(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.CollectMetrics(newMetrics())
 	require.NotNil(t, p.metrics)
 	require.NotNil(t, p.evict.metrics)
 }
 
 func TestPolicyProcessItems(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.itemsCh <- []uint64{1, 2, 2}
 	time.Sleep(wait)
 	p.Lock()
@@ -45,7 +51,9 @@ func TestPolicyProcessItems(t *testing.T) {
 }
 
 func TestPolicyPush(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	require.True(t, p.Push([]uint64{}))
 
 	keepCount := 0
@@ -58,7 +66,9 @@ func TestPolicyPush(t *testing.T) {
 }
 
 func TestPolicyAdd(t *testing.T) {
-	p := newDefaultPolicy[int](1000, 100)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](1000, 100)
 	if victims, added := p.Add(1, 101); victims != nil || added {
 		t.Fatal("can't add an item bigger than entire cache")
 	}
@@ -87,14 +97,18 @@ func TestPolicyAdd(t *testing.T) {
 }
 
 func TestPolicyHas(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	require.True(t, p.Has(1))
 	require.False(t, p.Has(2))
 }
 
 func TestPolicyDel(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	p.Del(1)
 	p.Del(2)
@@ -103,13 +117,17 @@ func TestPolicyDel(t *testing.T) {
 }
 
 func TestPolicyCap(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	require.Equal(t, int64(9), p.Cap())
 }
 
 func TestPolicyUpdate(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	p.Update(1, 2)
 	p.Lock()
@@ -118,14 +136,18 @@ func TestPolicyUpdate(t *testing.T) {
 }
 
 func TestPolicyCost(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 2)
 	require.Equal(t, int64(2), p.Cost(1))
 	require.Equal(t, int64(-1), p.Cost(2))
 }
 
 func TestPolicyClear(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	p.Add(2, 2)
 	p.Add(3, 3)
@@ -137,29 +159,37 @@ func TestPolicyClear(t *testing.T) {
 }
 
 func TestPolicyClose(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		require.NotNil(t, recover())
 	}()
 
-	p := newDefaultPolicy[int](100, 10)
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Add(1, 1)
 	p.Close()
 	p.itemsCh <- []uint64{1}
 }
 
 func TestPushAfterClose(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Close()
 	require.False(t, p.Push([]uint64{1, 2}))
 }
 
 func TestAddAfterClose(t *testing.T) {
-	p := newDefaultPolicy[int](100, 10)
+	t.Parallel()
+
+	p := newDefaultPolicy[int, int](100, 10)
 	p.Close()
 	p.Add(1, 1)
 }
 
 func TestSampledLFUAdd(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
@@ -169,6 +199,8 @@ func TestSampledLFUAdd(t *testing.T) {
 }
 
 func TestSampledLFUDel(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
@@ -180,6 +212,8 @@ func TestSampledLFUDel(t *testing.T) {
 }
 
 func TestSampledLFUUpdate(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(4)
 	e.add(1, 1)
 	require.True(t, e.updateIfHas(1, 2))
@@ -188,6 +222,8 @@ func TestSampledLFUUpdate(t *testing.T) {
 }
 
 func TestSampledLFUClear(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
@@ -198,6 +234,8 @@ func TestSampledLFUClear(t *testing.T) {
 }
 
 func TestSampledLFURoom(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(16)
 	e.add(1, 1)
 	e.add(2, 2)
@@ -206,6 +244,8 @@ func TestSampledLFURoom(t *testing.T) {
 }
 
 func TestSampledLFUSample(t *testing.T) {
+	t.Parallel()
+
 	e := newSampledLFU(16)
 	e.add(4, 4)
 	e.add(5, 5)
@@ -226,6 +266,8 @@ func TestSampledLFUSample(t *testing.T) {
 }
 
 func TestTinyLFUIncrement(t *testing.T) {
+	t.Parallel()
+
 	a := newTinyLFU(4)
 	a.Increment(1)
 	a.Increment(1)
@@ -239,6 +281,8 @@ func TestTinyLFUIncrement(t *testing.T) {
 }
 
 func TestTinyLFUEstimate(t *testing.T) {
+	t.Parallel()
+
 	a := newTinyLFU(8)
 	a.Increment(1)
 	a.Increment(1)
@@ -248,6 +292,8 @@ func TestTinyLFUEstimate(t *testing.T) {
 }
 
 func TestTinyLFUPush(t *testing.T) {
+	t.Parallel()
+
 	a := newTinyLFU(16)
 	a.Push([]uint64{1, 2, 2, 3, 3, 3})
 	require.Equal(t, int64(1), a.Estimate(1))
@@ -257,6 +303,8 @@ func TestTinyLFUPush(t *testing.T) {
 }
 
 func TestTinyLFUClear(t *testing.T) {
+	t.Parallel()
+
 	a := newTinyLFU(16)
 	a.Push([]uint64{1, 3, 3, 3})
 	a.clear()
