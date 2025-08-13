@@ -24,6 +24,9 @@ func TestKeyToHash(t *testing.T) {
 	key, conflict = KeyToHash(uint64(1))
 	verifyHashProduct(t, 1, 0, key, conflict)
 
+	key, conflict = KeyToHash(uint(1))
+	verifyHashProduct(t, 1, 0, key, conflict)
+
 	key, conflict = KeyToHash(1)
 	verifyHashProduct(t, 1, 0, key, conflict)
 
