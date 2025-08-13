@@ -13,7 +13,7 @@ import (
 )
 
 type Key interface {
-	uint64 | string | []byte | byte | int | int32 | uint32 | int64
+	uint64 | string | []byte | byte | int | uint | int32 | uint32 | int64
 }
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash,
@@ -33,6 +33,8 @@ func KeyToHash[K Key](key K) (uint64, uint64) {
 	case []byte:
 		return MemHash(k), xxhash.Sum64(k)
 	case byte:
+		return uint64(k), 0
+	case uint:
 		return uint64(k), 0
 	case int:
 		return uint64(k), 0
