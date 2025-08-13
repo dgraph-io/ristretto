@@ -11,6 +11,7 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 - Remove dependency: github.com/pkg/errors (#443)
 - Add public Cache.RemainingCost() method
+- Add support for uint keys
 
 **Fixed**
 
