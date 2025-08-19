@@ -27,7 +27,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run Unit Tests
-        run: go test -timeout=20m -race -covermode atomic -coverprofile=covprofile ./...
+        run: |
+          go env -w GOTOOLCHAIN=go1.25.0+auto
+          go test -timeout=20m -race -covermode atomic -coverprofile=covprofile ./...
       - name: Save coverage profile
         uses: actions/upload-artifact@v4
         with:
