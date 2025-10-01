@@ -1,15 +1,15 @@
 module github.com/dgraph-io/ristretto/v2
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.25.0
+toolchain go1.25.1
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dgryski/go-farm v0.0.0-20240924180020-3414d57e47da
 	github.com/dustin/go-humanize v1.0.1
-	github.com/stretchr/testify v1.10.0
-	golang.org/x/sys v0.35.0
+	github.com/stretchr/testify v1.11.1
+	golang.org/x/sys v0.36.0
 )
 
 require (
