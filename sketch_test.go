@@ -64,7 +64,7 @@ func TestSketchClear(t *testing.T) {
 }
 
 func TestNext2Power(t *testing.T) {
-	sz := 12 << 30
+	sz := int64(12) << 30
 	szf := float64(sz) * 0.01
 	val := int64(szf)
 	t.Logf("szf = %.2f val = %d\n", szf, val)

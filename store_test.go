@@ -206,7 +206,7 @@ func TestStoreExpiration(t *testing.T) {
 	require.True(t, s.Expiration(key).IsZero())
 
 	// missing item
-	key, _ = z.KeyToHash(4340958203495)
+	key, _ = z.KeyToHash(int64(4340958203495))
 	ttl = s.Expiration(key)
 	require.True(t, ttl.IsZero())
 }
