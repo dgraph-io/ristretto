@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -333,7 +334,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 		// Treat this a no-op.
 		return false
 	default:
-		expiration = time.Now().Add(ttl)
+		expiration = utils.Now().Add(ttl)
 	}
 
 	keyHash, conflictHash := c.keyToHash(key)

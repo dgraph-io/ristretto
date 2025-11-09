@@ -6,6 +6,7 @@
 package ristretto
 
 import (
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"sync"
 	"time"
 )
@@ -145,7 +146,7 @@ func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
 	}
 
 	// Handle expired items.
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+	if !item.expiration.IsZero() && utils.Now().After(item.expiration) {
 		return zeroValue[V](), false
 	}
 	return item.value, true

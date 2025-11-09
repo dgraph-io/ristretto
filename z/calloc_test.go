@@ -7,11 +7,10 @@ package z
 
 import (
 	"fmt"
+	"github.com/dgraph-io/ristretto/v2/utils"
+	"math/rand"
 	"sync"
 	"testing"
-	"time"
-
-	"math/rand"
 
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +36,7 @@ func BenchmarkAllocation(b *testing.B) {
 			},
 		}
 		b.RunParallel(func(pb *testing.PB) {
-			source := rand.NewSource(time.Now().UnixNano())
+			source := rand.NewSource(utils.NowUnixNano())
 			r := rand.New(source)
 			for pb.Next() {
 				x := pool.Get().([]byte)
@@ -54,7 +53,7 @@ func BenchmarkAllocation(b *testing.B) {
 
 	b.Run("Calloc", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
-			source := rand.NewSource(time.Now().UnixNano())
+			source := rand.NewSource(utils.NowUnixNano())
 			r := rand.New(source)
 			for pb.Next() {
 				sz := r.Intn(100) << 10

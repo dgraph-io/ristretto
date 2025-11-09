@@ -8,6 +8,7 @@ package ristretto
 import (
 	"container/heap"
 	"fmt"
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -36,7 +37,7 @@ func TestStressSetGet(t *testing.T) {
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		wg.Add(1)
 		go func() {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			r := rand.New(rand.NewSource(utils.NowUnixNano()))
 			for a := 0; a < 1000; a++ {
 				k := r.Int() % 10
 				if val, ok := c.Get(k); !ok {

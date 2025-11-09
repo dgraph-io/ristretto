@@ -6,6 +6,7 @@
 package ristretto
 
 import (
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"testing"
 	"time"
 
@@ -184,7 +185,7 @@ func TestStoreCollision(t *testing.T) {
 func TestStoreExpiration(t *testing.T) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)
-	expiration := time.Now().Add(time.Second)
+	expiration := utils.Now().Add(time.Second)
 	i := Item[int]{
 		Key:        key,
 		Conflict:   conflict,

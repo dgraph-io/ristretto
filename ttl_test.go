@@ -6,6 +6,7 @@
 package ristretto
 
 import (
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestExpirationMapCleanup(t *testing.T) {
 	p := newDefaultPolicy[int](100, 10)
 
 	// Add items to the store and expiration map
-	now := time.Now()
+	now := utils.Now()
 	i1 := &Item[int]{Key: 1, Conflict: 1, Value: 100, Expiration: now.Add(1 * time.Second)}
 	s.Set(i1)
 	em.add(i1.Key, i1.Conflict, i1.Expiration)

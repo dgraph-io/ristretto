@@ -9,11 +9,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"io"
 	"math/rand"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -36,7 +36,7 @@ type Simulator func() (uint64, error)
 //
 // [1]: https://en.wikipedia.org/wiki/Zipf%27s_law
 func NewZipfian(s, v float64, n uint64) Simulator {
-	z := rand.NewZipf(rand.New(rand.NewSource(time.Now().UnixNano())), s, v, n)
+	z := rand.NewZipf(rand.New(rand.NewSource(utils.NowUnixNano())), s, v, n)
 	return func() (uint64, error) {
 		return z.Uint64(), nil
 	}
@@ -48,7 +48,7 @@ func NewZipfian(s, v float64, n uint64) Simulator {
 // [1]: https://en.wikipedia.org/wiki/Uniform_distribution_(continuous)
 func NewUniform(max uint64) Simulator {
 	m := int64(max)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewSource(utils.NowUnixNano()))
 	return func() (uint64, error) {
 		return uint64(r.Int63n(m)), nil
 	}

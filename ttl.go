@@ -6,6 +6,7 @@
 package ristretto
 
 import (
+	"github.com/dgraph-io/ristretto/v2/utils"
 	"sync"
 	"time"
 )
@@ -38,7 +39,7 @@ type expirationMap[V any] struct {
 func newExpirationMap[V any]() *expirationMap[V] {
 	return &expirationMap[V]{
 		buckets:              make(map[int64]bucket),
-		lastCleanedBucketNum: cleanupBucket(time.Now()),
+		lastCleanedBucketNum: cleanupBucket(utils.Now()),
 	}
 }
 
@@ -116,7 +117,7 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 	}
 
 	m.Lock()
-	now := time.Now()
+	now := utils.Now()
 	currentBucketNum := cleanupBucket(now)
 	// Clean up all buckets up to and including currentBucketNum, starting from
 	// (but not including) the last one that was cleaned up
@@ -168,6 +169,6 @@ func (m *expirationMap[V]) clear() {
 
 	m.Lock()
 	m.buckets = make(map[int64]bucket)
-	m.lastCleanedBucketNum = cleanupBucket(time.Now())
+	m.lastCleanedBucketNum = cleanupBucket(utils.Now())
 	m.Unlock()
 }
