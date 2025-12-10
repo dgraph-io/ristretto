@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -152,7 +152,7 @@ type Config[K Key, V any] struct {
 	// is not set, the default keyToHash function is used.
 	//
 	// Ristretto has a variety of defaults depending on the underlying interface type
-	// https://github.com/hypermodeinc/ristretto/blob/main/z/z.go#L19-L41).
+	// https://github.com/dgraph-io/ristretto/blob/main/z/z.go#L19-L41).
 	//
 	// Note that if you want 128bit hashes you should use the both the values
 	// in the return of the function. If you want to use 64bit hashes, you can
