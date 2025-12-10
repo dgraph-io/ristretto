@@ -2,7 +2,7 @@ module github.com/dgraph-io/ristretto/v2
 
 go 1.24.0
 
-toolchain go1.25.1
+toolchain go1.25.0
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
