@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -851,7 +851,7 @@ func TestBlockOnClear(t *testing.T) {
 	}
 }
 
-// Regression test for bug https://github.com/hypermodeinc/ristretto/issues/167
+// Regression test for bug https://github.com/dgraph-io/ristretto/issues/167
 func TestDropUpdates(t *testing.T) {
 	originalSetBufSize := setBufSize
 	defer func() { setBufSize = originalSetBufSize }()
