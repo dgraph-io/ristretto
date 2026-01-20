@@ -388,6 +388,96 @@ func TestCacheGet(t *testing.T) {
 	require.Zero(t, val)
 }
 
+func TestCacheIterValues(t *testing.T) {
+	c, err := NewCache(&Config[string, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	expectedValues := map[string]int{
+		"a": 1,
+		"b": 2,
+		"c": 3,
+		"d": 4,
+	}
+	for k, v := range expectedValues {
+		key, conflict := z.KeyToHash(k)
+		i := Item[int]{
+			Key:      key,
+			Conflict: conflict,
+			Value:    v,
+		}
+		c.storedItems.Set(&i)
+	}
+
+	resultValues := make([]int, 0)
+	c.IterValues(func(v int) (stop bool) {
+		resultValues = append(resultValues, v)
+		return false
+	})
+
+	expectedSlice := make([]int, 0, len(expectedValues))
+	for _, v := range expectedValues {
+		expectedSlice = append(expectedSlice, v)
+	}
+	require.ElementsMatch(t, expectedSlice, resultValues)
+}
+
+func TestCacheIterValuesNil(t *testing.T) {
+	// Test that calling IterValues on a nil cache is safe and doesn't panic
+	var c *Cache[int, int]
+
+	callbackCalled := false
+	c.IterValues(func(v int) (stop bool) {
+		callbackCalled = true
+		return false
+	})
+
+	// Callback should never be called on a nil cache
+	require.False(t, callbackCalled)
+}
+
+func TestCacheIterValuesAfterClose(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	expectedCacheLen := 5
+	for k := 0; k < expectedCacheLen; k++ {
+		c.Set(k, k*10, 1)
+	}
+	c.Wait()
+
+	// Verify values exist before closing
+	resultsBefore := make([]int, 0)
+	c.IterValues(func(v int) (stop bool) {
+		resultsBefore = append(resultsBefore, v)
+		return false
+	})
+	require.Len(t, resultsBefore, expectedCacheLen)
+
+	c.Close()
+
+	// Try to iterate after close - should not panic and callback should not be called
+	callbackCalled := false
+	c.IterValues(func(v int) (stop bool) {
+		callbackCalled = true
+		return false
+	})
+
+	// Callback should never be called on a closed cache
+	require.False(t, callbackCalled)
+}
+
 // retrySet calls SetWithTTL until the item is accepted by the cache.
 func retrySet(t *testing.T, c *Cache[int, int], key, value int, cost int64, ttl time.Duration) {
 	for {
