@@ -414,6 +414,16 @@ func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
 	return time.Until(expiration), true
 }
 
+// IterValues iterates the values of the Map, passing them to the callback.
+// It guarantees that any value in the Map will be visited only once.
+// The set of values visited by IterValues is non-deterministic.
+func (c *Cache[K, V]) IterValues(cb func(v V) (stop bool)) {
+	if c == nil || c.isClosed.Load() {
+		return
+	}
+	c.storedItems.IterValues(cb)
+}
+
 // Close stops all goroutines and closes all channels.
 func (c *Cache[K, V]) Close() {
 	if c == nil || c.isClosed.Load() {

@@ -61,6 +61,127 @@ func TestStoreDel(t *testing.T) {
 	s.Del(2, 0)
 }
 
+func TestStoreIterValues(t *testing.T) {
+	s := newStore[int]()
+	expectedValues := map[string]int{
+		"a": 1,
+		"b": 2,
+		"c": 3,
+		"d": 4,
+	}
+	for k, v := range expectedValues {
+		key, conflict := z.KeyToHash(k)
+		i := Item[int]{
+			Key:      key,
+			Conflict: conflict,
+			Value:    v,
+		}
+		s.Set(&i)
+	}
+
+	resultValues := make([]int, 0)
+	s.IterValues(func(v int) (stop bool) {
+		resultValues = append(resultValues, v)
+		return false
+	})
+
+	expectedSlice := make([]int, 0, len(expectedValues))
+	for _, v := range expectedValues {
+		expectedSlice = append(expectedSlice, v)
+	}
+	require.ElementsMatch(t, expectedSlice, resultValues)
+}
+
+func TestStoreIterValuesWithStop(t *testing.T) {
+	s := newStore[int]()
+	expectedValues := map[string]int{
+		"a": 1,
+		"b": 2,
+		"c": 3,
+		"d": 4,
+	}
+	for k, v := range expectedValues {
+		key, conflict := z.KeyToHash(k)
+		i := Item[int]{
+			Key:      key,
+			Conflict: conflict,
+			Value:    v,
+		}
+		s.Set(&i)
+	}
+
+	resultValues := make([]int, 0)
+	index := 1
+	expectedLength := 3
+	s.IterValues(func(v int) (stop bool) {
+		resultValues = append(resultValues, v)
+
+		// Only three elements should be present
+		if index == expectedLength {
+			return true
+		}
+
+		index++
+		return false
+	})
+
+	require.Len(t, resultValues, expectedLength)
+	// Verify all returned values are valid (exist in expectedValues)
+	expectedSlice := make([]int, 0, len(expectedValues))
+	for _, v := range expectedValues {
+		expectedSlice = append(expectedSlice, v)
+	}
+	require.Subset(t, expectedSlice, resultValues)
+}
+
+func TestStoreIterValuesSkipsExpiredItems(t *testing.T) {
+	s := newStore[int]()
+	now := time.Now()
+
+	// Add items with various expiration states
+	items := []struct {
+		key        string
+		value      int
+		expiration time.Time
+		shouldSee  bool
+	}{
+		{"valid1", 1, now.Add(time.Hour), true},       // Expires in 1 hour
+		{"expired1", 2, now.Add(-time.Hour), false},   // Expired 1 hour ago
+		{"expired2", 3, now.Add(-time.Second), false}, // Expired 1 second ago
+		{"valid2", 4, now.Add(2 * time.Minute), true}, // Expires in 2 minutes
+		{"noexpiry", 5, time.Time{}, true},            // No expiration set
+	}
+
+	for _, item := range items {
+		key, conflict := z.KeyToHash(item.key)
+		i := Item[int]{
+			Key:        key,
+			Conflict:   conflict,
+			Value:      item.value,
+			Expiration: item.expiration,
+		}
+		s.Set(&i)
+	}
+
+	// Collect values from iteration
+	resultValues := make([]int, 0)
+	s.IterValues(func(v int) (stop bool) {
+		resultValues = append(resultValues, v)
+		return false
+	})
+
+	// Only non-expired items should be returned
+	expectedValues := []int{}
+	for _, item := range items {
+		if item.shouldSee {
+			expectedValues = append(expectedValues, item.value)
+		}
+	}
+
+	require.ElementsMatch(t, expectedValues, resultValues)
+	require.Len(t, resultValues, 3)
+}
+
 func TestStoreClear(t *testing.T) {
 	s := newStore[uint64]()
 	for i := uint64(0); i < 1000; i++ {
