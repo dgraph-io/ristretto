@@ -7,16 +7,57 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
-**Changed**
+## [v2.4.0] - 2026-01-21
+
+### Added
+
+- Implement public `Cache.IterValues()` method (#475)
+- Allow custom key types with underlying types in Key constraint (#478)
+
+### Fixed
+
+- Fix compilation on 32-bit archs (#465)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.3.0...v2.4.0
+
+## [v2.3.0] - 2025-08-19
+
+### Added
+
+- Add public `Cache.RemainingCost()` method (#448)
+- Add support for uint keys (#463)
+
+### Fixed
+
+- Fix typo: ffor → for (#456)
+- Correct grammar in error message (#461)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.2.0...v2.3.0
+
+## [v2.2.0] - 2025-03-30
+
+### Changed
 
 - Remove dependency: github.com/pkg/errors (#443)
-- Add public Cache.RemainingCost() method
-- Add support for uint keys
-- Implement public Cache.IterValues() method (#475)
 
-**Fixed**
+### Fixed
 
-- Switch from using a sync.Waitgroup, to closing a channel of struct{} (#442)
+- Switch from using a sync.WaitGroup to closing a channel of struct{} (#442)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.1.0...v2.2.0
+
+## [v2.1.0] - 2025-01-09
+
+### Added
+
+- Add `ShouldUpdate()` function in config (#427)
+
+### Fixed
+
+- Fix memory leak while cleaning up expiration map (#429)
+- Execute `m.Unlock` in defer in store.go (#425)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.0.1...v2.1.0
 
 ## [v2.0.1] - 2024-12-11
 
