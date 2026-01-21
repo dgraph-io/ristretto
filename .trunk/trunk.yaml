@@ -19,6 +19,10 @@ runtimes:
 
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
+  ignore:
+    - linters: [markdownlint]
+      paths:
+        - CHANGELOG.md
   enabled:
     - golangci-lint2@2.7.2
     - trivy@0.68.1
