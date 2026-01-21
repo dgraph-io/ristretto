@@ -1,7 +1,6 @@
 # Ristretto
 
 [![GitHub License](https://img.shields.io/github/license/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto?tab=Apache-2.0-1-ov-file#readme)
-[![chat](https://img.shields.io/discord/1267579648657850441)](https://discord.hypermode.com)
 [![GitHub Repo stars](https://img.shields.io/github/stars/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto/stargazers)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto/commits/main/)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
@@ -171,9 +170,9 @@ Below is a list of known projects that use Ristretto:
 ### How are you achieving this performance? What shortcuts are you taking?
 
 We go into detail in the
-[Ristretto blog post](https://hypermode.com/blog/introducing-ristretto-high-perf-go-cache/), but in
-short: our throughput performance can be attributed to a mix of batching and eventual consistency.
-Our hit ratio performance is mostly due to an excellent
+[Ristretto blog post](https://web.archive.org/web/20250806164019/https://hypermode.com/blog/introducing-ristretto-high-perf-go-cache),
+but in short: our throughput performance can be attributed to a mix of batching and eventual
+consistency. Our hit ratio performance is mostly due to an excellent
 [admission policy](https://arxiv.org/abs/1512.00727) and SampledLFU eviction policy.
 
 As for "shortcuts," the only thing Ristretto does that could be construed as one is dropping some
