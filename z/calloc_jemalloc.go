@@ -8,7 +8,6 @@
 package z
 
 /*
-#cgo LDFLAGS: /usr/local/lib/libjemalloc.a -L/usr/local/lib -Wl,-rpath,/usr/local/lib -ljemalloc -lm -lstdc++ -pthread -ldl
 #include <stdlib.h>
 #include <jemalloc/jemalloc.h>
 */
