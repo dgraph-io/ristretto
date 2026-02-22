@@ -332,6 +332,26 @@ func TestStoreExpiration(t *testing.T) {
 	require.True(t, ttl.IsZero())
 }
 
+func TestStoreExpireAt(t *testing.T) {
+	s := newStore[int]()
+	key, conflict := z.KeyToHash(1)
+	expiration := time.Now().Add(time.Second)
+	i := Item[int]{
+		Key:        key,
+		Conflict:   conflict,
+		Expiration: expiration,
+	}
+	s.Set(&i)
+	ttl := s.Expiration(key)
+	require.Equal(t, expiration, ttl)
+
+	newExpiry := time.Now().Add(2 * time.Second)
+	ok := s.ExpireAt(key, newExpiry)
+	require.True(t, ok)
+	ttl = s.Expiration(key)
+	require.WithinDuration(t, newExpiry, ttl, 100*time.Millisecond)
+}
+
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)
