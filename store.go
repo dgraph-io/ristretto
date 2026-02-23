@@ -267,15 +267,17 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 
 func (m *lockedMap[V]) Clear(onEvict func(item *Item[V])) {
 	m.Lock()
-	defer m.Unlock()
-	i := &Item[V]{}
+	dataToEvict := m.data
+	m.data = make(map[uint64]storeItem[V])
+	m.Unlock()
+
 	if onEvict != nil {
-		for _, si := range m.data {
+		i := &Item[V]{}
+		for _, si := range dataToEvict {
 			i.Key = si.key
 			i.Conflict = si.conflict
 			i.Value = si.value
 			onEvict(i)
 		}
 	}
-	m.data = make(map[uint64]storeItem[V])
 }
