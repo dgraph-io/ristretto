@@ -1,6 +1,7 @@
 name: ci-ristretto-tests
 
 on:
+  workflow_dispatch: # allows manual trigger from GitHub
   push:
     branches:
       - main
