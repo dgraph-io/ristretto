@@ -332,6 +332,47 @@ func TestStoreExpiration(t *testing.T) {
 	require.True(t, ttl.IsZero())
 }
 
+func TestStoreClearConcurrent(t *testing.T) {
+	s := newShardedMap[int]()
+	
+	for i := 0; i < 100; i++ {
+		s.Set(&Item[int]{
+			Key:      uint64(i * 256),
+			Conflict: 0,
+			Value:    i,
+		})
+	}
+
+	evictStarted := make(chan struct{})
+	evictFinished := make(chan struct{})
+
+	go func() {
+		s.Clear(func(item *Item[int]) {
+			select {
+			case evictStarted <- struct{}{}:
+			default:
+			}
+			time.Sleep(2 * time.Millisecond)
+		})
+		close(evictFinished)
+	}()
+
+	<-evictStarted
+
+	getFinished := make(chan struct{})
+	go func() {
+		s.Get(0, 0)
+		close(getFinished)
+	}()
+
+	select {
+	case <-getFinished:
+		// success: Get completed concurrently while Clear is executing onEvict
+	case <-evictFinished:
+		t.Fatal("Get blocked by Clear: lock starvation during eviction")
+	}
+}
+
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)
