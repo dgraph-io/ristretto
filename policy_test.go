@@ -160,7 +160,7 @@ func TestAddAfterClose(t *testing.T) {
 }
 
 func TestSampledLFUAdd(t *testing.T) {
-	e := newSampledLFU(4)
+	e := newSampledLFU(4, 100)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 1)
@@ -169,7 +169,7 @@ func TestSampledLFUAdd(t *testing.T) {
 }
 
 func TestSampledLFUDel(t *testing.T) {
-	e := newSampledLFU(4)
+	e := newSampledLFU(4, 100)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.del(2)
@@ -180,7 +180,7 @@ func TestSampledLFUDel(t *testing.T) {
 }
 
 func TestSampledLFUUpdate(t *testing.T) {
-	e := newSampledLFU(4)
+	e := newSampledLFU(4, 100)
 	e.add(1, 1)
 	require.True(t, e.updateIfHas(1, 2))
 	require.Equal(t, int64(2), e.used)
@@ -188,7 +188,7 @@ func TestSampledLFUUpdate(t *testing.T) {
 }
 
 func TestSampledLFUClear(t *testing.T) {
-	e := newSampledLFU(4)
+	e := newSampledLFU(4, 100)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 1)
@@ -198,7 +198,7 @@ func TestSampledLFUClear(t *testing.T) {
 }
 
 func TestSampledLFURoom(t *testing.T) {
-	e := newSampledLFU(16)
+	e := newSampledLFU(16, 1000)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 3)
@@ -206,7 +206,7 @@ func TestSampledLFURoom(t *testing.T) {
 }
 
 func TestSampledLFUSample(t *testing.T) {
-	e := newSampledLFU(16)
+	e := newSampledLFU(16, 1000)
 	e.add(4, 4)
 	e.add(5, 5)
 	sample := e.fillSample([]*policyPair{
@@ -262,4 +262,50 @@ func TestTinyLFUClear(t *testing.T) {
 	a.clear()
 	require.Equal(t, int64(0), a.incrs)
 	require.Equal(t, int64(0), a.Estimate(3))
+}
+
+func BenchmarkSampledLFUPopulate(b *testing.B) {
+	sizes := []struct {
+		name string
+		n    int
+	}{
+		{"1K", 1000},
+		{"10K", 10000},
+		{"100K", 100000},
+		{"1M", 1000000},
+	}
+	for _, s := range sizes {
+		b.Run(s.name, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				e := newSampledLFU(int64(s.n*100), int64(s.n*10))
+				for i := 0; i < s.n; i++ {
+					e.add(uint64(i), 1)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSampledLFUFillSample(b *testing.B) {
+	sizes := []struct {
+		name string
+		n    int
+	}{
+		{"100", 100},
+		{"1K", 1000},
+		{"10K", 10000},
+		{"100K", 100000},
+	}
+	for _, s := range sizes {
+		b.Run(s.name, func(b *testing.B) {
+			e := newSampledLFU(int64(s.n*100), int64(s.n*10))
+			for i := 0; i < s.n; i++ {
+				e.add(uint64(i), 1)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				e.fillSample(make([]*policyPair, 0, lfuSample))
+			}
+		})
+	}
 }

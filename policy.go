@@ -37,7 +37,7 @@ type defaultPolicy[V any] struct {
 func newDefaultPolicy[V any](numCounters, maxCost int64) *defaultPolicy[V] {
 	p := &defaultPolicy[V]{
 		admit:   newTinyLFU(numCounters),
-		evict:   newSampledLFU(maxCost),
+		evict:   newSampledLFU(maxCost, numCounters),
 		itemsCh: make(chan []uint64, 3),
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
@@ -249,14 +249,19 @@ type sampledLFU struct {
 	// or slice can be relied upon to be 64-bit aligned."
 	maxCost  int64
 	used     int64
+	keyCap   int64
 	metrics  *Metrics
 	keyCosts map[uint64]int64
 }
 
-func newSampledLFU(maxCost int64) *sampledLFU {
+func newSampledLFU(maxCost, numCounters int64) *sampledLFU {
+	// Pre-allocate keyCosts assuming the recommended 10:1 counter-to-item ratio
+	// to minimize map resizing.
+	capacity := numCounters / 10
 	return &sampledLFU{
-		keyCosts: make(map[uint64]int64),
+		keyCosts: make(map[uint64]int64, capacity),
 		maxCost:  maxCost,
+		keyCap:   capacity,
 	}
 }
 
@@ -322,7 +327,7 @@ func (p *sampledLFU) updateIfHas(key uint64, cost int64) bool {
 
 func (p *sampledLFU) clear() {
 	p.used = 0
-	p.keyCosts = make(map[uint64]int64)
+	p.keyCosts = make(map[uint64]int64, p.keyCap)
 }
 
 // tinyLFU is an admission helper that keeps track of access frequency using
