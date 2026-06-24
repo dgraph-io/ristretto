@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,6 +45,10 @@ type store[V any] interface {
 	// Clear clears all contents of the store.
 	Clear(onEvict func(item *Item[V]))
 	SetShouldUpdateFn(f updateFn[V])
+	// IterValues iterates the values of the Map, passing them to the callback.
+	// It guarantees that any value in the Map will be visited only once.
+	// The set of values visited by IterValues is non-deterministic.
+	IterValues(cb func(v V) (stop bool))
 }
 
 // newStore returns the default store implementation.
@@ -73,6 +77,32 @@ func newShardedMap[V any]() *shardedMap[V] {
 func (m *shardedMap[V]) SetShouldUpdateFn(f updateFn[V]) {
 	for i := range m.shards {
 		m.shards[i].setShouldUpdateFn(f)
+	}
+}
+
+// IterValues iterates the values of the Map, passing them to the callback.
+// It guarantees that any value in the Map will be visited only once.
+// The set of values visited by IterValues is non-deterministic.
+func (sm *shardedMap[V]) IterValues(cb func(v V) (stop bool)) {
+	for _, shard := range sm.shards {
+		stopped := func() bool {
+			shard.RLock()
+			defer shard.RUnlock()
+
+			for _, item := range shard.data {
+				if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+					continue
+				}
+				if stop := cb(item.value); stop {
+					return true
+				}
+			}
+			return false
+		}()
+
+		if stopped {
+			break
+		}
 	}
 }
 

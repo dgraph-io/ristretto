@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -44,6 +44,19 @@ func TestKeyToHash(t *testing.T) {
 
 	key, conflict = KeyToHash(int64(3))
 	verifyHashProduct(t, 3, 0, key, conflict)
+}
+
+type CustomStringKey string
+type CustomIntKey int
+
+func TestKeyToHashCustomTypes(t *testing.T) {
+	strKey, strConflict := KeyToHash(CustomStringKey("test"))
+	directStrKey, directStrConflict := KeyToHash("test")
+	verifyHashProduct(t, directStrKey, directStrConflict, strKey, strConflict)
+
+	intKey, intConflict := KeyToHash(CustomIntKey(42))
+	directIntKey, directIntConflict := KeyToHash(42)
+	verifyHashProduct(t, directIntKey, directIntConflict, intKey, intConflict)
 }
 
 func TestMulipleSignals(t *testing.T) {

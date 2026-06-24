@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -152,7 +152,7 @@ type Config[K Key, V any] struct {
 	// is not set, the default keyToHash function is used.
 	//
 	// Ristretto has a variety of defaults depending on the underlying interface type
-	// https://github.com/hypermodeinc/ristretto/blob/main/z/z.go#L19-L41).
+	// https://github.com/dgraph-io/ristretto/blob/main/z/z.go#L19-L41).
 	//
 	// Note that if you want 128bit hashes you should use the both the values
 	// in the return of the function. If you want to use 64bit hashes, you can
@@ -412,6 +412,16 @@ func (c *Cache[K, V]) GetTTL(key K) (time.Duration, bool) {
 	}
 
 	return time.Until(expiration), true
+}
+
+// IterValues iterates the values of the Map, passing them to the callback.
+// It guarantees that any value in the Map will be visited only once.
+// The set of values visited by IterValues is non-deterministic.
+func (c *Cache[K, V]) IterValues(cb func(v V) (stop bool)) {
+	if c == nil || c.isClosed.Load() {
+		return
+	}
+	c.storedItems.IterValues(cb)
 }
 
 // Close stops all goroutines and closes all channels.

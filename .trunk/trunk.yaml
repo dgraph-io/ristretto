@@ -9,32 +9,36 @@ cli:
 plugins:
   sources:
     - id: trunk
-      ref: v1.7.1
+      ref: v1.8.0
       uri: https://github.com/trunk-io/plugins
 
 # Many linters and tools depend on runtimes - configure them here. (https://docs.trunk.io/runtimes)
 runtimes:
   enabled:
-    - go@1.24.3
     - node@22.16.0
-    - python@3.10.8
+    - python@3.14.4
+    - go@1.25.0
 
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
+  ignore:
+    - linters: [markdownlint]
+      paths:
+        - CHANGELOG.md
   enabled:
-    - golangci-lint2@2.4.0
-    - trivy@0.64.1
-    - renovate@41.76.0
-    - actionlint@1.7.7
-    - checkov@3.2.461
+    - golangci-lint2@2.12.2
+    - trivy@0.70.0
+    - renovate@43.150.0
+    - actionlint@1.7.12
+    - checkov@3.2.526
     - git-diff-check
     - gofmt@1.20.4
-    - markdownlint@0.45.0
-    - osv-scanner@2.0.3
-    - prettier@3.6.2
-    - svgo@4.0.0
-    - trufflehog@3.90.5
-    - yamllint@1.37.1
+    - markdownlint@0.48.0
+    - osv-scanner@2.3.6
+    - prettier@3.8.3
+    - svgo@4.0.1
+    - trufflehog@3.95.2
+    - yamllint@1.38.0
 actions:
   enabled:
     - trunk-announce

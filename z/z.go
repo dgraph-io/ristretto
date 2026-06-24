@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: © Hypermode Inc. <hello@hypermode.com>
+ * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,13 +7,14 @@ package z
 
 import (
 	"context"
+	"reflect"
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
 )
 
 type Key interface {
-	uint64 | string | []byte | byte | int | uint | int32 | uint32 | int64
+	~uint64 | ~string | ~[]byte | ~byte | ~int | ~uint | ~int32 | ~uint32 | ~int64
 }
 
 // TODO: Figure out a way to re-use memhash for the second uint64 hash,
@@ -45,6 +46,32 @@ func KeyToHash[K Key](key K) (uint64, uint64) {
 	case int64:
 		return uint64(k), 0
 	default:
+		// Handle custom types with underlying types (e.g., type MyKey string)
+		v := reflect.ValueOf(key)
+		switch v.Kind() {
+		case reflect.Uint64:
+			return v.Uint(), 0
+		case reflect.String:
+			s := v.String()
+			return MemHashString(s), xxhash.Sum64String(s)
+		case reflect.Slice:
+			if v.Type().Elem().Kind() == reflect.Uint8 {
+				b := v.Bytes()
+				return MemHash(b), xxhash.Sum64(b)
+			}
+		case reflect.Uint8:
+			return v.Uint(), 0
+		case reflect.Uint:
+			return v.Uint(), 0
+		case reflect.Int:
+			return uint64(v.Int()), 0
+		case reflect.Int32:
+			return uint64(v.Int()), 0
+		case reflect.Uint32:
+			return v.Uint(), 0
+		case reflect.Int64:
+			return uint64(v.Int()), 0
+		}
 		panic("Key type not supported")
 	}
 }

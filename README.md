@@ -1,16 +1,15 @@
 # Ristretto
 
-[![GitHub License](https://img.shields.io/github/license/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto?tab=Apache-2.0-1-ov-file#readme)
-[![chat](https://img.shields.io/discord/1267579648657850441)](https://discord.hypermode.com)
-[![GitHub Repo stars](https://img.shields.io/github/stars/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/stargazers)
-[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/hypermodeinc/ristretto)](https://github.com/hypermodeinc/ristretto/commits/main/)
+[![GitHub License](https://img.shields.io/github/license/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto?tab=Apache-2.0-1-ov-file#readme)
+[![GitHub Repo stars](https://img.shields.io/github/stars/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto/stargazers)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/dgraph-io/ristretto)](https://github.com/dgraph-io/ristretto/commits/main/)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/dgraph-io/ristretto)
 
 Ristretto is a fast, concurrent cache library built with a focus on performance and correctness.
 
 The motivation to build Ristretto comes from the need for a contention-free cache in [Dgraph][].
 
-[Dgraph]: https://github.com/hypermodeinc/dgraph
+[Dgraph]: https://github.com/dgraph-io/dgraph
 
 ## Features
 
@@ -97,7 +96,7 @@ func main() {
 ## Benchmarks
 
 The benchmarks can be found in
-https://github.com/hypermodeinc/dgraph-benchmarks/tree/main/cachebench/ristretto.
+https://github.com/dgraph-io/dgraph-benchmarks/tree/main/cachebench/ristretto.
 
 ### Hit Ratios for Search
 
@@ -105,7 +104,7 @@ This trace is described as "disk read accesses initiated by a large commercial s
 response to various web search requests."
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Hit%20Ratios%20-%20Search%20(ARC-S3).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Hit%20Ratios%20-%20Search%20(ARC-S3).svg"
   alt="Graph showing hit ratios comparison for search workload">
 </p>
 
@@ -115,7 +114,7 @@ This trace is described as "a database server running at a commercial site runni
 application on top of a commercial database."
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Hit%20Ratios%20-%20Database%20(ARC-DS1).svg"
   alt="Graph showing hit ratios comparison for database workload">
 </p>
 
@@ -124,7 +123,7 @@ application on top of a commercial database."
 This trace demonstrates a looping access pattern.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Hit%20Ratios%20-%20Glimpse%20(LIRS-GLI).svg"
   alt="Graph showing hit ratios comparison for looping access pattern">
 </p>
 
@@ -133,28 +132,28 @@ This trace demonstrates a looping access pattern.
 This trace is described as "references to a CODASYL database for a one hour period."
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Hit%20Ratios%20-%20CODASYL%20(ARC-OLTP).svg"
   alt="Graph showing hit ratios comparison for CODASYL workload">
 </p>
 
 ### Throughput for Mixed Workload
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Throughput%20-%20Mixed.svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Throughput%20-%20Mixed.svg"
   alt="Graph showing throughput comparison for mixed workload">
 </p>
 
 ### Throughput for Read Workload
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Throughput%20-%20Read%20(Zipfian).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Throughput%20-%20Read%20(Zipfian).svg"
   alt="Graph showing throughput comparison for read workload">
 </p>
 
 ### Through for Write Workload
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hypermodeinc/ristretto/main/benchmarks/Throughput%20-%20Write%20(Zipfian).svg"
+  <img src="https://raw.githubusercontent.com/dgraph-io/ristretto/main/benchmarks/Throughput%20-%20Write%20(Zipfian).svg"
   alt="Graph showing throughput comparison for write workload">
 </p>
 
@@ -162,8 +161,8 @@ This trace is described as "references to a CODASYL database for a one hour peri
 
 Below is a list of known projects that use Ristretto:
 
-- [Badger](https://github.com/hypermodeinc/badger) - Embeddable key-value DB in Go
-- [Dgraph](https://github.com/hypermodeinc/dgraph) - Horizontally scalable and distributed GraphQL
+- [Badger](https://github.com/dgraph-io/badger) - Embeddable key-value DB in Go
+- [Dgraph](https://github.com/dgraph-io/dgraph) - Horizontally scalable and distributed GraphQL
   database with a graph backend
 
 ## FAQ
@@ -171,9 +170,9 @@ Below is a list of known projects that use Ristretto:
 ### How are you achieving this performance? What shortcuts are you taking?
 
 We go into detail in the
-[Ristretto blog post](https://hypermode.com/blog/introducing-ristretto-high-perf-go-cache/), but in
-short: our throughput performance can be attributed to a mix of batching and eventual consistency.
-Our hit ratio performance is mostly due to an excellent
+[Ristretto blog post](https://web.archive.org/web/20250806164019/https://hypermode.com/blog/introducing-ristretto-high-perf-go-cache),
+but in short: our throughput performance can be attributed to a mix of batching and eventual
+consistency. Our hit ratio performance is mostly due to an excellent
 [admission policy](https://arxiv.org/abs/1512.00727) and SampledLFU eviction policy.
 
 As for "shortcuts," the only thing Ristretto does that could be construed as one is dropping some
