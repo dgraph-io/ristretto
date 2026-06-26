@@ -209,7 +209,7 @@ func TestSampledLFUSample(t *testing.T) {
 	e := newSampledLFU(16, 1000)
 	e.add(4, 4)
 	e.add(5, 5)
-	sample := e.fillSample([]*policyPair{
+	sample := e.fillSample([]policyPair{
 		{1, 1},
 		{2, 2},
 		{3, 3},
@@ -304,7 +304,7 @@ func BenchmarkSampledLFUFillSample(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				e.fillSample(make([]*policyPair, 0, lfuSample))
+				e.fillSample(make([]policyPair, 0, lfuSample))
 			}
 		})
 	}

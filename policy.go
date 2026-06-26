@@ -124,7 +124,7 @@ func (p *defaultPolicy[V]) Add(key uint64, cost int64) ([]*Item[V], bool) {
 	// TODO: perhaps we should use a min heap here. Right now our time
 	// complexity is N for finding the min. Min heap should bring it down to
 	// O(lg N).
-	sample := make([]*policyPair, 0, lfuSample)
+	sample := make([]policyPair, 0, lfuSample)
 	// As items are evicted they will be appended to victims.
 	victims := make([]*Item[V], 0)
 
@@ -277,12 +277,12 @@ func (p *sampledLFU) roomLeft(cost int64) int64 {
 	return p.getMaxCost() - (p.used + cost)
 }
 
-func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
+func (p *sampledLFU) fillSample(in []policyPair) []policyPair {
 	if len(in) >= lfuSample {
 		return in
 	}
 	for key, cost := range p.keyCosts {
-		in = append(in, &policyPair{key, cost})
+		in = append(in, policyPair{key, cost})
 		if len(in) >= lfuSample {
 			return in
 		}
