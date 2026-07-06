@@ -7,6 +7,18 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
+## [v2.4.1] - 2026-07-06
+
+### Changed
+
+- Pre-allocate `keyCosts` map in `sampledLFU` (#482)
+
+### Fixed
+
+- Handle mremap size mismatch on Linux s390x (#491)
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.4.0...v2.4.1
+
 ## [v2.4.0] - 2026-01-21
 
 ### Added
