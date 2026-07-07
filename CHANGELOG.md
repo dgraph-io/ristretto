@@ -7,6 +7,16 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
+## [v2.4.2] - 2026-07-07
+
+### Fixed
+
+- Revert eager pre-allocation of the `sampledLFU` `keyCosts` map (#482), which allocated
+  `NumCounters/10` map buckets at boot and caused a large RSS regression for caches with high
+  `NumCounters`
+
+**Full Changelog**: https://github.com/dgraph-io/ristretto/compare/v2.4.1...v2.4.2
+
 ## [v2.4.1] - 2026-07-06
 
 ### Changed
