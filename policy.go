@@ -24,7 +24,8 @@ func newPolicy[V any](numCounters, maxCost int64) *defaultPolicy[V] {
 }
 
 type defaultPolicy[V any] struct {
-	sync.Mutex
+	admitMu  sync.Mutex
+	evictMu  sync.RWMutex
 	admit    *tinyLFU
 	evict    *sampledLFU
 	itemsCh  chan []uint64
@@ -60,9 +61,9 @@ func (p *defaultPolicy[V]) processItems() {
 	for {
 		select {
 		case items := <-p.itemsCh:
-			p.Lock()
+			p.admitMu.Lock()
 			p.admit.Push(items)
-			p.Unlock()
+			p.admitMu.Unlock()
 		case <-p.stop:
 			p.done <- struct{}{}
 			return
@@ -93,122 +94,144 @@ func (p *defaultPolicy[V]) Push(keys []uint64) bool {
 // the policy. It returns the list of victims that have been evicted and a boolean
 // indicating whether the incoming item should be accepted.
 func (p *defaultPolicy[V]) Add(key uint64, cost int64) ([]*Item[V], bool) {
-	p.Lock()
-	defer p.Unlock()
-
 	// Cannot add an item bigger than entire cache.
 	if cost > p.evict.getMaxCost() {
 		return nil, false
 	}
 
-	// No need to go any further if the item is already in the cache.
-	if has := p.evict.updateIfHas(key, cost); has {
-		// An update does not count as an addition, so return false.
-		return nil, false
-	}
+	var victims []*Item[V]
+	incHits, hasIncHits := int64(0), false
 
-	// If the execution reaches this point, the key doesn't exist in the cache.
-	// Calculate the remaining room in the cache (usually bytes).
-	room := p.evict.roomLeft(cost)
-	if room >= 0 {
-		// There's enough room in the cache to store the new item without
-		// overflowing. Do that now and stop here.
-		p.evict.add(key, cost)
-		p.metrics.add(costAdd, key, uint64(cost))
-		return nil, true
-	}
-
-	// incHits is the hit count for the incoming item.
-	incHits := p.admit.Estimate(key)
-	// sample is the eviction candidate pool to be filled via random sampling.
-	// TODO: perhaps we should use a min heap here. Right now our time
-	// complexity is N for finding the min. Min heap should bring it down to
-	// O(lg N).
-	sample := make([]*policyPair, 0, lfuSample)
-	// As items are evicted they will be appended to victims.
-	victims := make([]*Item[V], 0)
-
-	// Delete victims until there's enough space or a minKey is found that has
-	// more hits than incoming item.
-	for ; room < 0; room = p.evict.roomLeft(cost) {
-		// Fill up empty slots in sample.
-		sample = p.evict.fillSample(sample)
-
-		// Find minimally used item in sample.
-		minKey, minHits, minId, minCost := uint64(0), int64(math.MaxInt64), 0, int64(0)
-		for i, pair := range sample {
-			// Look up hit count for sample key.
-			if hits := p.admit.Estimate(pair.key); hits < minHits {
-				minKey, minHits, minId, minCost = pair.key, hits, i, pair.cost
-			}
+	for {
+		p.evictMu.Lock()
+		// No need to go any further if the item is already in the cache.
+		if has := p.evict.updateIfHas(key, cost); has {
+			p.evictMu.Unlock()
+			// An update does not count as an addition, so return false.
+			return victims, false
 		}
 
+		// If the execution reaches this point, the key doesn't exist in the cache.
+		// Calculate the remaining room in the cache (usually bytes).
+		room := p.evict.roomLeft(cost)
+		if room >= 0 {
+			// There's enough room in the cache to store the new item without
+			// overflowing. Do that now and stop here.
+			p.evict.add(key, cost)
+			p.metrics.add(costAdd, key, uint64(cost))
+			p.evictMu.Unlock()
+			return victims, true
+		}
+
+		if victims == nil {
+			victims = make([]*Item[V], 0)
+		}
+
+		// sample is the eviction candidate pool to be filled via random sampling.
+		// TODO: perhaps we should use a min heap here. Right now our time
+		// complexity is N for finding the min. Min heap should bring it down to
+		// O(lg N).
+
+		// Fill up empty slots in sample.
+		sample := p.evict.fillSample(make([]*policyPair, 0, lfuSample))
+		p.evictMu.Unlock()
+
+		if !hasIncHits {
+			incHits = p.estimate(key)
+			hasIncHits = true
+		}
+
+		// Find minimally used item in sample.
+		minPair, minHits, ok := p.minSample(sample)
+
 		// If the incoming item isn't worth keeping in the policy, reject.
-		if incHits < minHits {
+		if !ok || incHits < minHits {
 			p.metrics.add(rejectSets, key, 1)
 			return victims, false
 		}
 
 		// Delete the victim from metadata.
-		p.evict.del(minKey)
+		p.evictMu.Lock()
+		minCost, evicted := p.evict.del(minPair.key)
+		p.evictMu.Unlock()
+		if evicted {
+			// Store victim in evicted victims slice.
+			victims = append(victims, &Item[V]{
+				Key:      minPair.key,
+				Conflict: 0,
+				Cost:     minCost,
+			})
+		}
+	}
+}
 
-		// Delete the victim from sample.
-		sample[minId] = sample[len(sample)-1]
-		sample = sample[:len(sample)-1]
-		// Store victim in evicted victims slice.
-		victims = append(victims, &Item[V]{
-			Key:      minKey,
-			Conflict: 0,
-			Cost:     minCost,
-		})
+func (p *defaultPolicy[V]) estimate(key uint64) int64 {
+	p.admitMu.Lock()
+	hits := p.admit.Estimate(key)
+	p.admitMu.Unlock()
+	return hits
+}
+
+func (p *defaultPolicy[V]) minSample(sample []*policyPair) (*policyPair, int64, bool) {
+	if len(sample) == 0 {
+		return nil, 0, false
 	}
 
-	p.evict.add(key, cost)
-	p.metrics.add(costAdd, key, uint64(cost))
-	return victims, true
+	p.admitMu.Lock()
+	var minPair *policyPair
+	minHits := int64(math.MaxInt64)
+	for _, pair := range sample {
+		if hits := p.admit.Estimate(pair.key); hits < minHits {
+			minPair, minHits = pair, hits
+		}
+	}
+	p.admitMu.Unlock()
+	return minPair, minHits, true
 }
 
 func (p *defaultPolicy[V]) Has(key uint64) bool {
-	p.Lock()
+	p.evictMu.RLock()
 	_, exists := p.evict.keyCosts[key]
-	p.Unlock()
+	p.evictMu.RUnlock()
 	return exists
 }
 
 func (p *defaultPolicy[V]) Del(key uint64) {
-	p.Lock()
+	p.evictMu.Lock()
 	p.evict.del(key)
-	p.Unlock()
+	p.evictMu.Unlock()
 }
 
 func (p *defaultPolicy[V]) Cap() int64 {
-	p.Lock()
+	p.evictMu.RLock()
 	capacity := p.evict.getMaxCost() - p.evict.used
-	p.Unlock()
+	p.evictMu.RUnlock()
 	return capacity
 }
 
 func (p *defaultPolicy[V]) Update(key uint64, cost int64) {
-	p.Lock()
+	p.evictMu.Lock()
 	p.evict.updateIfHas(key, cost)
-	p.Unlock()
+	p.evictMu.Unlock()
 }
 
 func (p *defaultPolicy[V]) Cost(key uint64) int64 {
-	p.Lock()
+	p.evictMu.RLock()
 	if cost, found := p.evict.keyCosts[key]; found {
-		p.Unlock()
+		p.evictMu.RUnlock()
 		return cost
 	}
-	p.Unlock()
+	p.evictMu.RUnlock()
 	return -1
 }
 
 func (p *defaultPolicy[V]) Clear() {
-	p.Lock()
+	p.admitMu.Lock()
+	p.evictMu.Lock()
 	p.admit.clear()
 	p.evict.clear()
-	p.Unlock()
+	p.evictMu.Unlock()
+	p.admitMu.Unlock()
 }
 
 func (p *defaultPolicy[V]) Close() {
@@ -290,15 +313,16 @@ func (p *sampledLFU) fillSample(in []*policyPair) []*policyPair {
 	return in
 }
 
-func (p *sampledLFU) del(key uint64) {
+func (p *sampledLFU) del(key uint64) (int64, bool) {
 	cost, ok := p.keyCosts[key]
 	if !ok {
-		return
+		return 0, false
 	}
 	p.used -= cost
 	delete(p.keyCosts, key)
 	p.metrics.add(costEvict, key, uint64(cost))
 	p.metrics.add(keyEvict, key, 1)
+	return cost, true
 }
 
 func (p *sampledLFU) add(key uint64, cost int64) {

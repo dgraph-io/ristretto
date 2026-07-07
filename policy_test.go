@@ -6,6 +6,8 @@
 package ristretto
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,18 +32,110 @@ func TestPolicyProcessItems(t *testing.T) {
 	p := newDefaultPolicy[int](100, 10)
 	p.itemsCh <- []uint64{1, 2, 2}
 	time.Sleep(wait)
-	p.Lock()
+	p.admitMu.Lock()
 	require.Equal(t, int64(2), p.admit.Estimate(2))
 	require.Equal(t, int64(1), p.admit.Estimate(1))
-	p.Unlock()
+	p.admitMu.Unlock()
 
 	p.stop <- struct{}{}
 	<-p.done
 	p.itemsCh <- []uint64{3, 3, 3}
 	time.Sleep(wait)
-	p.Lock()
+	p.admitMu.Lock()
 	require.Equal(t, int64(0), p.admit.Estimate(3))
-	p.Unlock()
+	p.admitMu.Unlock()
+}
+
+func TestPolicyProcessItemsDoesNotWaitForEvictionLock(t *testing.T) {
+	p := newDefaultPolicy[int](100, 10)
+	defer p.Close()
+
+	p.evictMu.Lock()
+	defer p.evictMu.Unlock()
+
+	p.itemsCh <- []uint64{9}
+	require.Eventually(t, func() bool {
+		p.admitMu.Lock()
+		defer p.admitMu.Unlock()
+		return p.admit.Estimate(9) == 1
+	}, time.Second, time.Millisecond)
+}
+
+func waitForEvictionLockAvailable[V any](p *defaultPolicy[V], timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if p.evictMu.TryLock() {
+			p.evictMu.Unlock()
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
+}
+
+type policyAddResult[V any] struct {
+	victims []*Item[V]
+	added   bool
+}
+
+func waitForPolicyAdd[V any](t *testing.T, done <-chan policyAddResult[V]) policyAddResult[V] {
+	t.Helper()
+	select {
+	case result := <-done:
+		return result
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Add")
+		return policyAddResult[V]{}
+	}
+}
+
+func TestPolicyAddDoesNotHoldEvictionLockWhileEstimating(t *testing.T) {
+	p := newDefaultPolicy[int](100, 10)
+	defer p.Close()
+	p.Add(1, 10)
+
+	p.admitMu.Lock()
+	addDone := make(chan policyAddResult[int], 1)
+	go func() {
+		victims, added := p.Add(2, 1)
+		addDone <- policyAddResult[int]{victims: victims, added: added}
+	}()
+
+	releasedEvict := waitForEvictionLockAvailable(p, time.Second)
+	p.admitMu.Unlock()
+	result := waitForPolicyAdd(t, addDone)
+
+	require.True(t, releasedEvict, "Add held evictMu while waiting on admission estimates")
+	require.True(t, result.added)
+	require.Len(t, result.victims, 1)
+	require.True(t, p.Has(2))
+}
+
+func TestPolicyAddRetriesWhenSampleVictimDisappears(t *testing.T) {
+	p := newDefaultPolicy[int](100, 10)
+	defer p.Close()
+	p.Add(1, 10)
+
+	p.admitMu.Lock()
+	addDone := make(chan policyAddResult[int], 1)
+	go func() {
+		victims, added := p.Add(2, 1)
+		addDone <- policyAddResult[int]{victims: victims, added: added}
+	}()
+
+	releasedEvict := waitForEvictionLockAvailable(p, time.Second)
+	if releasedEvict {
+		p.Del(1)
+	}
+	p.admitMu.Unlock()
+	result := waitForPolicyAdd(t, addDone)
+
+	require.True(t, releasedEvict, "Add held evictMu while waiting on admission estimates")
+	require.True(t, result.added)
+	require.Empty(t, result.victims)
+	require.False(t, p.Has(1))
+	require.True(t, p.Has(2))
+	require.Equal(t, int64(9), p.Cap())
 }
 
 func TestPolicyPush(t *testing.T) {
@@ -62,12 +156,14 @@ func TestPolicyAdd(t *testing.T) {
 	if victims, added := p.Add(1, 101); victims != nil || added {
 		t.Fatal("can't add an item bigger than entire cache")
 	}
-	p.Lock()
+	p.evictMu.Lock()
 	p.evict.add(1, 1)
+	p.evictMu.Unlock()
+	p.admitMu.Lock()
 	p.admit.Increment(1)
 	p.admit.Increment(2)
 	p.admit.Increment(3)
-	p.Unlock()
+	p.admitMu.Unlock()
 
 	victims, added := p.Add(1, 1)
 	require.Nil(t, victims)
@@ -112,9 +208,9 @@ func TestPolicyUpdate(t *testing.T) {
 	p := newDefaultPolicy[int](100, 10)
 	p.Add(1, 1)
 	p.Update(1, 2)
-	p.Lock()
+	p.evictMu.RLock()
 	require.Equal(t, int64(2), p.evict.keyCosts[1])
-	p.Unlock()
+	p.evictMu.RUnlock()
 }
 
 func TestPolicyCost(t *testing.T) {
@@ -134,6 +230,44 @@ func TestPolicyClear(t *testing.T) {
 	require.False(t, p.Has(1))
 	require.False(t, p.Has(2))
 	require.False(t, p.Has(3))
+}
+
+func TestPolicyConcurrentOperations(t *testing.T) {
+	p := newDefaultPolicy[int](1<<12, 256)
+	defer p.Close()
+	for i := 0; i < 256; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(seed uint64) {
+			defer wg.Done()
+			for i := uint64(0); i < 1000; i++ {
+				key := seed*1000 + i
+				switch i & 7 {
+				case 0:
+					p.Push([]uint64{key, key + 1, key + 2})
+				case 1:
+					p.Add(key, 1)
+				case 2:
+					_ = p.Has(key & 255)
+				case 3:
+					_ = p.Cost(key & 255)
+				case 4:
+					_ = p.Cap()
+				case 5:
+					p.Update(key&255, 1)
+				case 6:
+					p.Del(key & 255)
+				default:
+					p.Clear()
+				}
+			}
+		}(uint64(g))
+	}
+	wg.Wait()
 }
 
 func TestPolicyClose(t *testing.T) {
@@ -307,5 +441,139 @@ func BenchmarkSampledLFUFillSample(b *testing.B) {
 				e.fillSample(make([]*policyPair, 0, lfuSample))
 			}
 		})
+	}
+}
+
+func BenchmarkPolicyConcurrentHas(b *testing.B) {
+	b.ReportAllocs()
+	p := newDefaultPolicy[int](1<<20, 1<<20)
+	defer p.Close()
+	for i := 0; i < 4096; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	var workerID atomic.Uint64
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		key := workerID.Add(1) * 2654435761
+		for pb.Next() {
+			_ = p.Has(key & 4095)
+			key++
+		}
+	})
+}
+
+func BenchmarkPolicyConcurrentCost(b *testing.B) {
+	b.ReportAllocs()
+	p := newDefaultPolicy[int](1<<20, 1<<20)
+	defer p.Close()
+	for i := 0; i < 4096; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	var workerID atomic.Uint64
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		key := workerID.Add(1) * 2654435761
+		for pb.Next() {
+			_ = p.Cost(key & 4095)
+			key++
+		}
+	})
+}
+
+func BenchmarkPolicyConcurrentCap(b *testing.B) {
+	b.ReportAllocs()
+	p := newDefaultPolicy[int](1<<20, 1<<20)
+	defer p.Close()
+	for i := 0; i < 4096; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = p.Cap()
+		}
+	})
+}
+
+func BenchmarkPolicyAddWithEviction(b *testing.B) {
+	b.ReportAllocs()
+	p := newDefaultPolicy[int](1<<20, 1024)
+	defer p.Close()
+	for i := 0; i < 1024; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	key := uint64(1024)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.Add(key, 1)
+		key++
+	}
+}
+
+func processPolicyFrequencyBatches(b *testing.B, p *defaultPolicy[int], batch []uint64) {
+	for i := 0; i < b.N; i++ {
+		p.itemsCh <- batch
+	}
+}
+
+func reportPolicyFrequencyThroughput(b *testing.B, batchSize int) {
+	elapsed := b.Elapsed().Seconds()
+	if elapsed > 0 {
+		b.ReportMetric(float64(b.N*batchSize)/elapsed, "frequency-keys/s")
+	}
+}
+
+func BenchmarkPolicyProcessItems(b *testing.B) {
+	p := newDefaultPolicy[int](1<<20, 1024)
+	defer p.Close()
+	batch := []uint64{1, 2, 3, 4}
+
+	b.SetBytes(int64(len(batch) * 8))
+	b.ResetTimer()
+	processPolicyFrequencyBatches(b, p, batch)
+	b.StopTimer()
+	reportPolicyFrequencyThroughput(b, len(batch))
+}
+
+func BenchmarkPolicyProcessItemsDuringEviction(b *testing.B) {
+	p := newDefaultPolicy[int](1<<20, 1024)
+	defer p.Close()
+	for i := 0; i < 1024; i++ {
+		p.Add(uint64(i), 1)
+	}
+
+	var stop atomic.Bool
+	var adds atomic.Uint64
+	start := make(chan struct{})
+	addDone := make(chan struct{})
+	go func() {
+		defer close(addDone)
+		<-start
+		key := uint64(1024)
+		for !stop.Load() {
+			p.Add(key, 1)
+			adds.Add(1)
+			key++
+		}
+	}()
+
+	batch := []uint64{1, 2, 3, 4}
+	b.SetBytes(int64(len(batch) * 8))
+	b.ResetTimer()
+	close(start)
+	processPolicyFrequencyBatches(b, p, batch)
+	b.StopTimer()
+
+	stop.Store(true)
+	<-addDone
+
+	reportPolicyFrequencyThroughput(b, len(batch))
+	elapsed := b.Elapsed().Seconds()
+	if elapsed > 0 {
+		b.ReportMetric(float64(adds.Load())/elapsed, "add-calls/s")
 	}
 }
