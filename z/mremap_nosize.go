@@ -1,5 +1,5 @@
-//go:build (arm64 || arm) && linux && !js
-// +build arm64 arm
+//go:build (arm64 || arm || s390x) && linux && !js
+// +build arm64 arm s390x
 // +build linux
 // +build !js
 

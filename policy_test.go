@@ -294,7 +294,7 @@ func TestAddAfterClose(t *testing.T) {
 }
 
 func TestSampledLFUAdd(t *testing.T) {
-	e := newSampledLFU(4, 100)
+	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 1)
@@ -303,7 +303,7 @@ func TestSampledLFUAdd(t *testing.T) {
 }
 
 func TestSampledLFUDel(t *testing.T) {
-	e := newSampledLFU(4, 100)
+	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.del(2)
@@ -314,7 +314,7 @@ func TestSampledLFUDel(t *testing.T) {
 }
 
 func TestSampledLFUUpdate(t *testing.T) {
-	e := newSampledLFU(4, 100)
+	e := newSampledLFU(4)
 	e.add(1, 1)
 	require.True(t, e.updateIfHas(1, 2))
 	require.Equal(t, int64(2), e.used)
@@ -322,7 +322,7 @@ func TestSampledLFUUpdate(t *testing.T) {
 }
 
 func TestSampledLFUClear(t *testing.T) {
-	e := newSampledLFU(4, 100)
+	e := newSampledLFU(4)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 1)
@@ -332,7 +332,7 @@ func TestSampledLFUClear(t *testing.T) {
 }
 
 func TestSampledLFURoom(t *testing.T) {
-	e := newSampledLFU(16, 1000)
+	e := newSampledLFU(16)
 	e.add(1, 1)
 	e.add(2, 2)
 	e.add(3, 3)
@@ -340,7 +340,7 @@ func TestSampledLFURoom(t *testing.T) {
 }
 
 func TestSampledLFUSample(t *testing.T) {
-	e := newSampledLFU(16, 1000)
+	e := newSampledLFU(16)
 	e.add(4, 4)
 	e.add(5, 5)
 	sample := e.fillSample([]*policyPair{
