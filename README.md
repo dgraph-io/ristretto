@@ -170,7 +170,7 @@ Below is a list of known projects that use Ristretto:
 ### How are you achieving this performance? What shortcuts are you taking?
 
 We go into detail in the
-[Ristretto blog post](https://web.archive.org/web/20250806164019/https://hypermode.com/blog/introducing-ristretto-high-perf-go-cache),
+[Ristretto blog post](https://discuss.dgraph.io/t/introducing-ristretto-a-high-performance-go-cache-dgraph-blog/5102),
 but in short: our throughput performance can be attributed to a mix of batching and eventual
 consistency. Our hit ratio performance is mostly due to an excellent
 [admission policy](https://arxiv.org/abs/1512.00727) and SampledLFU eviction policy.
