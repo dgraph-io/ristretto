@@ -163,7 +163,7 @@ type Config[K Key, V any] struct {
 	// after Set is called for a new item or an item is updated with a cost param of 0.
 	//
 	// Cost is an optional function you can pass to the Config in order to evaluate
-	// item cost at runtime, and only whentthe Set call isn't going to be dropped. This
+	// item cost at runtime, and only when the Set call isn't going to be dropped. This
 	// is useful if calculating item cost is particularly expensive and you don't want to
 	// waste time on items that will be dropped anyways.
 	//
