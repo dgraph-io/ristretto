@@ -1,5 +1,5 @@
-//go:build linux && !arm64 && !arm && !s390x && !js
-// +build linux,!arm64,!arm,!s390x,!js
+//go:build linux && !arm64 && !arm && !s390x && !riscv64 && !js
+// +build linux,!arm64,!arm,!s390x,!riscv64,!js
 
 /*
  * SPDX-FileCopyrightText: © 2017-2025 Istari Digital, Inc.
