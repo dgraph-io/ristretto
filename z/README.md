@@ -77,7 +77,7 @@ bf = bbloom.New(650000.0, 7.0)
 bf.Add([]byte("butter"))
 
 // Number of elements added is exposed now
-// Note: ElemNum will not be included in JSON export (for compatability to older version)
+// Note: ElemNum will not be included in JSON export (for compatibility to older version)
 nOfElementsInFilter := bf.ElemNum
 
 // check if item is in the filter
@@ -141,7 +141,7 @@ github.com/cabello/bloom 'Contains' 65536 items (10 repetitions): 131108962 ns (
 (on MBPro15 OSX10.8.5 i7 4Core 2.4Ghz)
 
 With 32bit bloom filters (bloom32) using modified sdbm, bloom32 does hashing with only 2 bit shifts,
-one xor and one substraction per byte. smdb is about as fast as fnv64a but gives less collisions
+one xor and one subtraction per byte. smdb is about as fast as fnv64a but gives less collisions
 with the dataset (see mask above). bloom.New(float64(10 \* 1<<16),float64(7)) populated with 1<<16
 random items from the dataset (see above) and tested against the rest results in less than 0.05%
 collisions.
