@@ -367,6 +367,16 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 	}
 }
 
+// ExpireAt updates the expiration time for the specified key.
+// It returns true if the item was found and the expiration was updated, and false if the item was not found or the cache is closed.
+func (c *Cache[K, V]) ExpireAt(key K, expiration time.Time) bool {
+	if c == nil || c.isClosed.Load() {
+		return false
+	}
+	keyHash, _ := c.keyToHash(key)
+	return c.storedItems.ExpireAt(keyHash, expiration)
+}
+
 // Del deletes the key-value item from the cache if it exists.
 func (c *Cache[K, V]) Del(key K) {
 	if c == nil || c.isClosed.Load() {
