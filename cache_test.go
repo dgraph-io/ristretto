@@ -189,6 +189,11 @@ func TestNilCache(t *testing.T) {
 	require.False(t, ok)
 	require.Zero(t, val)
 
+	val, ok = c.Peek(1)
+	require.False(t, ok)
+	require.Zero(t, val)
+	c.RecordAccess(1, true)
+
 	require.False(t, c.Set(1, 1, 1))
 	c.Del(1)
 	c.Clear()
@@ -238,6 +243,19 @@ func TestGetAfterClose(t *testing.T) {
 	c.Close()
 
 	_, ok := c.Get(1)
+	require.False(t, ok)
+}
+
+func TestPeekAfterClose(t *testing.T) {
+	c, err := newTestCache()
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	require.True(t, c.Set(1, 1, 1))
+	c.Wait()
+	c.Close()
+
+	_, ok := c.Peek(1)
 	require.False(t, ok)
 }
 
@@ -386,6 +404,102 @@ func TestCacheGet(t *testing.T) {
 	val, ok = c.Get(0)
 	require.False(t, ok)
 	require.Zero(t, val)
+}
+
+func TestCachePeek(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        1,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	require.True(t, c.Set(1, 10, 1))
+	c.Wait()
+
+	val, ok := c.Peek(1)
+	require.True(t, ok)
+	require.Equal(t, 10, val)
+
+	val, ok = c.Peek(2)
+	require.False(t, ok)
+	require.Zero(t, val)
+
+	require.Equal(t, uint64(0), c.Metrics.Hits())
+	require.Equal(t, uint64(0), c.Metrics.Misses())
+	require.Equal(t, uint64(0), c.Metrics.GetsKept()+c.Metrics.GetsDropped())
+
+	_, ok = c.Get(1)
+	require.True(t, ok)
+	require.Equal(t, uint64(1), c.Metrics.Hits())
+	require.Equal(t, uint64(1), c.Metrics.GetsKept()+c.Metrics.GetsDropped())
+}
+
+func TestCachePeekExpired(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	require.True(t, c.SetWithTTL(1, 1, 1, time.Second))
+	c.Wait()
+
+	val, ok := c.Peek(1)
+	require.True(t, ok)
+	require.Equal(t, 1, val)
+
+	time.Sleep(2 * time.Second)
+
+	val, ok = c.Peek(1)
+	require.False(t, ok)
+	require.Zero(t, val)
+}
+
+func TestCachePeekDeferredAccounting(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        1,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	require.True(t, c.Set(1, 5, 1))
+	c.Wait()
+
+	for _, minValue := range []int{3, 7} {
+		val, ok := c.Peek(1)
+		c.RecordAccess(1, ok && val >= minValue)
+	}
+	require.Equal(t, uint64(1), c.Metrics.Hits())
+	require.Equal(t, uint64(1), c.Metrics.Misses())
+	require.Equal(t, 0.5, c.Metrics.Ratio())
+	require.Equal(t, uint64(2), c.Metrics.GetsKept()+c.Metrics.GetsDropped())
+}
+
+func TestRecordAccessAfterClose(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		BufferItems:        64,
+		IgnoreInternalCost: true,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	c.Close()
+	c.RecordAccess(1, true)
+	require.Equal(t, uint64(0), c.Metrics.Hits())
 }
 
 func TestCacheIterValues(t *testing.T) {

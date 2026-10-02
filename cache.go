@@ -294,6 +294,35 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 	return value, ok
 }
 
+// Peek returns the value (if any) and a boolean representing whether the value was found or not,
+// like Get, but without recording the access. Peek does not feed the key to the admission policy
+// and does not count as a hit or a miss, so it can be used to inspect an entry before deciding
+// whether the read should be counted. Use RecordAccess to record that decision afterwards.
+// Peek will not return expired items.
+func (c *Cache[K, V]) Peek(key K) (V, bool) {
+	if c == nil || c.isClosed.Load() {
+		return zeroValue[V](), false
+	}
+	keyHash, conflictHash := c.keyToHash(key)
+	return c.storedItems.Get(keyHash, conflictHash)
+}
+
+// RecordAccess records an access to key the way Get does: the key is fed to the admission policy
+// and the access is counted as a hit if found is true, or as a miss otherwise. Together with Peek
+// it lets the caller decide whether a cached value is good enough before the read is counted.
+func (c *Cache[K, V]) RecordAccess(key K, found bool) {
+	if c == nil || c.isClosed.Load() {
+		return
+	}
+	keyHash, _ := c.keyToHash(key)
+	c.getBuf.Push(keyHash)
+	if found {
+		c.Metrics.add(hit, keyHash, 1)
+	} else {
+		c.Metrics.add(miss, keyHash, 1)
+	}
+}
+
 // Set attempts to add the key-value item to the cache. If it returns false,
 // then the Set was dropped and the key-value item isn't added to the cache. If
 // it returns true, there's still a chance it could be dropped by the policy if
