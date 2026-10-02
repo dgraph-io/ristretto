@@ -294,6 +294,26 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 	return value, ok
 }
 
+// GetWithTTL returns the value (if any), a boolean representing whether the
+// value was found or not, and the remaining TTL duration for the item.
+// If the item has no expiration or is not found, remainingTTL is 0.
+// GetWithTTL will not return expired items.
+func (c *Cache[K, V]) GetWithTTL(key K) (value V, found bool, remainingTTL time.Duration) {
+	if c == nil || c.isClosed.Load() {
+		return zeroValue[V](), false, 0
+	}
+	keyHash, conflictHash := c.keyToHash(key)
+
+	c.getBuf.Push(keyHash)
+	val, ok, ttl := c.storedItems.GetWithTTL(keyHash, conflictHash)
+	if ok {
+		c.Metrics.add(hit, keyHash, 1)
+	} else {
+		c.Metrics.add(miss, keyHash, 1)
+	}
+	return val, ok, ttl
+}
+
 // Set attempts to add the key-value item to the cache. If it returns false,
 // then the Set was dropped and the key-value item isn't added to the cache. If
 // it returns true, there's still a chance it could be dropped by the policy if

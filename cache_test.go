@@ -189,6 +189,11 @@ func TestNilCache(t *testing.T) {
 	require.False(t, ok)
 	require.Zero(t, val)
 
+	val, ok, ttl := c.GetWithTTL(1)
+	require.False(t, ok)
+	require.Zero(t, val)
+	require.Equal(t, time.Duration(0), ttl)
+
 	require.False(t, c.Set(1, 1, 1))
 	c.Del(1)
 	c.Clear()
@@ -238,6 +243,9 @@ func TestGetAfterClose(t *testing.T) {
 	c.Close()
 
 	_, ok := c.Get(1)
+	require.False(t, ok)
+
+	_, ok, _ = c.GetWithTTL(1)
 	require.False(t, ok)
 }
 
@@ -749,6 +757,92 @@ func TestCacheGetTTL(t *testing.T) {
 		ttl, ok := c.GetTTL(3)
 		require.False(t, ok)
 		require.Equal(t, ttl, time.Duration(0))
+	}
+}
+
+func TestCacheGetWithTTL(t *testing.T) {
+	c, err := NewCache(&Config[int, int]{
+		NumCounters:        100,
+		MaxCost:            10,
+		IgnoreInternalCost: true,
+		BufferItems:        64,
+		Metrics:            true,
+	})
+	require.NoError(t, err)
+
+	// try expiration with valid ttl item
+	{
+		expiration := time.Second * 5
+		retrySet(t, c, 1, 1, 1, expiration)
+
+		val, ok, ttl := c.GetWithTTL(1)
+		require.True(t, ok)
+		require.Equal(t, 1, val)
+		require.True(t, ttl > 0 && ttl <= expiration)
+		require.WithinDuration(t,
+			time.Now().Add(expiration), time.Now().Add(ttl), 1*time.Second)
+
+		c.Del(1)
+
+		val, ok, ttl = c.GetWithTTL(1)
+		require.False(t, ok)
+		require.Zero(t, val)
+		require.Equal(t, time.Duration(0), ttl)
+	}
+	// try expiration with no ttl
+	{
+		retrySet(t, c, 2, 2, 1, time.Duration(0))
+
+		val, ok, ttl := c.GetWithTTL(2)
+		require.True(t, ok)
+		require.Equal(t, 2, val)
+		require.Equal(t, time.Duration(0), ttl)
+	}
+	// try expiration with missing item
+	{
+		val, ok, ttl := c.GetWithTTL(3)
+		require.False(t, ok)
+		require.Zero(t, val)
+		require.Equal(t, time.Duration(0), ttl)
+	}
+	// try expiration with expired item
+	{
+		expiration := time.Second
+		retrySet(t, c, 4, 4, 1, expiration)
+
+		val, ok, ttl := c.GetWithTTL(4)
+		require.True(t, ok)
+		require.Equal(t, 4, val)
+		require.True(t, ttl > 0)
+
+		time.Sleep(time.Second)
+
+		val, ok, ttl = c.GetWithTTL(4)
+		require.False(t, ok)
+		require.Zero(t, val)
+		require.Equal(t, time.Duration(0), ttl)
+	}
+	// verify metrics tracking
+	{
+		hitsBefore := c.Metrics.Hits()
+		val, ok, _ := c.GetWithTTL(2)
+		require.True(t, ok)
+		require.Equal(t, 2, val)
+		require.Equal(t, hitsBefore+1, c.Metrics.Hits())
+
+		missesBefore := c.Metrics.Misses()
+		val, ok, _ = c.GetWithTTL(999)
+		require.False(t, ok)
+		require.Zero(t, val)
+		require.Equal(t, missesBefore+1, c.Metrics.Misses())
+	}
+	// closed cache
+	{
+		c.Close()
+		val, ok, ttl := c.GetWithTTL(2)
+		require.False(t, ok)
+		require.Zero(t, val)
+		require.Equal(t, time.Duration(0), ttl)
 	}
 }
 
