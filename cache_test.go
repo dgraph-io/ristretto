@@ -449,14 +449,14 @@ func TestCachePeekExpired(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	require.True(t, c.SetWithTTL(1, 1, 1, 50*time.Millisecond))
+	require.True(t, c.SetWithTTL(1, 1, 1, time.Second))
 	c.Wait()
 
 	val, ok := c.Peek(1)
 	require.True(t, ok)
 	require.Equal(t, 1, val)
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 
 	val, ok = c.Peek(1)
 	require.False(t, ok)
