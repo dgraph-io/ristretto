@@ -29,6 +29,8 @@ type storeItem[V any] struct {
 type store[V any] interface {
 	// Get returns the value associated with the key parameter.
 	Get(uint64, uint64) (V, bool)
+	// GetWithTTL returns the value associated with the key parameter and the remaining TTL.
+	GetWithTTL(uint64, uint64) (V, bool, time.Duration)
 	// Expiration returns the expiration time for this key.
 	Expiration(uint64) time.Time
 	// Set adds the key-value pair to the Map or updates the value if it's
@@ -110,6 +112,10 @@ func (sm *shardedMap[V]) Get(key, conflict uint64) (V, bool) {
 	return sm.shards[key%numShards].get(key, conflict)
 }
 
+func (sm *shardedMap[V]) GetWithTTL(key, conflict uint64) (V, bool, time.Duration) {
+	return sm.shards[key%numShards].getWithTTL(key, conflict)
+}
+
 func (sm *shardedMap[V]) Expiration(key uint64) time.Time {
 	return sm.shards[key%numShards].Expiration(key)
 }
@@ -179,6 +185,32 @@ func (m *lockedMap[V]) get(key, conflict uint64) (V, bool) {
 		return zeroValue[V](), false
 	}
 	return item.value, true
+}
+
+func (m *lockedMap[V]) getWithTTL(key, conflict uint64) (V, bool, time.Duration) {
+	m.RLock()
+	item, ok := m.data[key]
+	m.RUnlock()
+	if !ok {
+		return zeroValue[V](), false, 0
+	}
+	if conflict != 0 && (conflict != item.conflict) {
+		return zeroValue[V](), false, 0
+	}
+
+	// Handle expired items.
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+		return zeroValue[V](), false, 0
+	}
+
+	var remainingTTL time.Duration
+	if !item.expiration.IsZero() {
+		remainingTTL = time.Until(item.expiration)
+		if remainingTTL < 0 {
+			return zeroValue[V](), false, 0
+		}
+	}
+	return item.value, true, remainingTTL
 }
 
 func (m *lockedMap[V]) Expiration(key uint64) time.Time {

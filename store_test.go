@@ -332,6 +332,60 @@ func TestStoreExpiration(t *testing.T) {
 	require.True(t, ttl.IsZero())
 }
 
+func TestStoreGetWithTTL(t *testing.T) {
+	s := newStore[int]()
+	key, conflict := z.KeyToHash(1)
+	expiration := time.Now().Add(5 * time.Second)
+	i := Item[int]{
+		Key:        key,
+		Conflict:   conflict,
+		Value:      42,
+		Expiration: expiration,
+	}
+	s.Set(&i)
+
+	val, ok, ttl := s.GetWithTTL(key, conflict)
+	require.True(t, ok)
+	require.Equal(t, 42, val)
+	require.True(t, ttl > 0 && ttl <= 5*time.Second)
+
+	// Item with no expiration
+	keyNoExp, conflictNoExp := z.KeyToHash(2)
+	iNoExp := Item[int]{
+		Key:      keyNoExp,
+		Conflict: conflictNoExp,
+		Value:    84,
+	}
+	s.Set(&iNoExp)
+
+	val, ok, ttl = s.GetWithTTL(keyNoExp, conflictNoExp)
+	require.True(t, ok)
+	require.Equal(t, 84, val)
+	require.Equal(t, time.Duration(0), ttl)
+
+	// Missing item
+	keyMissing, conflictMissing := z.KeyToHash(3)
+	val, ok, ttl = s.GetWithTTL(keyMissing, conflictMissing)
+	require.False(t, ok)
+	require.Equal(t, 0, val)
+	require.Equal(t, time.Duration(0), ttl)
+
+	// Expired item
+	keyExp, conflictExp := z.KeyToHash(4)
+	iExp := Item[int]{
+		Key:        keyExp,
+		Conflict:   conflictExp,
+		Value:      99,
+		Expiration: time.Now().Add(-time.Second),
+	}
+	s.Set(&iExp)
+
+	val, ok, ttl = s.GetWithTTL(keyExp, conflictExp)
+	require.False(t, ok)
+	require.Equal(t, 0, val)
+	require.Equal(t, time.Duration(0), ttl)
+}
+
 func BenchmarkStoreGet(b *testing.B) {
 	s := newStore[int]()
 	key, conflict := z.KeyToHash(1)
