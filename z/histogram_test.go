@@ -83,3 +83,14 @@ func TestPercentile100(t *testing.T) {
 	}
 	require.Equal(t, h.Percentile(1.0), 514.0)
 }
+
+func TestHistogramBoundsPowerOfTwo(t *testing.T) {
+	// int(1)<<63 is negative. 2^63 is 9223372036854775808.
+	bounds := HistogramBounds(62, 63)
+	require.Equal(t, math.Ldexp(1, 62), bounds[0])
+	require.Equal(t, math.Ldexp(1, 63), bounds[1])
+
+	small := HistogramBounds(1, 16)
+	require.Equal(t, 2.0, small[0])
+	require.Equal(t, math.Ldexp(1, 16), small[len(small)-1])
+}

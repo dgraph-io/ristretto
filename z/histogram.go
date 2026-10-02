@@ -18,7 +18,9 @@ import (
 func HistogramBounds(minExponent, maxExponent uint32) []float64 {
 	var bounds []float64
 	for i := minExponent; i <= maxExponent; i++ {
-		bounds = append(bounds, float64(int(1)<<i))
+		// int(1)<<i is negative at exponent 63, and the shift wraps after that.
+		// 2^63 was -9223372036854775808.
+		bounds = append(bounds, math.Ldexp(1, int(i)))
 	}
 	return bounds
 }
