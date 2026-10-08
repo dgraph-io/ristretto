@@ -37,6 +37,8 @@ type store[V any] interface {
 	Set(*Item[V])
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, V)
+	// DelExpired deletes only if the current item has expired at now.
+	DelExpired(uint64, uint64, time.Time) (uint64, V, time.Time, bool)
 	// Update attempts to update the key with a new value and returns true if
 	// successful.
 	Update(*Item[V]) (V, bool)
@@ -125,6 +127,10 @@ func (sm *shardedMap[V]) Set(i *Item[V]) {
 
 func (sm *shardedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return sm.shards[key%numShards].Del(key, conflict)
+}
+
+func (sm *shardedMap[V]) DelExpired(key, conflict uint64, now time.Time) (uint64, V, time.Time, bool) {
+	return sm.shards[key%numShards].DelExpired(key, conflict, now)
 }
 
 func (sm *shardedMap[V]) Update(newItem *Item[V]) (V, bool) {
@@ -238,6 +244,18 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 
 	delete(m.data, key)
 	return item.conflict, item.value
+}
+
+func (m *lockedMap[V]) DelExpired(key, conflict uint64, now time.Time) (uint64, V, time.Time, bool) {
+	m.Lock()
+	defer m.Unlock()
+	item, ok := m.data[key]
+	if !ok || (conflict != 0 && conflict != item.conflict) || item.expiration.IsZero() || item.expiration.After(now) {
+		return 0, zeroValue[V](), time.Time{}, false
+	}
+	m.em.del(key, item.expiration)
+	delete(m.data, key)
+	return item.conflict, item.value, item.expiration, true
 }
 
 func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {

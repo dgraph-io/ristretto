@@ -133,19 +133,19 @@ func (m *expirationMap[V]) cleanup(store store[V], policy *defaultPolicy[V], onE
 
 	for _, keys := range buckets {
 		for key, conflict := range keys {
-			expr := store.Expiration(key)
-			// Sanity check. Verify that the store agrees that this key is expired.
-			if expr.After(now) {
+			// A Set can refresh this key after the bucket snapshot. Check and delete
+			// the current item together so cleanup never removes its replacement.
+			actualConflict, value, expr, removed := store.DelExpired(key, conflict, now)
+			if !removed {
 				continue
 			}
 
 			cost := policy.Cost(key)
 			policy.Del(key)
-			_, value := store.Del(key, conflict)
 
 			if onEvict != nil {
 				onEvict(&Item[V]{Key: key,
-					Conflict:   conflict,
+					Conflict:   actualConflict,
 					Value:      value,
 					Cost:       cost,
 					Expiration: expr,
