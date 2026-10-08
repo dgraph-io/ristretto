@@ -129,6 +129,7 @@ func (sm *shardedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
+// DelExpired removes the current item only when its expiration has passed.
 func (sm *shardedMap[V]) DelExpired(key, conflict uint64, now time.Time) (uint64, V, time.Time, bool) {
 	return sm.shards[key%numShards].DelExpired(key, conflict, now)
 }
@@ -246,6 +247,7 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return item.conflict, item.value
 }
 
+// DelExpired checks expiration and removes the item while holding the shard lock.
 func (m *lockedMap[V]) DelExpired(key, conflict uint64, now time.Time) (uint64, V, time.Time, bool) {
 	m.Lock()
 	defer m.Unlock()

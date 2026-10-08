@@ -16,12 +16,14 @@ type pausingCleanupStore struct {
 	resume  chan struct{}
 }
 
+// Expiration pauses the pre-fix cleanup path before it reads the refreshed item.
 func (s *pausingCleanupStore) Expiration(key uint64) time.Time {
 	close(s.entered)
 	<-s.resume
 	return s.store.Expiration(key)
 }
 
+// DelExpired pauses conditional deletion until the test replaces the expired item.
 func (s *pausingCleanupStore) DelExpired(key, conflict uint64, now time.Time) (uint64, int, time.Time, bool) {
 	close(s.entered)
 	<-s.resume
@@ -30,6 +32,7 @@ func (s *pausingCleanupStore) DelExpired(key, conflict uint64, now time.Time) (u
 	}).DelExpired(key, conflict, now)
 }
 
+// TestExpirationMapCleanupPreservesFreshReplacement covers an update during TTL cleanup.
 func TestExpirationMapCleanupPreservesFreshReplacement(t *testing.T) {
 	s := newShardedMap[int]()
 	p := newDefaultPolicy[int](100, 100)
