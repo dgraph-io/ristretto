@@ -39,6 +39,13 @@ func TestAllocate(t *testing.T) {
 	t.Logf("Allocated: %d\n", prev)
 }
 
+func TestAllocatorsReport(t *testing.T) {
+	tag := t.Name()
+	a := NewAllocator(1536, tag)
+	defer a.Release()
+	require.Contains(t, Allocators(), "Tag: "+tag+" Num: 1 Size: 2.0 KiB . ")
+}
+
 func TestAllocateSize(t *testing.T) {
 	a := NewAllocator(1024, "test")
 	require.Equal(t, 1024, len(a.buffers[0]))
