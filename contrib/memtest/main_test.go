@@ -7,6 +7,7 @@ package main
 
 import "testing"
 
+// TestAllocationLifecycle checks zero initialization, writable memory, and balanced frees.
 func TestAllocationLifecycle(t *testing.T) {
 	before := NumAllocBytes()
 	for _, size := range []int{0, 1, 1536} {
@@ -30,6 +31,7 @@ func TestAllocationLifecycle(t *testing.T) {
 	}
 }
 
+// TestMemoryReporting exercises diagnostics and linked-list cleanup with bounded allocations.
 func TestMemoryReporting(t *testing.T) {
 	before := NumAllocBytes()
 	n := newS(1536)

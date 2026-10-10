@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/ristretto/v2/z"
 )
 
+// TestNodeLifecycle exercises traversal and cleanup with each supported allocator.
 func TestNodeLifecycle(t *testing.T) {
 	if alloc != nil {
 		original := alloc
