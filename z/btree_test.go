@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dustin/go-humanize"
+	"github.com/dgraph-io/ristretto/v2/internal/humanize"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dgraph-io/ristretto/v2/z/simd"

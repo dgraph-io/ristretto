@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/dustin/go-humanize"
+	"github.com/dgraph-io/ristretto/v2/internal/humanize"
 )
 
 // The go:linkname directives provides backdoor access to private functions in
