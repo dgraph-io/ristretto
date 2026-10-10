@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	"github.com/dustin/go-humanize"
 
@@ -15,6 +16,8 @@ type node struct {
 }
 
 var alloc *z.Allocator
+
+const nodeSz = int(unsafe.Sizeof(node{}))
 
 func printNode(n *node) {
 	if n == nil {
