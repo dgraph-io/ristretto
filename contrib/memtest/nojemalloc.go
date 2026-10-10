@@ -7,7 +7,6 @@ package main
 import "C"
 import (
 	"log"
-	"reflect"
 	"sync/atomic"
 	"unsafe"
 )
@@ -20,10 +19,8 @@ func Calloc(size int) []byte {
 	if ptr == nil {
 		panic("OOM")
 	}
-	hdr := reflect.SliceHeader{Data: uintptr(ptr), Len: size, Cap: size}
 	atomic.AddInt64(&numbytes, int64(size))
-	//nolint:govet
-	return *(*[]byte)(unsafe.Pointer(&hdr))
+	return unsafe.Slice((*byte)(ptr), size)
 }
 
 func Free(bs []byte) {
