@@ -17,7 +17,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dustin/go-humanize"
+	"github.com/dgraph-io/ristretto/v2/internal/humanize"
 )
 
 // Allocator amortizes the cost of small allocations by allocating memory in

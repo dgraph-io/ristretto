@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/dustin/go-humanize"
+	"github.com/dgraph-io/ristretto/v2/internal/humanize"
 
 	"github.com/dgraph-io/ristretto/v2/z"
 )

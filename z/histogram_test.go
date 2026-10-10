@@ -37,6 +37,13 @@ func TestPercentile00(t *testing.T) {
 	require.Equal(t, h.Percentile(0.0), 32.0)
 }
 
+// TestHistogramOverflowReport checks the IEC label on the unbounded final bucket.
+func TestHistogramOverflowReport(t *testing.T) {
+	h := NewHistogramData([]float64{1024, 2048})
+	h.Update(4096)
+	require.Contains(t, h.String(), "[2.0 KiB, infinity) 1 100.00% 100.00%")
+}
+
 func TestPercentile99(t *testing.T) {
 	size := int(math.Ceil((float64(514) - float64(32)) / float64(4)))
 	bounds := make([]float64, size+1)

@@ -10,7 +10,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/dustin/go-humanize"
+	"github.com/dgraph-io/ristretto/v2/internal/humanize"
 )
 
 // Creates bounds for an histogram. The bounds are powers of two of the form
