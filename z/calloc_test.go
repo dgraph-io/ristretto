@@ -66,6 +66,7 @@ func BenchmarkAllocation(b *testing.B) {
 	})
 }
 
+// TestCalloc verifies jemalloc byte accounting and leak reports across allocation and free.
 func TestCalloc(t *testing.T) {
 	// Check if we're using jemalloc.
 	// JE_MALLOC_CONF="abort:true,tcache:false"

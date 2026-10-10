@@ -39,6 +39,7 @@ func TestAllocate(t *testing.T) {
 	t.Logf("Allocated: %d\n", prev)
 }
 
+// TestAllocatorsReport checks byte formatting in the live allocator summary.
 func TestAllocatorsReport(t *testing.T) {
 	tag := t.Name()
 	a := NewAllocator(1536, tag)

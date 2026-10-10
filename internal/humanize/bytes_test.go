@@ -11,6 +11,7 @@ import (
 	"testing"
 )
 
+// TestIBytes checks IEC unit boundaries, rounding, and the full uint64 range.
 func TestIBytes(t *testing.T) {
 	for _, test := range []struct {
 		size uint64
