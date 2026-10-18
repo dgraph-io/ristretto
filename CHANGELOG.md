@@ -7,6 +7,12 @@ adhere to [Semantic Versioning](http://semver.org/spec/v2.0.0.html) starting v1.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep a buffered `Set` or `Del` from undoing a newer `Set` of the same key: of two `Set` calls
+  for a new key in quick succession the first value was kept, and a `Set` right after a `Del`
+  could be lost (#506)
+
 ## [v2.4.2] - 2026-07-07
 
 ### Fixed

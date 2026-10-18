@@ -64,6 +64,9 @@ type Cache[K Key, V any] struct {
 	done chan struct{}
 	// indicates whether cache is closed.
 	isClosed atomic.Bool
+	// version numbers the calls to Set and Del, so that a buffered item does
+	// not undo a newer call for the same key when processItems applies it.
+	version atomic.Uint64
 	// cost calculates cost from a value.
 	cost func(value V) int64
 	// ignoreInternalCost dictates whether to ignore the cost of internally storing
@@ -199,6 +202,8 @@ type Item[V any] struct {
 	Cost       int64
 	Expiration time.Time
 	wait       chan struct{}
+	// version orders the item among the calls to Set and Del.
+	version uint64
 }
 
 // NewCache returns a new Cache instance and any configuration errors, if any.
@@ -344,6 +349,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, cost int64, ttl time.Duration) 
 		Value:      value,
 		Cost:       cost,
 		Expiration: expiration,
+		version:    c.version.Add(1),
 	}
 	// cost is eventually updated. The expiration must also be immediately updated
 	// to prevent items from being prematurely removed from the map.
@@ -373,18 +379,20 @@ func (c *Cache[K, V]) Del(key K) {
 		return
 	}
 	keyHash, conflictHash := c.keyToHash(key)
+	i := &Item[V]{
+		flag:     itemDelete,
+		Key:      keyHash,
+		Conflict: conflictHash,
+		version:  c.version.Add(1),
+	}
 	// Delete immediately.
-	_, prev := c.storedItems.Del(keyHash, conflictHash)
+	prev, _ := c.storedItems.Remove(i)
 	c.onExit(prev)
 	// If we've set an item, it would be applied slightly later.
 	// So we must push the same item to `setBuf` with the deletion flag.
 	// This ensures that if a set is followed by a delete, it will be
 	// applied in the correct order.
-	c.setBuf <- &Item[V]{
-		flag:     itemDelete,
-		Key:      keyHash,
-		Conflict: conflictHash,
-	}
+	c.setBuf <- i
 }
 
 // GetTTL returns the TTL for the specified key and a bool that is true if the
@@ -554,6 +562,18 @@ func (c *Cache[K, V]) processItems() {
 
 			switch i.flag {
 			case itemNew:
+				if c.cachePolicy.Has(i.Key) {
+					// An earlier Set of the key was still buffered when this
+					// one ran, and has been admitted since. Apply this one as
+					// an update, unless a newer Set already replaced the value.
+					c.cachePolicy.Update(i.Key, i.Cost)
+					if prev, ok := c.storedItems.Update(i); ok {
+						c.onExit(prev)
+					} else {
+						c.onExit(i.Value)
+					}
+					break
+				}
 				victims, added := c.cachePolicy.Add(i.Key, i.Cost)
 				if added {
 					c.storedItems.Set(i)
@@ -571,9 +591,11 @@ func (c *Cache[K, V]) processItems() {
 				c.cachePolicy.Update(i.Key, i.Cost)
 
 			case itemDelete:
-				c.cachePolicy.Del(i.Key) // Deals with metrics updates.
-				_, val := c.storedItems.Del(i.Key, i.Conflict)
-				c.onExit(val)
+				// Keep the key if a Set that ran after the Del stored it again.
+				if val, ok := c.storedItems.Remove(i); ok {
+					c.cachePolicy.Del(i.Key) // Deals with metrics updates.
+					c.onExit(val)
+				}
 			}
 		case <-c.cleanupTicker.C:
 			c.storedItems.Cleanup(c.cachePolicy, onEvict)
