@@ -1135,3 +1135,138 @@ func TestCacheWithTTL(t *testing.T) {
 		})
 	}
 }
+
+// blockingCache is a cache whose processItems goroutine stops while it applies
+// a Set of one of a few named keys, so that a test can decide which buffered
+// items have been applied by the time it calls Set or Del.
+type blockingCache struct {
+	*Cache[string, string]
+	blocked   map[string]chan struct{}
+	unblocked map[string]chan struct{}
+	once      map[string]*sync.Once
+}
+
+func newBlockingCache(t *testing.T, names ...string) *blockingCache {
+	bc := &blockingCache{
+		blocked:   make(map[string]chan struct{}),
+		unblocked: make(map[string]chan struct{}),
+		once:      make(map[string]*sync.Once),
+	}
+	for _, name := range names {
+		bc.blocked[name] = make(chan struct{})
+		bc.unblocked[name] = make(chan struct{})
+		bc.once[name] = &sync.Once{}
+	}
+	c, err := NewCache(&Config[string, string]{
+		NumCounters: 100,
+		MaxCost:     1 << 20,
+		BufferItems: 64,
+		Cost: func(value string) int64 {
+			if ch, ok := bc.blocked[value]; ok {
+				close(ch)
+				<-bc.unblocked[value]
+			}
+			return 1
+		},
+	})
+	require.NoError(t, err)
+	bc.Cache = c
+	t.Cleanup(func() {
+		for _, name := range names {
+			bc.unblock(name)
+		}
+		c.Close()
+	})
+	return bc
+}
+
+// block buffers a Set that stops processItems when it is applied.
+func (bc *blockingCache) block(name string) {
+	bc.Set(name, name, 0)
+}
+
+// waitBlocked waits until processItems has stopped at the Set buffered by
+// block(name), so that every item buffered before it has been applied.
+func (bc *blockingCache) waitBlocked(name string) {
+	<-bc.blocked[name]
+}
+
+func (bc *blockingCache) unblock(name string) {
+	bc.once[name].Do(func() { close(bc.unblocked[name]) })
+}
+
+func TestCacheSetTwiceBeforeApplied(t *testing.T) {
+	c := newBlockingCache(t, "b1")
+	c.block("b1")
+	c.waitBlocked("b1")
+
+	// Neither Set finds the key stored, so both are buffered as new items.
+	require.True(t, c.Set("key", "1", 1))
+	require.True(t, c.Set("key", "2", 1))
+	c.unblock("b1")
+	c.Wait()
+
+	val, ok := c.Get("key")
+	require.True(t, ok)
+	require.Equal(t, "2", val)
+}
+
+func TestCacheSetAppliedLateDoesNotOverwriteUpdate(t *testing.T) {
+	c := newBlockingCache(t, "b1", "b2")
+	c.block("b1")
+	c.waitBlocked("b1")
+
+	require.True(t, c.Set("key", "1", 1))
+	c.block("b2")
+	require.True(t, c.Set("key", "2", 1))
+	// Apply the first Set only. The third Set then finds the key stored and
+	// updates it in place, while the second is still buffered.
+	c.unblock("b1")
+	c.waitBlocked("b2")
+	require.True(t, c.Set("key", "3", 1))
+	c.unblock("b2")
+	c.Wait()
+
+	val, ok := c.Get("key")
+	require.True(t, ok)
+	require.Equal(t, "3", val)
+}
+
+func TestCacheSetAfterDelWhileSetBuffered(t *testing.T) {
+	c := newBlockingCache(t, "b1", "b2")
+	c.block("b1")
+	c.waitBlocked("b1")
+
+	require.True(t, c.Set("key", "1", 1))
+	c.block("b2")
+	c.Del("key")
+	// Apply the first Set but not the Del that followed it. The second Set
+	// then finds the key stored and updates it in place.
+	c.unblock("b1")
+	c.waitBlocked("b2")
+	require.True(t, c.Set("key", "2", 1))
+	c.unblock("b2")
+	c.Wait()
+
+	val, ok := c.Get("key")
+	require.True(t, ok)
+	require.Equal(t, "2", val)
+	// The policy still accounts for the stored value.
+	keyHash, _ := c.keyToHash("key")
+	require.True(t, c.cachePolicy.Has(keyHash))
+}
+
+func TestCacheDelAfterBufferedSets(t *testing.T) {
+	c := newBlockingCache(t, "b1")
+	c.block("b1")
+	c.waitBlocked("b1")
+
+	require.True(t, c.Set("key", "1", 1))
+	require.True(t, c.Set("key", "2", 1))
+	c.Del("key")
+	c.unblock("b1")
+	c.Wait()
+
+	_, ok := c.Get("key")
+	require.False(t, ok)
+}

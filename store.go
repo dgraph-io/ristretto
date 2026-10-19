@@ -18,6 +18,8 @@ type storeItem[V any] struct {
 	conflict   uint64
 	value      V
 	expiration time.Time
+	// version is the version of the Item that wrote this value.
+	version uint64
 }
 
 // store is the interface fulfilled by all hash map implementations in this
@@ -33,12 +35,16 @@ type store[V any] interface {
 	Expiration(uint64) time.Time
 	// Set adds the key-value pair to the Map or updates the value if it's
 	// already present. The key-value pair is passed as a pointer to an
-	// item object.
+	// item object. A value written by a newer item is not replaced.
 	Set(*Item[V])
 	// Del deletes the key-value pair from the Map.
 	Del(uint64, uint64) (uint64, V)
+	// Remove deletes the key of the item from the Map, unless the value was
+	// written by a newer item. It returns the deleted value, and false if
+	// the key was kept.
+	Remove(*Item[V]) (V, bool)
 	// Update attempts to update the key with a new value and returns true if
-	// successful.
+	// successful. A value written by a newer item is not replaced.
 	Update(*Item[V]) (V, bool)
 	// Cleanup removes items that have an expired TTL.
 	Cleanup(policy *defaultPolicy[V], onEvict func(item *Item[V]))
@@ -127,6 +133,10 @@ func (sm *shardedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return sm.shards[key%numShards].Del(key, conflict)
 }
 
+func (sm *shardedMap[V]) Remove(i *Item[V]) (V, bool) {
+	return sm.shards[i.Key%numShards].Remove(i)
+}
+
 func (sm *shardedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	return sm.shards[newItem.Key%numShards].Update(newItem)
 }
@@ -203,6 +213,9 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		if i.Conflict != 0 && (i.Conflict != item.conflict) {
 			return
 		}
+		if item.version > i.version {
+			return
+		}
 		if m.shouldUpdate != nil && !m.shouldUpdate(i.Value, item.value) {
 			return
 		}
@@ -218,6 +231,7 @@ func (m *lockedMap[V]) Set(i *Item[V]) {
 		conflict:   i.Conflict,
 		value:      i.Value,
 		expiration: i.Expiration,
+		version:    i.version,
 	}
 }
 
@@ -240,6 +254,25 @@ func (m *lockedMap[V]) Del(key, conflict uint64) (uint64, V) {
 	return item.conflict, item.value
 }
 
+func (m *lockedMap[V]) Remove(i *Item[V]) (V, bool) {
+	m.Lock()
+	defer m.Unlock()
+	item, ok := m.data[i.Key]
+	if !ok || (i.Conflict != 0 && (i.Conflict != item.conflict)) {
+		return zeroValue[V](), true
+	}
+	if item.version > i.version {
+		return zeroValue[V](), false
+	}
+
+	if !item.expiration.IsZero() {
+		m.em.del(i.Key, item.expiration)
+	}
+
+	delete(m.data, i.Key)
+	return item.value, true
+}
+
 func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 	m.Lock()
 	defer m.Unlock()
@@ -248,6 +281,9 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 		return zeroValue[V](), false
 	}
 	if newItem.Conflict != 0 && (newItem.Conflict != item.conflict) {
+		return zeroValue[V](), false
+	}
+	if item.version > newItem.version {
 		return zeroValue[V](), false
 	}
 	if m.shouldUpdate != nil && !m.shouldUpdate(newItem.Value, item.value) {
@@ -260,6 +296,7 @@ func (m *lockedMap[V]) Update(newItem *Item[V]) (V, bool) {
 		conflict:   newItem.Conflict,
 		value:      newItem.Value,
 		expiration: newItem.Expiration,
+		version:    newItem.version,
 	}
 
 	return item.value, true
