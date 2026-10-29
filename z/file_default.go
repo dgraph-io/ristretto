@@ -8,7 +8,13 @@
 
 package z
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
+
+// allocate sets the size of fd to size bytes. Unlike on Linux, the file stays sparse.
+func allocate(fd *os.File, size int64) error { return fd.Truncate(size) }
 
 // Truncate would truncate the mmapped file to the given size. On Linux, we truncate
 // the underlying file and then call mremap, but on other systems, we unmap first,
