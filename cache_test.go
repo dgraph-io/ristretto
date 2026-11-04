@@ -1135,3 +1135,39 @@ func TestCacheWithTTL(t *testing.T) {
 		})
 	}
 }
+
+func TestDelSetLostUpdate(t *testing.T) {
+	const (
+		rounds   = 64
+		attempts = 2000
+	)
+
+	lost := 0
+	for n := 0; n < attempts; n++ {
+		c, err := NewCache(&Config[string, string]{
+			NumCounters: 1e4,
+			MaxCost:     1 << 20,
+			BufferItems: 64,
+			Metrics:     true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for i := 0; i < rounds; i++ {
+			c.Del("key")
+			c.Set("key", fmt.Sprint(i), 1)
+		}
+		c.Wait()
+
+		v, ok := c.Get("key")
+		if !ok || v != fmt.Sprint(rounds-1) {
+			lost++
+		}
+		c.Close()
+	}
+
+	if lost > 0 {
+		t.Errorf("Del+Set lost the value in %d / %d attempts; after Wait() the key must always be present", lost, attempts)
+	}
+}
