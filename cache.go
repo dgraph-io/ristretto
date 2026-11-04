@@ -568,7 +568,22 @@ func (c *Cache[K, V]) processItems() {
 				}
 
 			case itemUpdate:
-				c.cachePolicy.Update(i.Key, i.Cost)
+				if _, ok := c.storedItems.Get(i.Key, i.Conflict); ok {
+					c.cachePolicy.Update(i.Key, i.Cost)
+				} else {
+					victims, added := c.cachePolicy.Add(i.Key, i.Cost)
+					if added {
+						c.storedItems.Set(i)
+						c.Metrics.add(keyAdd, i.Key, 1)
+						trackAdmission(i.Key)
+					} else {
+						c.onReject(i)
+					}
+					for _, victim := range victims {
+						victim.Conflict, victim.Value = c.storedItems.Del(victim.Key, 0)
+						onEvict(victim)
+					}
+				}
 
 			case itemDelete:
 				c.cachePolicy.Del(i.Key) // Deals with metrics updates.
