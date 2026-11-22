@@ -287,7 +287,7 @@ func (a *Allocator) Allocate(sz int) []byte {
 				continue
 			}
 			a.addBufferAt(bufIdx+1, sz)
-			atomic.StoreUint64(&a.compIdx, uint64((bufIdx+1)<<32))
+			atomic.StoreUint64(&a.compIdx, uint64(bufIdx+1)<<32)
 			a.Unlock()
 			// We added a new buffer. Let's acquire slice the right way by going back to the top.
 			continue
