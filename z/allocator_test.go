@@ -6,6 +6,7 @@
 package z
 
 import (
+	"bytes"
 	"math/rand"
 	"sort"
 	"sync"
@@ -37,6 +38,18 @@ func TestAllocate(t *testing.T) {
 	t.Logf("%s", a)
 	require.Equal(t, int(prev), int(a.Allocated()))
 	t.Logf("Allocated: %d\n", prev)
+}
+
+func TestAllocateGrowthPreservesExistingBytes(t *testing.T) {
+	allocator := NewAllocator(512, t.Name())
+	defer allocator.Release()
+
+	want := bytes.Repeat([]byte{0xaa}, 400)
+	first := allocator.Copy(want)
+	// Two 400-byte allocations require the allocator to use a second buffer.
+	allocator.Copy(bytes.Repeat([]byte{0xbb}, len(want)))
+
+	require.True(t, bytes.Equal(want, first), "growing the allocator overwrote an existing allocation")
 }
 
 func TestAllocateSize(t *testing.T) {
