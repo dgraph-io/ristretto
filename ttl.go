@@ -76,6 +76,9 @@ func (m *expirationMap[_]) update(key, conflict uint64, oldExpTime, newExpTime t
 	oldBucket, ok := m.buckets[oldBucketNum]
 	if ok {
 		delete(oldBucket, key)
+		if len(oldBucket) == 0 {
+			delete(m.buckets, oldBucketNum)
+		}
 	}
 
 	// Items that don't expire don't need to be in the expiration map.
@@ -100,11 +103,14 @@ func (m *expirationMap[_]) del(key uint64, expiration time.Time) {
 	bucketNum := storageBucket(expiration)
 	m.Lock()
 	defer m.Unlock()
-	_, ok := m.buckets[bucketNum]
+	b, ok := m.buckets[bucketNum]
 	if !ok {
 		return
 	}
-	delete(m.buckets[bucketNum], key)
+	delete(b, key)
+	if len(b) == 0 {
+		delete(m.buckets, bucketNum)
+	}
 }
 
 // cleanup removes all the items in the bucket that was just completed. It deletes
