@@ -80,3 +80,21 @@ func TestExpirationMapCleanup(t *testing.T) {
 		)
 	})
 }
+
+func TestExpirationMapRemovesEmptyBuckets(t *testing.T) {
+	m := newExpirationMap[any]()
+	expiration := time.Now().Add(time.Hour)
+	bucketNum := storageBucket(expiration)
+
+	m.add(1, 2, expiration)
+	m.del(1, expiration)
+	if _, ok := m.buckets[bucketNum]; ok {
+		t.Fatalf("empty bucket %d remains after delete", bucketNum)
+	}
+
+	m.add(3, 4, expiration)
+	m.update(3, 4, expiration, expiration.Add(time.Duration(bucketDurationSecs)*time.Second))
+	if _, ok := m.buckets[bucketNum]; ok {
+		t.Fatalf("empty bucket %d remains after update", bucketNum)
+	}
+}
